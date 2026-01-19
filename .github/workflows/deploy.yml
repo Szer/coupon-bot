@@ -1,0 +1,89 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  SQLFLUFF_DIALECT: postgres
+  DOCKER_IMAGE: flyway/flyway
+  SCHEMAS: public
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04-arm
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # run tests
+    - uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: global.json
+    - name: Tests
+      run: dotnet test -c Release --logger "trx;LogFileName=test-results.trx"
+      
+    # upload test results
+    - name: Upload dotnet test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: "**/*.trx"
+      # Use always() to always run this step to publish test results when there are test failures
+      if: ${{ always() }}
+
+    - name: Setup WireGuard VPN
+      run: |
+        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
+        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
+        sudo chmod 600 /etc/wireguard/wg0.conf
+        sudo wg-quick up wg0
+        # Verify VPN is up
+        sudo wg show
+
+    # if tests are ok, deploy to production
+    - name: Apply migrations to production DB
+      run: >-
+        docker run --rm
+        --network host
+        --volume ${{ github.workspace }}/src/migrations:/flyway/sql:ro
+        --volume ${{ github.workspace }}/reports:/flyway/reports
+        "${{ env.DOCKER_IMAGE }}"
+        -url="${{ secrets.DB_PROD_URL }}"
+        -user="${{ secrets.DB_PROD_USERNAME }}"
+        -password="${{ secrets.DB_PROD_PASSWORD }}" 
+        migrate -schemas="${{ env.SCHEMAS }}"
+
+    - name: Disconnect VPN
+      if: always()
+      run: sudo wg-quick down wg0 || true
+
+    - name: Upload Flyway report
+      uses: actions/upload-artifact@v4
+      with:
+        name: Database Report
+        path: reports/
+
+    - name: Login to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build and push to GHCR
+      uses: docker/build-push-action@v5
+      with:
+        push: true
+        tags: ghcr.io/${{ github.repository }}:${{ github.sha }}, ghcr.io/${{ github.repository }}:latest
+        file: ./Dockerfile
+        platforms: linux/arm64
