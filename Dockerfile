@@ -1,4 +1,4 @@
-FROM --platform=linux/arm64 mcr.microsoft.com/dotnet/sdk:10.0.2-noble-arm64v8 AS build
+FROM --platform=linux/arm64 mcr.microsoft.com/dotnet/sdk:10.0.102-noble-arm64v8 AS build
 WORKDIR /src
 
 COPY src/CouponHubBot/CouponHubBot.fsproj src/CouponHubBot/
