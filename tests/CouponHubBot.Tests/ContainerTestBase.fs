@@ -1,6 +1,7 @@
 namespace CouponHubBot.Tests
 
 open System
+open System.Net
 open System.Net.Http
 open System.Net.Http.Json
 open System.Text
@@ -54,9 +55,9 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithImage("flyway/flyway")
             .WithNetwork(network)
             .WithBindMount(solutionDirPath + "\\src\\migrations", "/flyway/sql", AccessMode.ReadOnly)
-            .WithEnvironment("FLYWAY_URL", $"jdbc:postgresql://{dbAlias}:5432/coupon_hub")
-            .WithEnvironment("FLYWAY_USER", "coupon_hub_service")
-            .WithEnvironment("FLYWAY_PASSWORD", "coupon_hub_service")
+            .WithEnvironment("FLYWAY_URL", $"jdbc:postgresql://{dbAlias}:5432/coupon_hub_bot")
+            .WithEnvironment("FLYWAY_USER", "coupon_hub_bot_service")
+            .WithEnvironment("FLYWAY_PASSWORD", "coupon_hub_bot_service")
             .WithCommand("migrate", "-schemas=public")
             .DependsOn(dbContainer)
             .WithWaitStrategy(
@@ -75,7 +76,9 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithDockerfile("./tests/FakeTgApi/Dockerfile")
             .WithName("coupon-hub-fake-tg-api-test")
             .WithDeleteIfExists(true)
-            .WithCleanUp(false)
+            .WithCleanUp(true)
+            // Force rebuild by adding unique build arg (prevents Docker layer caching)
+            .WithBuildArgument("FORCE_REBUILD", DateTime.UtcNow.Ticks.ToString())
             .Build()
 
     let fakeContainer =
@@ -84,8 +87,8 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithNetwork(network)
             .WithNetworkAliases(fakeAlias)
             .WithPortBinding(8080, true)
-            .WithEnvironment("ASPNETCORE_URLS", "http://0.0.0.0:8080")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(8080))
+            .WithEnvironment("ASPNETCORE_URLS", "http://*:8080")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(8080, fun x -> x.WithTimeout(TimeSpan.FromMinutes(1.0)) |> ignore))
             .Build()
 
     let botImage =
@@ -94,7 +97,9 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithDockerfile("./Dockerfile")
             .WithName("coupon-hub-bot-test")
             .WithDeleteIfExists(true)
-            .WithCleanUp(false)
+            .WithCleanUp(true)
+            // Force rebuild by adding unique build arg (prevents Docker layer caching)
+            .WithBuildArgument("FORCE_REBUILD", DateTime.UtcNow.Ticks.ToString())
             .Build()
 
     let botContainer =
@@ -104,9 +109,9 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithPortBinding(80, true)
             .WithEnvironment("BOT_TELEGRAM_TOKEN", botToken)
             .WithEnvironment("BOT_AUTH_TOKEN", secret)
-             .WithEnvironment("COMMUNITY_CHAT_ID", string communityChatId)
+            .WithEnvironment("COMMUNITY_CHAT_ID", string communityChatId)
             .WithEnvironment("LOGS_CHAT_ID", "")
-            .WithEnvironment("DATABASE_URL", $"Server={dbAlias};Database=coupon_hub;Port=5432;User Id=coupon_hub_service;Password=coupon_hub_service;Include Error Detail=true;")
+            .WithEnvironment("DATABASE_URL", $"Server={dbAlias};Database=coupon_hub_bot;Port=5432;User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;")
             .WithEnvironment("TELEGRAM_API_URL", $"http://{fakeAlias}:8080")
             .WithEnvironment("ASPNETCORE_HTTP_PORTS", "80")
             .WithEnvironment("OCR_ENABLED", "false")
@@ -115,7 +120,7 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithEnvironment("TEST_MODE", "true")
             .DependsOn(flywayContainer)
             .DependsOn(fakeContainer)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(80))
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(80, fun s -> s.WithTimeout(TimeSpan.FromMinutes(2.0)) |> ignore))
             .Build()
 
     let seedDb () =
@@ -150,7 +155,7 @@ VALUES (100, 'seed-photo', 10.00, CURRENT_DATE, 'available');
             task {
                 do! dbContainer.StartAsync()
 
-                publicConnectionString <- $"Server=127.0.0.1;Database=coupon_hub;Port={dbContainer.GetMappedPublicPort(5432)};User Id=coupon_hub_service;Password=coupon_hub_service;Include Error Detail=true;"
+                publicConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;"
 
                 // init schema/user/db
                 let initSql = IO.File.ReadAllText(solutionDirPath + "\\init.sql")
@@ -164,11 +169,13 @@ VALUES (100, 'seed-photo', 10.00, CURRENT_DATE, 'available');
                 do! seedDb ()
 
                 // build images & start fake + bot
-                do! fakeImage.CreateAsync()
-                do! botImage.CreateAsync()
+                let fakeImageTask = fakeImage.CreateAsync()
+                let botImageTask = botImage.CreateAsync()
+                do! Task.WhenAll(fakeImageTask, botImageTask)
+                
                 do! fakeContainer.StartAsync()
                 do! botContainer.StartAsync()
-
+                
                 // Important: mapped ports are accessible from host via 127.0.0.1, not via container network aliases.
                 botHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{botContainer.GetMappedPublicPort(80)}"))
                 // Give webhook enough time; Telegram API calls inside bot will timeout faster (2s).
@@ -177,27 +184,6 @@ VALUES (100, 'seed-photo', 10.00, CURRENT_DATE, 'available');
 
                 fakeHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{fakeContainer.GetMappedPublicPort(8080)}"))
                 fakeHttp.Timeout <- TimeSpan.FromSeconds(5.0)
-
-                // Wait until host-mapped ports are reachable (can lag behind container "port is available" checks).
-                let waitForHealth (http: HttpClient) (path: string) = task {
-                    let mutable ok = false
-                    let mutable attempts = 0
-                    while not ok && attempts < 30 do
-                        attempts <- attempts + 1
-                        try
-                            use cts = new Threading.CancellationTokenSource(TimeSpan.FromSeconds(1.0))
-                            use! resp = http.GetAsync(path, cts.Token)
-                            ok <- resp.IsSuccessStatusCode
-                        with _ ->
-                            ok <- false
-                        if not ok then
-                            do! Task.Delay(250)
-                    if not ok then
-                        failwith $"Health check failed for {http.BaseAddress}{path}"
-                }
-
-                do! waitForHealth fakeHttp "/health"
-                do! waitForHealth botHttp "/health"
             }
 
         member _.DisposeAsync() =
@@ -212,7 +198,10 @@ VALUES (100, 'seed-photo', 10.00, CURRENT_DATE, 'available');
 
     member _.CommunityChatId = communityChatId
     member _.Bot = botHttp
+        member _.TelegramApi = fakeHttp
     member _.DbConnectionString = publicConnectionString
+    
+
 
     member _.ClearFakeCalls() =
         task {

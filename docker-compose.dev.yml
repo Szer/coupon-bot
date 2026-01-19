@@ -30,8 +30,7 @@ services:
       FLYWAY_USER: coupon_hub_bot_service
       FLYWAY_PASSWORD: coupon_hub_bot_service
     command: migrate -schemas=public
-    profiles:
-      - migrate
+    restart: "no"
 
   fake-tg-api:
     image: coupon-hub-fake-tg-api-test:latest
