@@ -1,0 +1,341 @@
+namespace CouponHubBot.Services
+
+open System.Threading.Tasks
+open System
+open System.Text.RegularExpressions
+open System.Collections.Concurrent
+open Microsoft.Extensions.Logging
+open Telegram.Bot
+open Telegram.Bot.Types
+open Telegram.Bot.Types.Enums
+open Telegram.Bot.Types.ReplyMarkups
+open CouponHubBot
+open CouponHubBot.Services
+open CouponHubBot.Utils
+
+type PendingAdd =
+    { OwnerId: int64
+      PhotoFileId: string
+      Value: decimal
+      ExpiresAt: DateOnly }
+
+module private PendingAddStore =
+    let adds = ConcurrentDictionary<Guid, PendingAdd>()
+
+type IBotService =
+    abstract member OnUpdate: Update -> Task
+
+/// Minimal skeleton; real command handling will be implemented in `bot-core` todo.
+type BotService(
+    botClient: ITelegramBotClient,
+    botConfig: BotConfiguration,
+    db: IDbService,
+    membership: IMembershipService,
+    notifications: INotificationService,
+    ocr: IOcrService,
+    logger: ILogger<BotService>
+) =
+    let sendText (chatId: int64) (text: string) =
+        botClient.SendMessage(ChatId chatId, text) |> taskIgnore
+
+    let parseInt (s: string) =
+        match System.Int32.TryParse(s) with
+        | true, v -> Some v
+        | _ -> None
+
+    let tryParseDateOnly (s: string) =
+        let styles = System.Globalization.DateTimeStyles.None
+        let culture = System.Globalization.CultureInfo.InvariantCulture
+        let formats = [| "yyyy-MM-dd"; "dd.MM.yyyy"; "d.M.yyyy" |]
+        let mutable parsed = Unchecked.defaultof<DateOnly>
+        if DateOnly.TryParseExact(s, formats, culture, styles, &parsed) then Some parsed
+        else None
+        
+    let tryParseValueFromOcrText (text: string) =
+        if String.IsNullOrWhiteSpace text then None else
+        let m = Regex.Match(text, @"(?i)(?<n>\d{1,3}(?:[.,]\d{1,2})?)\s*(€|eur)\b")
+        if m.Success then
+            let n = m.Groups.["n"].Value.Replace(',', '.')
+            match Decimal.TryParse(n, Globalization.NumberStyles.Number, Globalization.CultureInfo.InvariantCulture) with
+            | true, v -> Some v
+            | _ -> None
+        else None
+
+    let tryParseDateFromOcrText (text: string) =
+        if String.IsNullOrWhiteSpace text then None else
+        let m = Regex.Match(text, @"(?<d>\d{1,2})[./-](?<m>\d{1,2})[./-](?<y>\d{2,4})")
+        if m.Success then
+            let d = int m.Groups.["d"].Value
+            let mo = int m.Groups.["m"].Value
+            let yRaw = int m.Groups.["y"].Value
+            let y = if yRaw < 100 then 2000 + yRaw else yRaw
+            try Some (DateOnly(y, mo, d))
+            with _ -> None
+        else None
+
+    let formatCouponLine (c: Coupon) =
+        let v = c.value.ToString("0.##")
+        let d = c.expires_at.ToString("dd.MM.yyyy")
+        $"{c.id}. {v} EUR, истекает {d}"
+
+    let couponsKeyboard (coupons: Coupon array) =
+        coupons
+        |> Array.truncate 10
+        |> Array.map (fun c -> seq { InlineKeyboardButton.WithCallbackData($"Взять {c.id}", $"take:{c.id}") })
+        |> Seq.ofArray
+        |> InlineKeyboardMarkup
+
+    let addConfirmKeyboard (id: Guid) =
+        seq { seq { InlineKeyboardButton.WithCallbackData("✅ Добавить", $"confirm_add:{id}") } }
+        |> InlineKeyboardMarkup
+
+    let ensureCommunityMember (userId: int64) (chatId: int64) =
+        task {
+            let! isMember = membership.IsMember(userId)
+            if not isMember then
+                do! sendText chatId "Бот доступен только членам сообщества. Если ты уверен что ты в чате — напиши /start ещё раз."
+            return isMember
+        }
+
+    let handleStart (user: DbUser) (chatId: int64) =
+        task {
+            let! ok = ensureCommunityMember user.id chatId
+            if ok then
+                do!
+                    sendText chatId
+                        "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add — добавить купон\n/coupons — посмотреть доступные\n/take <id> — взять купон\n/used <id> — отметить использованным\n/return <id> — вернуть в доступные\n/my — мои купоны\n/stats — моя статистика\n/help — помощь"
+        }
+
+    let handleHelp (chatId: int64) =
+        sendText chatId
+            "Команды (все в личке):\n/start\n/add\n/coupons\n/take <id>\n/used <id>\n/return <id>\n/my\n/stats\n/help"
+
+    let handleCoupons (chatId: int64) =
+        task {
+            let! coupons = db.GetAvailableCoupons()
+            if coupons.Length = 0 then
+                do! sendText chatId "Сейчас нет доступных купонов."
+            else
+                let text =
+                    coupons
+                    |> Array.truncate 50
+                    |> Array.map formatCouponLine
+                    |> String.concat "\n"
+                do!
+                    botClient.SendMessage(ChatId chatId, $"Доступные купоны:\n{text}", replyMarkup = couponsKeyboard coupons)
+                    |> taskIgnore
+        }
+
+    let handleTake (taker: DbUser) (chatId: int64) (couponId: int) =
+        task {
+            let! ok = ensureCommunityMember taker.id chatId
+            if ok then
+                match! db.TryTakeCoupon(couponId, taker.id) with
+                | NotFoundOrNotAvailable ->
+                    do! sendText chatId $"Купон {couponId} уже взят или не существует."
+                | Taken coupon ->
+                    let v = coupon.value.ToString("0.##")
+                    let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                    do! botClient.SendPhoto(ChatId chatId, InputFileId coupon.photo_file_id) |> taskIgnore
+                    do! sendText chatId $"Ты взял купон {couponId}: {v} EUR, истекает {d}"
+                    do! notifications.CouponTaken(coupon, taker)
+        }
+
+    let handleUsed (user: DbUser) (chatId: int64) (couponId: int) =
+        task {
+            let! ok = ensureCommunityMember user.id chatId
+            if ok then
+                let! updated = db.MarkUsed(couponId, user.id)
+                if updated then
+                    do! sendText chatId $"Отметил купон {couponId} как использованный."
+                    match! db.GetCouponById(couponId) with
+                    | Some coupon -> do! notifications.CouponUsed(coupon, user)
+                    | None -> ()
+                else
+                    do! sendText chatId $"Не получилось отметить купон {couponId}. Убедись что он взят тобой."
+        }
+
+    let handleReturn (user: DbUser) (chatId: int64) (couponId: int) =
+        task {
+            let! ok = ensureCommunityMember user.id chatId
+            if ok then
+                let! updated = db.ReturnToAvailable(couponId, user.id)
+                if updated then
+                    do! sendText chatId $"Вернул купон {couponId} в доступные."
+                    match! db.GetCouponById(couponId) with
+                    | Some coupon -> do! notifications.CouponReturned(coupon, user)
+                    | None -> ()
+                else
+                    do! sendText chatId $"Не получилось вернуть купон {couponId}. Убедись что он взят тобой."
+        }
+
+    let handleStats (user: DbUser) (chatId: int64) =
+        task {
+            let! ok = ensureCommunityMember user.id chatId
+            if ok then
+                let! added, taken, used = db.GetUserStats(user.id)
+                do! sendText chatId $"Статистика:\nДобавлено: {added}\nВзято: {taken}\nИспользовано: {used}"
+        }
+
+    let handleMy (user: DbUser) (chatId: int64) =
+        task {
+            let! ok = ensureCommunityMember user.id chatId
+            if ok then
+                let! owned = db.GetCouponsByOwner(user.id)
+                let! taken = db.GetCouponsTakenBy(user.id)
+                let ownedText =
+                    if owned.Length = 0 then "—"
+                    else owned |> Array.truncate 20 |> Array.map formatCouponLine |> String.concat "\n"
+                let takenText =
+                    if taken.Length = 0 then "—"
+                    else taken |> Array.truncate 20 |> Array.map formatCouponLine |> String.concat "\n"
+                do! sendText chatId $"Мои добавленные:\n{ownedText}\n\nМои взятые:\n{takenText}"
+        }
+
+    let handleAdd (user: DbUser) (msg: Message) =
+        task {
+            let chatId = msg.Chat.Id
+            let! ok = ensureCommunityMember user.id chatId
+            if ok then
+                let caption = msg.Caption
+                let hasPhoto = not (isNull msg.Photo) && msg.Photo.Length > 0
+                if not hasPhoto then
+                    do! sendText chatId "Чтобы добавить купон, пришли фото купона с подписью:\n/add <value> <date>\nНапример: /add 10 2026-01-25"
+                else
+                    let parts =
+                        if isNull caption then [||]
+                        else caption.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
+                    if parts.Length = 1 && parts[0] = "/add" then
+                        // OCR-assisted flow: attempt to prefill value/date
+                        if not botConfig.OcrEnabled then
+                            do! sendText chatId "OCR выключен. Используй подпись вида: /add <value> <date>\nНапример: /add 10 2026-01-25"
+                        else
+                            let candidatePhotos =
+                                msg.Photo
+                                |> Array.filter (fun p ->
+                                    let size = if p.FileSize.HasValue then int64 p.FileSize.Value else 0L
+                                    size = 0L || size <= botConfig.OcrMaxFileSizeBytes)
+
+                            if candidatePhotos.Length = 0 then
+                                do! sendText chatId $"Фото слишком большое для OCR (лимит {botConfig.OcrMaxFileSizeBytes} bytes). Используй ручной ввод: /add <value> <date>"
+                            else
+                                let largestPhoto =
+                                    candidatePhotos
+                                    |> Array.maxBy (fun p -> if p.FileSize.HasValue then p.FileSize.Value else 0)
+                                let! file = botClient.GetFile(largestPhoto.FileId)
+                                if String.IsNullOrWhiteSpace(file.FilePath) then
+                                    do! sendText chatId "Не смог получить путь файла в Telegram. Попробуй ещё раз."
+                                else
+                                    let apiBase = if isNull botConfig.TelegramApiBaseUrl then "https://api.telegram.org" else botConfig.TelegramApiBaseUrl
+                                    let fileUrl = $"{apiBase}/file/bot{botConfig.BotToken}/{file.FilePath}"
+                                    let! ocrText = ocr.TextFromImageUrl(fileUrl)
+                                    let valueOpt = tryParseValueFromOcrText ocrText
+                                    let dateOpt = tryParseDateFromOcrText ocrText
+                                    match valueOpt, dateOpt with
+                                    | Some value, Some expiresAt ->
+                                        let id = Guid.NewGuid()
+                                        PendingAddStore.adds[id] <- { OwnerId = user.id; PhotoFileId = largestPhoto.FileId; Value = value; ExpiresAt = expiresAt }
+                                        let v = value.ToString("0.##")
+                                        let d = expiresAt.ToString("dd.MM.yyyy")
+                                        do!
+                                            botClient.SendMessage(
+                                                ChatId chatId,
+                                                $"OCR распознал: {v} EUR, истекает {d}. Подтвердить добавление?",
+                                                replyMarkup = addConfirmKeyboard id)
+                                            |> taskIgnore
+                                    | _ ->
+                                        do! sendText chatId "OCR не смог распознать номинал и/или дату. Используй ручной ввод: фото с подписью /add <value> <date>"
+                    elif parts.Length < 3 || parts[0] <> "/add" then
+                        do! sendText chatId "Нужна подпись вида: /add <value> <date>\nНапример: /add 10 2026-01-25"
+                    else
+                        let valueOpt =
+                            match System.Decimal.TryParse(parts[1], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture) with
+                            | true, v -> Some v
+                            | _ -> None
+                        let dateOpt = tryParseDateOnly parts[2]
+                        match valueOpt, dateOpt with
+                        | Some value, Some expiresAt ->
+                            let largestPhoto =
+                                msg.Photo
+                                |> Array.maxBy (fun p -> if p.FileSize.HasValue then p.FileSize.Value else 0)
+                            let! coupon = db.AddCoupon(user.id, largestPhoto.FileId, value, expiresAt, null)
+                            let v = coupon.value.ToString("0.##")
+                            let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                            do! sendText chatId $"Добавил купон {coupon.id}: {v} EUR, истекает {d}"
+                            do! notifications.CouponAdded(coupon)
+                        | _ ->
+                            do! sendText chatId "Не понял value/date. Пример: /add 10 2026-01-25 (или /add 10 25.01.2026)"
+        }
+
+    interface IBotService with
+        member _.OnUpdate(update: Update) =
+            task {
+                logger.LogInformation("BotService.OnUpdate: UpdateId={UpdateId}, Message={HasMessage}, CallbackQuery={HasCallback}", 
+                    update.Id, not (isNull update.Message), not (isNull update.CallbackQuery))
+                if isNull update then
+                    ()
+                elif update.ChatMember <> null then
+                    membership.OnChatMemberUpdated(update.ChatMember)
+                elif not (isNull update.CallbackQuery) then
+                    let cq = update.CallbackQuery
+                    if cq.Message <> null && cq.From <> null then
+                        let! user = db.UpsertUser(DbUser.ofTelegramUser cq.From)
+                        if cq.Message.Chat.Type = ChatType.Private && not (isNull cq.Data) && cq.Data.StartsWith("take:") then
+                            let idStr = cq.Data.Substring("take:".Length)
+                            match parseInt idStr with
+                            | Some couponId ->
+                                do! handleTake user cq.Message.Chat.Id couponId
+                            | None -> ()
+                        elif cq.Message.Chat.Type = ChatType.Private && not (isNull cq.Data) && cq.Data.StartsWith("confirm_add:") then
+                            let idStr = cq.Data.Substring("confirm_add:".Length)
+                            match Guid.TryParse(idStr) with
+                            | true, id ->
+                                match PendingAddStore.adds.TryRemove(id) with
+                                | true, pending ->
+                                    let! coupon = db.AddCoupon(pending.OwnerId, pending.PhotoFileId, pending.Value, pending.ExpiresAt, null)
+                                    let v = coupon.value.ToString("0.##")
+                                    let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                                    do! sendText cq.Message.Chat.Id $"Добавил купон {coupon.id}: {v} EUR, истекает {d}"
+                                    do! notifications.CouponAdded(coupon)
+                                | _ ->
+                                    do! sendText cq.Message.Chat.Id "Эта операция уже устарела. Пришли /add ещё раз."
+                            | _ ->
+                                ()
+                        do! botClient.AnswerCallbackQuery(cq.Id)
+                elif not (isNull update.Message) then
+                    let msg = update.Message
+                    if msg.Chat <> null && msg.Chat.Type = ChatType.Private && msg.From <> null then
+                        let! user = db.UpsertUser(DbUser.ofTelegramUser msg.From)
+                        match msg.Text with
+                        | "/ping" -> do! sendText msg.Chat.Id "pong"
+                        | "/start" -> do! handleStart user msg.Chat.Id
+                        | "/help" -> do! handleHelp msg.Chat.Id
+                        | "/coupons" -> do! handleCoupons msg.Chat.Id
+                        | "/my" -> do! handleMy user msg.Chat.Id
+                        | "/stats" -> do! handleStats user msg.Chat.Id
+                        | t when not (isNull t) && t.StartsWith("/take ") ->
+                            match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
+                            | Some couponId -> do! handleTake user msg.Chat.Id couponId
+                            | None -> do! sendText msg.Chat.Id "Формат: /take <id>"
+                        | t when not (isNull t) && t.StartsWith("/used ") ->
+                            match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
+                            | Some couponId -> do! handleUsed user msg.Chat.Id couponId
+                            | None -> do! sendText msg.Chat.Id "Формат: /used <id>"
+                        | t when not (isNull t) && t.StartsWith("/return ") ->
+                            match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
+                            | Some couponId -> do! handleReturn user msg.Chat.Id couponId
+                            | None -> do! sendText msg.Chat.Id "Формат: /return <id>"
+                        | t when t = "/add" ->
+                            do! sendText msg.Chat.Id "Пришли фото купона с подписью:\n/add <value> <date>\nНапример: /add 10 2026-01-25"
+                        | _ ->
+                            // allow /add via photo caption
+                            if msg.Photo <> null && msg.Photo.Length > 0 && msg.Caption <> null && msg.Caption.StartsWith("/add") then
+                                do! handleAdd user msg
+                            else
+                                logger.LogInformation("Ignoring private message")
+                    else
+                        ()
+                else
+                    ()
+            }
+
