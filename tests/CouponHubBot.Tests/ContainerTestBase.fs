@@ -1,6 +1,7 @@
 namespace CouponHubBot.Tests
 
 open System
+open System.IO
 open System.Net
 open System.Net.Http
 open System.Net.Http.Json
@@ -54,7 +55,7 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
         ContainerBuilder()
             .WithImage("flyway/flyway")
             .WithNetwork(network)
-            .WithBindMount(solutionDirPath + "\\src\\migrations", "/flyway/sql", AccessMode.ReadOnly)
+            .WithBindMount(Path.Combine(solutionDirPath, "src", "migrations"), "/flyway/sql", AccessMode.ReadOnly)
             .WithEnvironment("FLYWAY_URL", $"jdbc:postgresql://{dbAlias}:5432/coupon_hub_bot")
             .WithEnvironment("FLYWAY_USER", "coupon_hub_bot_service")
             .WithEnvironment("FLYWAY_PASSWORD", "coupon_hub_bot_service")
@@ -158,7 +159,7 @@ VALUES (100, 'seed-photo', 10.00, CURRENT_DATE, 'available');
                 publicConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;"
 
                 // init schema/user/db
-                let initSql = IO.File.ReadAllText(solutionDirPath + "\\init.sql")
+                let initSql = File.ReadAllText(Path.Combine(solutionDirPath, "init.sql"))
                 let! initResult = dbContainer.ExecScriptAsync(initSql)
                 if initResult.Stderr <> "" then failwith initResult.Stderr
 
