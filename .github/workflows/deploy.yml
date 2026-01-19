@@ -49,16 +49,22 @@ jobs:
 
     # if tests are ok, deploy to production
     - name: Apply migrations to production DB
-      run: >-
-        docker run --rm
-        --network host
-        --volume ${{ github.workspace }}/src/migrations:/flyway/sql:ro
-        --volume ${{ github.workspace }}/reports:/flyway/reports
-        "${{ env.DOCKER_IMAGE }}"
-        -url="${{ secrets.DB_PROD_URL }}"
-        -user="${{ secrets.DB_PROD_USERNAME }}"
-        -password="${{ secrets.DB_PROD_PASSWORD }}" 
+      run: |
+        # TODO: Refactor DB_PROD_URL to contain only base URL (without database name).
+        # Each project should specify its own database name separately (e.g., DB_PROD_DATABASE secret).
+        # Current workaround: replace database name in DB_PROD_URL with coupon_hub_bot
+        DB_URL="${DB_PROD_URL%/*}/coupon_hub_bot"
+        docker run --rm \
+        --network host \
+        --volume ${{ github.workspace }}/src/migrations:/flyway/sql:ro \
+        --volume ${{ github.workspace }}/reports:/flyway/reports \
+        "${{ env.DOCKER_IMAGE }}" \
+        -url="$DB_URL" \
+        -user="${{ secrets.DB_PROD_USERNAME }}" \
+        -password="${{ secrets.DB_PROD_PASSWORD }}" \
         migrate -schemas="${{ env.SCHEMAS }}"
+      env:
+        DB_PROD_URL: ${{ secrets.DB_PROD_URL }}
 
     - name: Disconnect VPN
       if: always()
