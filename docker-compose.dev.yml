@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15.6
+    container_name: coupon-hub-postgres-dev
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5439:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  flyway:
+    image: flyway/flyway
+    container_name: coupon-hub-flyway-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src/migrations:/flyway/sql:ro
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/coupon_hub_bot
+      FLYWAY_USER: coupon_hub_bot_service
+      FLYWAY_PASSWORD: coupon_hub_bot_service
+    command: migrate -schemas=public
+    profiles:
+      - migrate
+
+  fake-tg-api:
+    image: coupon-hub-fake-tg-api-test:latest
+    container_name: coupon-hub-fake-tg-api-dev
+    build:
+      context: .
+      dockerfile: tests/FakeTgApi/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+
+volumes:
+  postgres_data:

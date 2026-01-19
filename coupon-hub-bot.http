@@ -1,0 +1,140 @@
+### Coupon Hub Bot - HTTP Requests for Rider/IntelliJ HTTP Client
+### Set up your .env file first, then run the bot locally with debugger attached
+
+@baseUrl = http://localhost:5046
+@authToken = OUR_SECRET
+
+### Health Check
+GET {{baseUrl}}/health
+
+### Send /start command (webhook)
+POST {{baseUrl}}/bot
+X-Telegram-Bot-Api-Secret-Token: {{authToken}}
+Content-Type: application/json
+
+{
+  "update_id": 1,
+  "message": {
+    "message_id": 1,
+    "date": 0,
+    "chat": {
+      "id": 111,
+      "type": "private"
+    },
+    "from": {
+      "id": 111,
+      "is_bot": false,
+      "first_name": "Test",
+      "username": "testuser"
+    },
+    "text": "/start"
+  }
+}
+
+### Send /coupons command
+POST {{baseUrl}}/bot
+X-Telegram-Bot-Api-Secret-Token: {{authToken}}
+Content-Type: application/json
+
+{
+  "update_id": 2,
+  "message": {
+    "message_id": 2,
+    "date": 0,
+    "chat": {
+      "id": 111,
+      "type": "private"
+    },
+    "from": {
+      "id": 111,
+      "is_bot": false,
+      "first_name": "Test",
+      "username": "testuser"
+    },
+    "text": "/coupons"
+  }
+}
+
+### Send /add command with photo
+POST {{baseUrl}}/bot
+X-Telegram-Bot-Api-Secret-Token: {{authToken}}
+Content-Type: application/json
+
+{
+  "update_id": 3,
+  "message": {
+    "message_id": 3,
+    "date": 0,
+    "chat": {
+      "id": 111,
+      "type": "private"
+    },
+    "from": {
+      "id": 111,
+      "is_bot": false,
+      "first_name": "Test",
+      "username": "testuser"
+    },
+    "caption": "/add 10 2026-01-25",
+    "photo": [
+      {
+        "file_id": "photo-1",
+        "file_unique_id": "photo-1-uid",
+        "file_size": 1024,
+        "width": 100,
+        "height": 100
+      }
+    ]
+  }
+}
+
+### Send /take command
+POST {{baseUrl}}/bot
+X-Telegram-Bot-Api-Secret-Token: {{authToken}}
+Content-Type: application/json
+
+{
+  "update_id": 4,
+  "message": {
+    "message_id": 4,
+    "date": 0,
+    "chat": {
+      "id": 111,
+      "type": "private"
+    },
+    "from": {
+      "id": 111,
+      "is_bot": false,
+      "first_name": "Test",
+      "username": "testuser"
+    },
+    "text": "/take 1"
+  }
+}
+
+### Test endpoint: Trigger reminder manually (only if TEST_MODE=true)
+POST {{baseUrl}}/test/run-reminder
+Content-Type: application/json
+
+### Invalid API key (should return 401)
+POST {{baseUrl}}/bot
+X-Telegram-Bot-Api-Secret-Token: WRONG_TOKEN
+Content-Type: application/json
+
+{
+  "update_id": 999,
+  "message": {
+    "message_id": 999,
+    "date": 0,
+    "chat": {
+      "id": 111,
+      "type": "private"
+    },
+    "from": {
+      "id": 111,
+      "is_bot": false,
+      "first_name": "Test"
+    },
+    "text": "/start"
+  }
+}
