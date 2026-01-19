@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0.416 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.102 AS build
 WORKDIR /src
 
 # Build argument to force rebuild (prevents Docker layer caching in tests)
@@ -10,7 +10,7 @@ RUN dotnet restore tests/FakeTgApi/FakeTgApi.fsproj
 COPY tests/FakeTgApi/ tests/FakeTgApi/
 RUN dotnet publish tests/FakeTgApi/FakeTgApi.fsproj -c Release -o /publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0.22 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.2 AS runtime
 WORKDIR /app
 COPY --from=build /publish .
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080
