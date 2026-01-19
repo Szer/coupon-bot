@@ -84,6 +84,6 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         push: true
-        tags: ghcr.io/${{ github.repository }}:${{ github.sha }}, ghcr.io/${{ github.repository }}:latest
+        tags: ghcr.io/szer/coupon-bot:${{ github.sha }}, ghcr.io/szer/coupon-bot:latest
         file: ./Dockerfile
         platforms: linux/arm64
