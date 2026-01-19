@@ -7,6 +7,7 @@ open Dapper
 open Npgsql
 open Xunit
 open Xunit.Extensions.AssemblyFixture
+open FakeCallHelpers
 
 type CouponTests(fixture: DefaultCouponHubTestContainers) =
 
@@ -29,8 +30,10 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("\"chat_id\":200") && c.Body.Contains("Добавил купон")))
-            Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("\"chat_id\":-42") && c.Body.Contains("добавил купон")))
+            Assert.True(findCallWithText calls 200L "Добавил купон",
+                $"Expected DM to user 200 with 'Добавил купон'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "добавил купон",
+                $"Expected group notification to -42 with 'добавил купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -51,10 +54,15 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! photoCalls = fixture.GetFakeCalls("sendPhoto")
-            Assert.True(photoCalls |> Array.exists (fun c -> c.Body.Contains("\"chat_id\":202")))
+            Assert.True(photoCalls |> Array.exists (fun call ->
+                match parseCallBody call.Body with
+                | Some parsed -> parsed.ChatId = Some 202L
+                | _ -> false),
+                $"Expected sendPhoto to user 202. Got %d{photoCalls.Length} calls")
 
             let! msgCalls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(msgCalls |> Array.exists (fun c -> c.Body.Contains("\"chat_id\":-42") && c.Body.Contains("взял купон")))
+            Assert.True(findCallWithText msgCalls -42L "взял купон",
+                $"Expected group notification to -42 with 'взял купон'. Got %d{msgCalls.Length} calls")
         }
 
     [<Fact>]

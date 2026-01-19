@@ -8,6 +8,7 @@ open Dapper
 open Npgsql
 open Xunit
 open Xunit.Extensions.AssemblyFixture
+open FakeCallHelpers
 
 type ReminderTests(fixture: DefaultCouponHubTestContainers) =
 
@@ -27,7 +28,8 @@ type ReminderTests(fixture: DefaultCouponHubTestContainers) =
             let! _ = fixture.Bot.PostAsync("/test/run-reminder", body)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("\"chat_id\":-42") && c.Body.Contains("Сегодня истекают")))
+            Assert.True(findCallWithText calls -42L "Сегодня истекают",
+                $"Expected reminder to group -42 with 'Сегодня истекают'. Got %d{calls.Length} calls")
         }
 
     interface IAssemblyFixture<DefaultCouponHubTestContainers>

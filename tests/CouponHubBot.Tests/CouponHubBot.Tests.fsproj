@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="TgMessageUtils.fs" />
     <Compile Include="ContainerTestBase.fs" />
+    <Compile Include="FakeCallHelpers.fs" />
     <Compile Include="MembershipTests.fs" />
     <Compile Include="CouponTests.fs" />
     <Compile Include="ReminderTests.fs" />
