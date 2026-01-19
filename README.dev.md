@@ -5,14 +5,17 @@
 ### 1. Start Infrastructure (PostgreSQL + FakeTgApi)
 
 ```bash
-# Start Postgres
-docker-compose -f docker-compose.dev.yml up -d postgres
+# Start Postgres and run migrations (flyway will run automatically and exit)
+docker-compose -f docker-compose.dev.yml up -d postgres flyway
 
-# Wait for Postgres to be ready, then run migrations
-docker-compose -f docker-compose.dev.yml --profile migrate run --rm flyway
-
-# Start FakeTgApi (optional, if you want to test without real Telegram API)
+# Wait a moment for flyway to complete, then start FakeTgApi (optional)
 docker-compose -f docker-compose.dev.yml up -d fake-tg-api
+```
+
+**Note:** Flyway runs once and exits. If you need to re-run migrations:
+```bash
+# Force recreate and run flyway again
+docker-compose -f docker-compose.dev.yml run --rm flyway
 ```
 
 ### 2. Configure Environment Variables
