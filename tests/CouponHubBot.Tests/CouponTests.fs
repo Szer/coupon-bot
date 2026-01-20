@@ -94,6 +94,35 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
+    let ``Taking coupon sends confirmation with Вернуть and Использован buttons`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 259L, username = "take_btn_o", firstName = "O")
+            let taker = Tg.user(id = 260L, username = "take_btn_t", firstName = "T")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"take:{couponId}", taker))
+
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            let takenMsg =
+                msgCalls
+                |> Array.tryFind (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some 260L ->
+                        p.Text.IsSome && p.Text.Value.Contains("Ты взял купон")
+                    | _ -> false)
+            Assert.True(takenMsg.IsSome, "Expected 'Ты взял купон' message to taker")
+            Assert.True(
+                takenMsg.Value.Body.Contains("return:") && takenMsg.Value.Body.Contains("used:") && takenMsg.Value.Body.Contains(":del"),
+                "Expected inline buttons Вернуть/Использован with :del (delete on success)")
+        }
+
+    [<Fact>]
     let ``Take non-existent or already taken coupon shows error`` () =
         task {
             do! fixture.ClearFakeCalls()
@@ -429,6 +458,154 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 $"Expected 'Вернул' when pressing Вернуть. Got %d{calls.Length} calls")
             Assert.True(findCallWithText calls -42L "вернул",
                 $"Expected group notification. Got %d{calls.Length} calls")
+        }
+
+    [<Fact>]
+    let ``Stale used callback when coupon was returned and taken by another shows error and does not delete`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 270L, username = "stale_u_o", firstName = "O")
+            let userA = Tg.user(id = 271L, username = "stale_u_a", firstName = "A")
+            let userB = Tg.user(id = 272L, username = "stale_u_b", firstName = "B")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(userA.Id, "member")
+            do! fixture.SetChatMemberStatus(userB.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", userA))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/return {couponId}", userA))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", userB))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"used:{couponId}:del", userA))
+
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls 271L "Не получилось",
+                "Expected 'Не получилось' when using stale used: callback (coupon taken by another)")
+            let! delCalls = fixture.GetFakeCalls("deleteMessage")
+            Assert.Equal(0, delCalls.Length)
+        }
+
+    [<Fact>]
+    let ``Stale used callback when coupon already used shows error and does not delete`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 273L, username = "stale_used_o", firstName = "O")
+            let taker = Tg.user(id = 274L, username = "stale_used_t", firstName = "T")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/used {couponId}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"used:{couponId}:del", taker))
+
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls 274L "Не получилось",
+                "Expected 'Не получилось' when using used: on already-used coupon")
+            let! delCalls = fixture.GetFakeCalls("deleteMessage")
+            Assert.Equal(0, delCalls.Length)
+        }
+
+    [<Fact>]
+    let ``Stale return callback when coupon was returned and taken by another shows error and does not delete`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 275L, username = "stale_r_o", firstName = "O")
+            let userA = Tg.user(id = 276L, username = "stale_r_a", firstName = "A")
+            let userB = Tg.user(id = 277L, username = "stale_r_b", firstName = "B")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(userA.Id, "member")
+            do! fixture.SetChatMemberStatus(userB.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", userA))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/return {couponId}", userA))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", userB))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"return:{couponId}:del", userA))
+
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls 276L "Не получилось",
+                "Expected 'Не получилось' when using stale return: callback (coupon taken by another)")
+            let! delCalls = fixture.GetFakeCalls("deleteMessage")
+            Assert.Equal(0, delCalls.Length)
+        }
+
+    [<Fact>]
+    let ``Stale return callback when coupon already used shows error and does not delete`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 278L, username = "stale_ret_used_o", firstName = "O")
+            let taker = Tg.user(id = 279L, username = "stale_ret_used_t", firstName = "T")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/used {couponId}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"return:{couponId}:del", taker))
+
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls 279L "Не получилось",
+                "Expected 'Не получилось' when using return: on already-used coupon")
+            let! delCalls = fixture.GetFakeCalls("deleteMessage")
+            Assert.Equal(0, delCalls.Length)
+        }
+
+    [<Fact>]
+    let ``Successful used from take-confirmation deletes that message`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 280L, username = "del_used_o", firstName = "O")
+            let taker = Tg.user(id = 281L, username = "del_used_t", firstName = "T")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"used:{couponId}:del", taker))
+
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls 281L "Отметил",
+                "Expected 'Отметил' when pressing Использован on take-confirmation")
+            let! delCalls = fixture.GetFakeCalls("deleteMessage")
+            Assert.True(delCalls.Length >= 1, "Expected deleteMessage after successful used from take-confirmation")
+        }
+
+    [<Fact>]
+    let ``Successful return from take-confirmation deletes that message`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 282L, username = "del_ret_o", firstName = "O")
+            let taker = Tg.user(id = 283L, username = "del_ret_t", firstName = "T")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"return:{couponId}:del", taker))
+
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls 283L "Вернул",
+                "Expected 'Вернул' when pressing Вернуть on take-confirmation")
+            let! delCalls = fixture.GetFakeCalls("deleteMessage")
+            Assert.True(delCalls.Length >= 1, "Expected deleteMessage after successful return from take-confirmation")
         }
 
     [<Fact>]

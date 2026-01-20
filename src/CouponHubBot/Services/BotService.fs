@@ -89,6 +89,16 @@ type BotService(
         |> Seq.ofArray
         |> InlineKeyboardMarkup
 
+    /// Клавиатура для сообщения «Ты взял купон»: при успешном used/return сообщение удаляем.
+    let singleTakenKeyboard (c: Coupon) =
+        seq {
+            seq {
+                InlineKeyboardButton.WithCallbackData("Вернуть", $"return:{c.id}:del")
+                InlineKeyboardButton.WithCallbackData("Использован", $"used:{c.id}:del")
+            }
+        }
+        |> InlineKeyboardMarkup
+
     let ensureCommunityMember (userId: int64) (chatId: int64) =
         task {
             let! isMember = membership.IsMember(userId)
@@ -130,7 +140,12 @@ type BotService(
                 let v = coupon.value.ToString("0.##")
                 let d = coupon.expires_at.ToString("dd.MM.yyyy")
                 do! botClient.SendPhoto(ChatId chatId, InputFileId coupon.photo_file_id) |> taskIgnore
-                do! sendText chatId $"Ты взял купон {couponId}: {v} EUR, истекает {d}"
+                do!
+                    botClient.SendMessage(
+                        ChatId chatId,
+                        $"Ты взял купон {couponId}: {v} EUR, истекает {d}",
+                        replyMarkup = singleTakenKeyboard coupon)
+                    |> taskIgnore
                 do! notifications.CouponTaken(coupon, taker)
         }
 
@@ -144,6 +159,7 @@ type BotService(
                 | None -> ()
             else
                 do! sendText chatId $"Не получилось отметить купон {couponId}. Убедись что он взят тобой."
+            return updated
         }
 
     let handleReturn (user: DbUser) (chatId: int64) (couponId: int) =
@@ -156,6 +172,7 @@ type BotService(
                 | None -> ()
             else
                 do! sendText chatId $"Не получилось вернуть купон {couponId}. Убедись что он взят тобой."
+            return updated
         }
 
     let handleStats (user: DbUser) (chatId: int64) =
@@ -302,14 +319,28 @@ type BotService(
                     | _ ->
                         ()
                 elif isPrivateChat && hasData && cq.Data.StartsWith("return:") then
-                    let idStr = cq.Data.Substring("return:".Length)
+                    let deleteOnSuccess = cq.Data.EndsWith(":del")
+                    let baseData = if deleteOnSuccess then cq.Data.Substring(0, cq.Data.Length - 4) else cq.Data
+                    let idStr = baseData.Substring("return:".Length)
                     match parseInt idStr with
-                    | Some couponId -> do! handleReturn user cq.Message.Chat.Id couponId
+                    | Some couponId ->
+                        let! ok = handleReturn user cq.Message.Chat.Id couponId
+                        if ok && deleteOnSuccess && cq.Message <> null then
+                            try
+                                do! botClient.DeleteMessage(ChatId cq.Message.Chat.Id, cq.Message.MessageId)
+                            with _ -> ()
                     | None -> ()
                 elif isPrivateChat && hasData && cq.Data.StartsWith("used:") then
-                    let idStr = cq.Data.Substring("used:".Length)
+                    let deleteOnSuccess = cq.Data.EndsWith(":del")
+                    let baseData = if deleteOnSuccess then cq.Data.Substring(0, cq.Data.Length - 4) else cq.Data
+                    let idStr = baseData.Substring("used:".Length)
                     match parseInt idStr with
-                    | Some couponId -> do! handleUsed user cq.Message.Chat.Id couponId
+                    | Some couponId ->
+                        let! ok = handleUsed user cq.Message.Chat.Id couponId
+                        if ok && deleteOnSuccess && cq.Message <> null then
+                            try
+                                do! botClient.DeleteMessage(ChatId cq.Message.Chat.Id, cq.Message.MessageId)
+                            with _ -> ()
                     | None -> ()
 
             do! botClient.AnswerCallbackQuery(cq.Id)
@@ -334,11 +365,15 @@ type BotService(
                     | None -> do! sendText msg.Chat.Id "Формат: /take <id>"
                 | t when not (isNull t) && t.StartsWith("/used ") ->
                     match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
-                    | Some couponId -> do! handleUsed user msg.Chat.Id couponId
+                    | Some couponId ->
+                        let! _ = handleUsed user msg.Chat.Id couponId
+                        ()
                     | None -> do! sendText msg.Chat.Id "Формат: /used <id>"
                 | t when not (isNull t) && t.StartsWith("/return ") ->
                     match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
-                    | Some couponId -> do! handleReturn user msg.Chat.Id couponId
+                    | Some couponId ->
+                        let! _ = handleReturn user msg.Chat.Id couponId
+                        ()
                     | None -> do! sendText msg.Chat.Id "Формат: /return <id>"
                 | t when not (isNull t) && t.StartsWith("/add") ->
                     do! handleAdd user msg
