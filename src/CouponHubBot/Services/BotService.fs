@@ -82,14 +82,9 @@ type BotService(
             return isMember
         }
 
-    let handleStart (user: DbUser) (chatId: int64) =
-        task {
-            let! ok = ensureCommunityMember user.id chatId
-            if ok then
-                do!
-                    sendText chatId
-                        "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add — добавить купон\n/coupons — посмотреть доступные\n/take <id> — взять купон\n/used <id> — отметить использованным\n/return <id> — вернуть в доступные\n/my — мои купоны\n/stats — моя статистика\n/help — помощь"
-        }
+    let handleStart (chatId: int64) =
+        sendText chatId
+            "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add — добавить купон\n/coupons — посмотреть доступные\n/take <id> — взять купон\n/used <id> — отметить использованным\n/return <id> — вернуть в доступные\n/my — мои купоны\n/stats — моя статистика\n/help — помощь"
 
     let handleHelp (chatId: int64) =
         sendText chatId
@@ -192,7 +187,7 @@ type BotService(
                             size = 0L || size <= botConfig.OcrMaxFileSizeBytes)
 
                     if candidatePhotos.Length = 0 then
-                        do! sendText chatId $"Фото слишком большое (лимит {botConfig.OcrMaxFileSizeBytes/1024L} MBs). Используй ручной ввод: /add <value> <date>"
+                        do! sendText chatId $"Фото слишком большое (лимит {botConfig.OcrMaxFileSizeBytes/(1024L*1024L)} MBs). Используй ручной ввод: /add <value> <date>"
                     else
                         let largestPhoto =
                             candidatePhotos
@@ -245,6 +240,9 @@ type BotService(
     let handleCallbackQuery (cq: CallbackQuery) =
         task {
             if cq.Message <> null && cq.From <> null then
+                let! ok = ensureCommunityMember cq.From.Id cq.Message.Chat.Id
+                if not ok then () else
+                
                 let! user = db.UpsertUser(DbUser.ofTelegramUser cq.From)
 
                 let isPrivateChat = cq.Message.Chat.Type = ChatType.Private
@@ -292,7 +290,8 @@ type BotService(
                 if not ok then () else
                 
                 let! user = db.UpsertUser(DbUser.ofTelegramUser msg.From)
-                match msg.Text with 
+                match msg.Text with
+                | "/start" -> do! handleStart msg.Chat.Id
                 | "/help" -> do! handleHelp msg.Chat.Id
                 | "/coupons" -> do! handleCoupons msg.Chat.Id
                 | "/my" -> do! handleMy user msg.Chat.Id
