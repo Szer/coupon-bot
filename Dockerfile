@@ -1,4 +1,6 @@
-FROM --platform=linux/arm64 mcr.microsoft.com/dotnet/sdk:10.0.102-noble-arm64v8 AS build
+# Platform is chosen at build time: no --platform => host (amd64 on Windows x64);
+# deploy uses: docker buildx --platform=linux/arm64 => arm64.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.102-noble AS build
 WORKDIR /src
 
 COPY src/CouponHubBot/CouponHubBot.fsproj src/CouponHubBot/
@@ -7,7 +9,7 @@ RUN dotnet restore src/CouponHubBot/CouponHubBot.fsproj
 COPY src/ src/
 RUN dotnet publish src/CouponHubBot/CouponHubBot.fsproj -c Release -o /publish
 
-FROM --platform=linux/arm64 mcr.microsoft.com/dotnet/aspnet:10.0.2-noble-arm64v8 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.2-noble AS runtime
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgssapi-krb5-2 \

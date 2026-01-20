@@ -93,7 +93,6 @@ let builder = WebApplication.CreateBuilder()
     .AddHostedService<MembershipCacheInvalidationService>()
     .AddSingleton<ReminderService>()
     .AddHostedService<ReminderService>(fun sp -> sp.GetRequiredService<ReminderService>())
-    .AddSingleton<ReminderService>(fun sp -> sp.GetRequiredService<ReminderService>())
 
 let app = builder.Build()
 
