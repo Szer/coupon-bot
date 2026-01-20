@@ -1,6 +1,5 @@
 namespace CouponHubBot.Tests
 
-open System.Net
 open System.Threading.Tasks
 open System.Text
 open System.Net.Http
@@ -21,7 +20,8 @@ type ReminderTests(fixture: DefaultCouponHubTestContainers) =
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
             //language=postgresql
             do! conn.ExecuteAsync("INSERT INTO \"user\"(id, username, first_name, created_at, updated_at) VALUES (500,'owner','Owner',NOW(),NOW()) ON CONFLICT DO NOTHING;") :> Task
-            do! conn.ExecuteAsync("INSERT INTO coupon(owner_id, photo_file_id, value, expires_at, status) VALUES (500,'seed-photo',10.00,CURRENT_DATE,'available');") :> Task
+            //language=postgresql
+            do! conn.ExecuteAsync("INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status) VALUES (500,'seed-photo',10.00,50.00,CURRENT_DATE,'available');") :> Task
 
             // Trigger reminder via test endpoint
             use body = new StringContent("", Encoding.UTF8, "application/json")
@@ -33,4 +33,3 @@ type ReminderTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     interface IAssemblyFixture<DefaultCouponHubTestContainers>
-

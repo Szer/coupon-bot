@@ -1,7 +1,6 @@
 namespace CouponHubBot.Tests
 
 open System.Net
-open System.Net.Http
 open Xunit
 open Xunit.Extensions.AssemblyFixture
 open FakeCallHelpers

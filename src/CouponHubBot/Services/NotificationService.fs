@@ -21,8 +21,9 @@ type TelegramNotificationService(
 
     let fmtCoupon (c: Coupon) =
         let v = c.value.ToString("0.##")
+        let mc = c.min_check.ToString("0.##")
         let d = c.expires_at.ToString("dd.MM.yyyy")
-        v, d
+        v, mc, d
 
     let sendToGroup (text: string) =
         task {
@@ -36,29 +37,29 @@ type TelegramNotificationService(
         task {
             let! ownerOpt = db.GetUserById(coupon.owner_id)
             let owner = match ownerOpt with | Some o -> o | None -> { id = coupon.owner_id; username = null; first_name = null; last_name = null; created_at = DateTime.UtcNow; updated_at = DateTime.UtcNow }
-            let v, d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser owner} добавил купон на {v} EUR сроком {d}"
+            let v, mc, d = fmtCoupon coupon
+            do! sendToGroup $"{formatUser owner} добавил(а) купон на {v} EUR из {mc} EUR сроком {d}"
         }
 
     member _.CouponTaken(coupon, taker) =
         task {
             let! ownerOpt = db.GetUserById(coupon.owner_id)
-            let v, d = fmtCoupon coupon
+            let v, mc, d = fmtCoupon coupon
             match ownerOpt with
             | Some owner ->
-                do! sendToGroup $"{formatUser taker} взял купон на {v} EUR сроком {d} от {formatUser owner}"
+                do! sendToGroup $"{formatUser taker} взял(а) купон на {v} EUR из {mc} EUR сроком {d} от {formatUser owner}"
             | None ->
-                do! sendToGroup $"{formatUser taker} взял купон на {v} EUR сроком {d}"
+                do! sendToGroup $"{formatUser taker} взял(а) купон на {v} EUR из {mc} EUR сроком {d}"
         }
 
     member _.CouponUsed(coupon, user) =
         task {
-            let v, _d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser user} использовал купон на {v} EUR"
+            let v, mc, _d = fmtCoupon coupon
+            do! sendToGroup $"{formatUser user} использовал(а) купон на {v} EUR из {mc} EUR"
         }
 
     member _.CouponReturned(coupon, user) =
         task {
-            let v, d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser user} вернул купон на {v} EUR (срок {d}) в общий доступ"
+            let v, mc, d = fmtCoupon coupon
+            do! sendToGroup $"{formatUser user} вернул(а) купон на {v} EUR из {mc} EUR (срок {d}) в общий доступ"
         }

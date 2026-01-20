@@ -35,7 +35,16 @@ type BotService(
     let tryParseDateOnly (s: string) =
         let styles = System.Globalization.DateTimeStyles.None
         let culture = System.Globalization.CultureInfo.InvariantCulture
-        let formats = [| "yyyy-MM-dd"; "dd.MM.yyyy"; "d.M.yyyy" |]
+        let formats =
+            [| "yyyy-MM-dd"
+               "yyyy.MM.dd"
+               "yyyy/MM/dd"
+               "dd.MM.yyyy"
+               "d.M.yyyy"
+               "dd/MM/yyyy"
+               "d/M/yyyy"
+               "dd-MM-yyyy"
+               "d-M-yyyy" |]
         let mutable parsed = Unchecked.defaultof<DateOnly>
         if DateOnly.TryParseExact(s, formats, culture, styles, &parsed) then Some parsed
         else None
@@ -50,6 +59,23 @@ type BotService(
             | _ -> None
         else None
 
+    let tryParseAmountsFromOcrText (text: string) =
+        if String.IsNullOrWhiteSpace text then [||] else
+        let ms = Regex.Matches(text, @"(?i)(?<n>\d{1,3}(?:[.,]\d{1,2})?)\s*(€|eur)\b")
+        ms
+        |> Seq.cast<Match>
+        |> Seq.choose (fun m ->
+            let n = m.Groups.["n"].Value.Replace(',', '.')
+            match Decimal.TryParse(n, Globalization.NumberStyles.Number, Globalization.CultureInfo.InvariantCulture) with
+            | true, v -> Some v
+            | _ -> None)
+        |> Seq.toArray
+
+    let formatCouponValue (c: Coupon) =
+        let v = c.value.ToString("0.##")
+        let mc = c.min_check.ToString("0.##")
+        $"{v} EUR из {mc} EUR"
+
     let tryParseDateFromOcrText (text: string) =
         if String.IsNullOrWhiteSpace text then None else
         let m = Regex.Match(text, @"(?<d>\d{1,2})[./-](?<m>\d{1,2})[./-](?<y>\d{2,4})")
@@ -63,9 +89,8 @@ type BotService(
         else None
 
     let formatCouponLine (c: Coupon) =
-        let v = c.value.ToString("0.##")
         let d = c.expires_at.ToString("dd.MM.yyyy")
-        $"{c.id}. {v} EUR, истекает {d}"
+        $"{c.id}. {formatCouponValue c}, истекает {d}"
 
     let couponsKeyboard (coupons: Coupon array) =
         coupons
@@ -137,12 +162,11 @@ type BotService(
             | NotFoundOrNotAvailable ->
                 do! sendText chatId $"Купон {couponId} уже взят или не существует."
             | Taken coupon ->
-                let v = coupon.value.ToString("0.##")
                 let d = coupon.expires_at.ToString("dd.MM.yyyy")
                 do! botClient.SendPhoto(
                         ChatId chatId,
                         InputFileId coupon.photo_file_id,
-                        caption = $"Ты взял купон {couponId}: {v} EUR, истекает {d}",
+                        caption = $"Ты взял купон {couponId}: {formatCouponValue coupon}, истекает {d}",
                         replyMarkup = singleTakenKeyboard coupon)
                     |> taskIgnore
                 do! notifications.CouponTaken(coupon, taker)
@@ -207,11 +231,11 @@ type BotService(
                 else caption.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
 
             if not hasPhoto then
-                do! sendText chatId "Пришли фото купона с подписью:\n/add <value> <date>\nНапример: /add 10 2026-01-25"
+                do! sendText chatId "Пришли фото купона с подписью:\n/add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
             elif parts.Length = 1 && parts[0] = "/add" then
                 // OCR-assisted flow: attempt to prefill value/date
                 if not botConfig.OcrEnabled then
-                    do! sendText chatId "Используй подпись вида: /add <value> <date>\nНапример: /add 10 2026-01-25"
+                    do! sendText chatId "Используй подпись вида: /add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
                 else
                     let candidatePhotos =
                         msg.Photo
@@ -232,42 +256,50 @@ type BotService(
                             let apiBase = if isNull botConfig.TelegramApiBaseUrl then "https://api.telegram.org" else botConfig.TelegramApiBaseUrl
                             let fileUrl = $"{apiBase}/file/bot{botConfig.BotToken}/{file.FilePath}"
                             let! ocrText = ocr.TextFromImageUrl(fileUrl)
-                            let valueOpt = tryParseValueFromOcrText ocrText
+                            let amounts = tryParseAmountsFromOcrText ocrText
+                            let valueOpt = if amounts.Length > 0 then Some (amounts |> Array.min) else None
+                            let minCheckOpt = if amounts.Length >= 2 then Some (amounts |> Array.max) else None
                             let dateOpt = tryParseDateFromOcrText ocrText
-                            match valueOpt, dateOpt with
-                            | Some value, Some expiresAt ->
+                            match valueOpt, minCheckOpt, dateOpt with
+                            | Some value, Some minCheck, Some expiresAt ->
                                 let id = Guid.NewGuid()
-                                do! db.CreatePendingAdd(id, user.id, largestPhoto.FileId, value, expiresAt)
+                                do! db.CreatePendingAdd(id, user.id, largestPhoto.FileId, value, minCheck, expiresAt)
                                 let v = value.ToString("0.##")
+                                let mc = minCheck.ToString("0.##")
                                 let d = expiresAt.ToString("dd.MM.yyyy")
                                 do!
                                     botClient.SendMessage(
                                         ChatId chatId,
-                                        $"Я распознал: {v} EUR, истекает {d}. Подтвердить добавление?",
+                                        $"Я распознал: {v} EUR из {mc} EUR, истекает {d}. Подтвердить добавление?",
                                         replyMarkup = addConfirmKeyboard id)
                                     |> taskIgnore
                             | _ ->
-                                do! sendText chatId "Я не смог распознать номинал и/или дату. Используй ручной ввод: фото с подписью /add <value> <date>"
-            elif parts.Length >= 3 && parts[0] = "/add" then
+                                do! sendText chatId "Я не смог распознать discount/min_check и/или дату. Используй ручной ввод: фото с подписью /add <discount> <min_check> <date>"
+            elif parts.Length >= 4 && parts[0] = "/add" then
                 let valueOpt =
                     match System.Decimal.TryParse(parts[1], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture) with
                     | true, v -> Some v
                     | _ -> None
-                let dateOpt = tryParseDateOnly parts[2]
-                match valueOpt, dateOpt with
-                | Some value, Some expiresAt ->
+                let minCheckOpt =
+                    match System.Decimal.TryParse(parts[2], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture) with
+                    | true, v -> Some v
+                    | _ -> None
+                let dateOpt = tryParseDateOnly parts[3]
+                match valueOpt, minCheckOpt, dateOpt with
+                | Some value, Some minCheck, Some expiresAt ->
                     let largestPhoto =
                         msg.Photo
                         |> Array.maxBy (fun p -> if p.FileSize.HasValue then p.FileSize.Value else 0)
-                    let! coupon = db.AddCoupon(user.id, largestPhoto.FileId, value, expiresAt, null)
+                    let! coupon = db.AddCoupon(user.id, largestPhoto.FileId, value, minCheck, expiresAt, null)
                     let v = coupon.value.ToString("0.##")
+                    let mc = coupon.min_check.ToString("0.##")
                     let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                    do! sendText chatId $"Добавил купон {coupon.id}: {v} EUR, истекает {d}"
+                    do! sendText chatId $"Добавил купон {coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                     do! notifications.CouponAdded(coupon)
                 | _ ->
-                    do! sendText chatId "Не понял value/date. Пример: /add 10 2026-01-25 (или /add 10 25.01.2026)"
+                    do! sendText chatId "Не понял discount/min_check/date. Пример: /add 10 50 2026-01-25 (или /add 10 50 25.01.2026)"
             else
-                do! sendText chatId "Нужна подпись вида: /add <value> <date>\nНапример: /add 10 2026-01-25"
+                do! sendText chatId "Нужна подпись вида: /add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
         }
 
     let handleCallbackQuery (cq: CallbackQuery) =
@@ -305,13 +337,15 @@ type BotService(
                                     pending.owner_id,
                                     pending.photo_file_id,
                                     pending.value,
+                                    pending.min_check,
                                     pending.expires_at,
                                     null
                                 )
 
                             let v = coupon.value.ToString("0.##")
+                            let mc = coupon.min_check.ToString("0.##")
                             let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                            do! sendText cq.Message.Chat.Id $"Добавил купон {coupon.id}: {v} EUR, истекает {d}"
+                            do! sendText cq.Message.Chat.Id $"Добавил купон {coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                             do! notifications.CouponAdded(coupon)
                         | None ->
                             do! sendText cq.Message.Chat.Id "Эта операция уже устарела. Пришли /add ещё раз."
@@ -356,6 +390,7 @@ type BotService(
                 | "/start" -> do! handleStart msg.Chat.Id
                 | "/help" -> do! handleHelp msg.Chat.Id
                 | "/coupons" -> do! handleCoupons msg.Chat.Id
+                | "/take" -> do! handleCoupons msg.Chat.Id
                 | "/my" -> do! handleMy user msg.Chat.Id
                 | "/stats" -> do! handleStats user msg.Chat.Id
                 | t when not (isNull t) && t.StartsWith("/take ") ->

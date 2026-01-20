@@ -26,14 +26,14 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let user = Tg.user(id = 200L, username = "vasya", firstName = "Вася")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let! resp = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", user))
+            let! resp = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", user))
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 200L "Добавил купон",
                 $"Expected DM to user 200 with 'Добавил купон'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "добавил купон",
-                $"Expected group notification to -42 with 'добавил купон'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "добавил(а) купон",
+                $"Expected group notification to -42 with 'добавил(а) купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -46,7 +46,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
             // Add via bot (photo caption)
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 20 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 20 100 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
 
             do! fixture.ClearFakeCalls()
@@ -61,8 +61,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 $"Expected sendPhoto to user 202. Got %d{photoCalls.Length} calls")
 
             let! msgCalls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText msgCalls -42L "взял купон",
-                $"Expected group notification to -42 with 'взял купон'. Got %d{msgCalls.Length} calls")
+            Assert.True(findCallWithText msgCalls -42L "взял(а) купон",
+                $"Expected group notification to -42 with 'взял(а) купон'. Got %d{msgCalls.Length} calls")
         }
 
     [<Fact>]
@@ -74,7 +74,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 15 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 15 75 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
 
             do! fixture.ClearFakeCalls()
@@ -89,8 +89,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 $"Expected sendPhoto to user 204. Got %d{photoCalls.Length} calls")
 
             let! msgCalls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText msgCalls -42L "взял купон",
-                $"Expected group notification to -42 with 'взял купон'. Got %d{msgCalls.Length} calls")
+            Assert.True(findCallWithText msgCalls -42L "взял(а) купон",
+                $"Expected group notification to -42 with 'взял(а) купон'. Got %d{msgCalls.Length} calls")
         }
 
     [<Fact>]
@@ -102,7 +102,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
 
             do! fixture.ClearFakeCalls()
@@ -159,7 +159,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let user = Tg.user(id = 216L, username = "add_text_no_photo")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let! resp = fixture.SendUpdate(Tg.dmMessage("/add 15 2026-02-01", user))
+            let! resp = fixture.SendUpdate(Tg.dmMessage("/add 15 50 2026-02-01", user))
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
@@ -174,12 +174,12 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let user = Tg.user(id = 211L, username = "add_bad")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let! resp = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add x 2026-01-25", user))
+            let! resp = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add x 50 2026-01-25", user))
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls 211L "Не понял value/date",
-                $"Expected DM with 'Не понял value/date'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 211L "Не понял discount/min_check/date",
+                $"Expected DM with 'Не понял discount/min_check/date'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -215,8 +215,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 """) :> Task
             //language=postgresql
             do! conn.ExecuteAsync("""
-                INSERT INTO pending_add (id, owner_id, photo_file_id, value, expires_at)
-                VALUES (@id, 214, 'seed-photo', 25.00, '2026-02-15')
+                INSERT INTO pending_add (id, owner_id, photo_file_id, value, min_check, expires_at)
+                VALUES (@id, 214, 'seed-photo', 25.00, 100.00, '2026-02-15')
                 """, {| id = pendingId |}) :> Task
 
             let! resp = fixture.SendUpdate(Tg.dmCallback($"confirm_add:{pendingId}", owner))
@@ -225,8 +225,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 214L "Добавил купон",
                 $"Expected DM with 'Добавил купон'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "добавил купон",
-                $"Expected group notification with 'добавил купон'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "добавил(а) купон",
+                $"Expected group notification with 'добавил(а) купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -255,7 +255,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(u1.Id, "member")
             do! fixture.SetChatMemberStatus(u2.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
 
             do! fixture.ClearFakeCalls()
@@ -278,7 +278,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -289,8 +289,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 221L "Отметил",
                 $"Expected DM with 'Отметил'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "использовал",
-                $"Expected group notification with 'использовал'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "использовал(а)",
+                $"Expected group notification with 'использовал(а)'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -304,7 +304,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(taker.Id, "member")
             do! fixture.SetChatMemberStatus(other.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -326,7 +326,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -352,7 +352,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(taker.Id, "member")
             do! fixture.SetChatMemberStatus(other.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -391,7 +391,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/used {couponId}", taker))
@@ -414,7 +414,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 12 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 12 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -448,7 +448,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -457,7 +457,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 236L "Отметил",
                 $"Expected 'Отметил' when pressing Использован. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "использовал",
+            Assert.True(findCallWithText calls -42L "использовал(а)",
                 $"Expected group notification. Got %d{calls.Length} calls")
         }
 
@@ -470,7 +470,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -494,7 +494,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(userA.Id, "member")
             do! fixture.SetChatMemberStatus(userB.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", userA))
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/return {couponId}", userA))
@@ -519,7 +519,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/used {couponId}", taker))
@@ -545,7 +545,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(userA.Id, "member")
             do! fixture.SetChatMemberStatus(userB.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", userA))
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/return {couponId}", userA))
@@ -570,7 +570,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/used {couponId}", taker))
@@ -594,7 +594,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -617,7 +617,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
@@ -632,6 +632,82 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
+    let ``/take without id shows available coupons (same as /coupons)`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let user = Tg.user(id = 290L, username = "take_alias", firstName = "Alias")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", user))
+            let! couponId = getLatestCouponId ()
+
+            let extractDmText (chatId: int64) (calls: FakeCall array) =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some chatId -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/coupons", user))
+            let! callsCoupons = fixture.GetFakeCalls("sendMessage")
+            let couponsText = extractDmText user.Id callsCoupons
+            Assert.True(couponsText.IsSome, "Expected DM sendMessage for /coupons")
+            Assert.Contains("Доступные купоны:", couponsText.Value)
+            Assert.Contains(string couponId, couponsText.Value)
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/take", user))
+            let! callsTake = fixture.GetFakeCalls("sendMessage")
+            let takeText = extractDmText user.Id callsTake
+            Assert.True(takeText.IsSome, "Expected DM sendMessage for /take")
+            Assert.Equal(couponsText.Value, takeText.Value)
+        }
+
+    [<Fact>]
+    let ``/add accepts multiple date formats and stores exact date`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 291L, username = "date_formats", firstName = "Dates")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            // Tricky date: 02.01.2026 must be 2 January (not 1 February)
+            let expected = DateOnly(2026, 1, 2)
+            let cases =
+                [| "2026-01-02"
+                   "02.01.2026"
+                   "2.1.2026"
+                   "02/01/2026"
+                   "2/1/2026"
+                   "02-01-2026"
+                   "2-1-2026"
+                   "2026/01/02"
+                   "2026.01.02" |]
+
+            for i, dateStr in cases |> Array.indexed do
+                do! fixture.ClearFakeCalls()
+                let caption = $"/add 10 50 {dateStr}"
+                let! resp = fixture.SendUpdate(Tg.dmPhotoWithCaption(caption, user, fileId = $"photo-dates-{i}"))
+                Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+                let! calls = fixture.GetFakeCalls("sendMessage")
+                let expectedStr = expected.ToString("dd.MM.yyyy")
+                Assert.True(findCallWithText calls user.Id expectedStr, $"Expected DM to include formatted date {expectedStr} for input '{dateStr}'")
+
+                let! couponId = getLatestCouponId ()
+                // Read as text to avoid DateOnly mapping issues in Dapper/Npgsql setup
+                let! expiresIso =
+                    fixture.QuerySingle<string>(
+                        "SELECT expires_at::text FROM coupon WHERE id = @id",
+                        {| id = couponId |}
+                    )
+                Assert.Equal(expected.ToString("yyyy-MM-dd"), expiresIso)
+        }
+
+    [<Fact>]
     let ``Stats shows added taken used`` () =
         task {
             do! fixture.ClearFakeCalls()
@@ -640,7 +716,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(owner.Id, "member")
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
             let! couponId = getLatestCouponId ()
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/used {couponId}", taker))
