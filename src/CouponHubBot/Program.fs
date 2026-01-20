@@ -104,6 +104,7 @@ let builder = WebApplication.CreateBuilder()
     .AddSingleton<TelegramMembershipService>()
     .AddSingleton<TelegramNotificationService>()
     .AddHostedService<MembershipCacheInvalidationService>()
+    .AddHostedService<BotCommandsSetupService>()
     .AddSingleton<ReminderService>()
     .AddHostedService<ReminderService>(fun sp -> sp.GetRequiredService<ReminderService>())
 
