@@ -18,7 +18,7 @@ type BotCommandsSetupService(botClient: ITelegramBotClient, logger: ILogger<BotC
                            BotCommand(Command = "help", Description = "Помощь по командам")
                            BotCommand(Command = "add", Description = "Добавить купон (фото + подпись)")
                            BotCommand(Command = "coupons", Description = "Доступные купоны")
-                           BotCommand(Command = "take", Description = "Взять купон: /take <id>")
+                           BotCommand(Command = "take", Description = "Взять купон: /take <id> (или /take для списка)")
                            BotCommand(Command = "used", Description = "Использован: /used <id>")
                            BotCommand(Command = "return", Description = "Вернуть купон: /return <id>")
                            BotCommand(Command = "my", Description = "Мои купоны")
