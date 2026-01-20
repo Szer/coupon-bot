@@ -109,6 +109,8 @@ module Handlers =
                     let resultJson =
                         $"""{{"file_id":"{fileId}","file_unique_id":"{fileId}-uid","file_size":1024,"file_path":"{filePath}"}}"""
                     do! respondJson ctx 200 (okResult resultJson)
+                | "deleteMessage" ->
+                    do! respondJson ctx 200 (okResult "true")
                 | _ ->
                     // generic OK (true)
                     do! respondJson ctx 200 (okResult "true")
