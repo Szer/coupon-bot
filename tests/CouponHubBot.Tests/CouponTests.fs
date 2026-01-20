@@ -124,6 +124,21 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
+    let ``Add with value and date as text without photo asks for photo`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let user = Tg.user(id = 216L, username = "add_text_no_photo")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! resp = fixture.SendUpdate(Tg.dmMessage("/add 15 2026-02-01", user))
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 216L "Пришли фото",
+                $"Expected DM with 'Пришли фото' when /add has args but no photo. Got %d{calls.Length} calls")
+        }
+
+    [<Fact>]
     let ``Add with invalid value or date shows error`` () =
         task {
             do! fixture.ClearFakeCalls()

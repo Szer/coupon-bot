@@ -47,10 +47,6 @@ let globalBotConfDontUseOnlyRegister =
     { BotToken = Utils.getEnv "BOT_TELEGRAM_TOKEN"
       SecretToken = Utils.getEnv "BOT_AUTH_TOKEN"
       CommunityChatId = Utils.getEnv "COMMUNITY_CHAT_ID" |> int64
-      LogsChatId =
-        match Utils.getEnvOr "LOGS_CHAT_ID" "" with
-        | "" -> None
-        | v -> Some (int64 v)
       TelegramApiBaseUrl =
         match Utils.getEnvOr "TELEGRAM_API_URL" "" with
         | "" -> null
@@ -158,19 +154,16 @@ let app = builder.Build()
             return Results.Text("Access Denied")
         else
             let logger = ctx.RequestServices.GetRequiredService<ILogger<Root>>()
-            logger.LogInformation("WEBHOOK: POST /bot received, API key validated")
             
             // Deserialize Update from request body
             let! update = JsonSerializer.DeserializeAsync<Update>(ctx.Request.Body, jsonOptions)
-            logger.LogInformation("WEBHOOK: Received update {UpdateId}", update.Id)
-            
+
             try
                 let bot = ctx.RequestServices.GetRequiredService<BotService>()
                 do! bot.OnUpdate(update)
-                logger.LogInformation("WEBHOOK: Update {UpdateId} processed successfully", update.Id)
                 return Results.Ok()
             with ex ->
-                logger.LogError(ex, "WEBHOOK: Unhandled error in update handler for {UpdateId}", update.Id)
+                logger.LogError(ex, "Unhandled error in update handler for {UpdateId}", update.Id)
                 return Results.Ok()
     }))
 

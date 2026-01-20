@@ -174,15 +174,13 @@ type BotService(
             let chatId = msg.Chat.Id
             let caption = msg.Caption
             let hasPhoto = not (isNull msg.Photo) && msg.Photo.Length > 0
-            if not hasPhoto then
-                do! sendText chatId "Чтобы добавить купон, пришли фото купона с подписью:\n/add <value> <date>\nНапример: /add 10 2026-01-25"
-            else
-            // no ident on purpose after else
-                
             let parts =
                 if isNull caption then [||]
                 else caption.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
-            if parts.Length = 1 && parts[0] = "/add" then
+
+            if not hasPhoto then
+                do! sendText chatId "Пришли фото купона с подписью:\n/add <value> <date>\nНапример: /add 10 2026-01-25"
+            elif parts.Length = 1 && parts[0] = "/add" then
                 // OCR-assisted flow: attempt to prefill value/date
                 if not botConfig.OcrEnabled then
                     do! sendText chatId "Используй подпись вида: /add <value> <date>\nНапример: /add 10 2026-01-25"
@@ -222,9 +220,7 @@ type BotService(
                                     |> taskIgnore
                             | _ ->
                                 do! sendText chatId "Я не смог распознать номинал и/или дату. Используй ручной ввод: фото с подписью /add <value> <date>"
-            elif parts.Length < 3 || parts[0] <> "/add" then
-                do! sendText chatId "Нужна подпись вида: /add <value> <date>\nНапример: /add 10 2026-01-25"
-            else
+            elif parts.Length >= 3 && parts[0] = "/add" then
                 let valueOpt =
                     match System.Decimal.TryParse(parts[1], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture) with
                     | true, v -> Some v
@@ -242,6 +238,8 @@ type BotService(
                     do! notifications.CouponAdded(coupon)
                 | _ ->
                     do! sendText chatId "Не понял value/date. Пример: /add 10 2026-01-25 (или /add 10 25.01.2026)"
+            else
+                do! sendText chatId "Нужна подпись вида: /add <value> <date>\nНапример: /add 10 2026-01-25"
         }
 
     let handleCallbackQuery (cq: CallbackQuery) =
@@ -320,11 +318,10 @@ type BotService(
                     match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
                     | Some couponId -> do! handleReturn user msg.Chat.Id couponId
                     | None -> do! sendText msg.Chat.Id "Формат: /return <id>"
-                | t when t = "/add" ->
-                    do! sendText msg.Chat.Id "Пришли фото купона с подписью:\n/add <value> <date>\nНапример: /add 10 2026-01-25"
+                | t when not (isNull t) && t.StartsWith("/add") ->
+                    do! handleAdd user msg
                 | _ ->
-                    // allow /add via photo caption
-                    if msg.Photo <> null && msg.Photo.Length > 0 && msg.Caption <> null && msg.Caption.StartsWith("/add") then
+                    if msg.Photo <> null && msg.Photo.Length > 0 && not (isNull msg.Caption) && msg.Caption.StartsWith("/add") then
                         do! handleAdd user msg
                     else
                         logger.LogInformation("Ignoring private message")
