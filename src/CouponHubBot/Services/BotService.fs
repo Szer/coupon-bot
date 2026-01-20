@@ -1,6 +1,9 @@
 namespace CouponHubBot.Services
 
 open System
+open System.Diagnostics
+open System.Runtime.ExceptionServices
+open System.Text.Json
 open System.Text.RegularExpressions
 open Microsoft.Extensions.Logging
 open Telegram.Bot
@@ -9,6 +12,7 @@ open Telegram.Bot.Types.Enums
 open Telegram.Bot.Types.ReplyMarkups
 open CouponHubBot
 open CouponHubBot.Services
+open CouponHubBot.Telemetry
 open CouponHubBot.Utils
 
 type BotService(
@@ -164,6 +168,9 @@ type BotService(
 
     let handleAdd (user: DbUser) (msg: Message) =
         task {
+            use a = botActivity.StartActivity("handleAdd")
+            %a.SetTag("userId", user.id)
+            
             let chatId = msg.Chat.Id
             let caption = msg.Caption
             let hasPhoto = not (isNull msg.Photo) && msg.Photo.Length > 0
@@ -239,10 +246,15 @@ type BotService(
 
     let handleCallbackQuery (cq: CallbackQuery) =
         task {
+            use a = botActivity.StartActivity("handleCallbackQuery")
+            %a.SetTag("callbackQueryId", cq.Id)
+            if not (isNull a) then %a.SetTag("callbackData", cq.Data)
             if cq.Message <> null && cq.From <> null then
+                %a.SetTag("chatId", cq.Message.Chat.Id)
+                %a.SetTag("fromId", cq.From.Id)
                 let! ok = ensureCommunityMember cq.From.Id cq.Message.Chat.Id
                 if not ok then () else
-                
+
                 let! user = db.UpsertUser(DbUser.ofTelegramUser cq.From)
 
                 let isPrivateChat = cq.Message.Chat.Type = ChatType.Private
@@ -321,16 +333,31 @@ type BotService(
 
     member _.OnUpdate(update: Update) =
         task {
-            logger.LogInformation("BotService.OnUpdate: UpdateId={UpdateId}, Message={HasMessage}, CallbackQuery={HasCallback}", 
-                update.Id, not (isNull update.Message), not (isNull update.CallbackQuery))
-            if isNull update then
-                ()
-            elif update.ChatMember <> null then
-                membership.OnChatMemberUpdated(update.ChatMember)
-            elif not (isNull update.CallbackQuery) then
-                do! handleCallbackQuery update.CallbackQuery
-            elif not (isNull update.Message) then
-                do! handlePrivateMessage update.Message
-            else
-                ()
+            let updateBodyJson =
+                try JsonSerializer.Serialize(update, options = jsonOptions)
+                with e -> e.Message
+            use top =
+                botActivity
+                    .StartActivity("onUpdate")
+                    .SetTag("updateBodyObject", update)
+                    .SetTag("updateBodyJson", updateBodyJson)
+                    .SetTag("updateId", update.Id)
+            try
+                logger.LogInformation("BotService.OnUpdate: UpdateId={UpdateId}, Message={HasMessage}, CallbackQuery={HasCallback}",
+                    update.Id, not (isNull update.Message), not (isNull update.CallbackQuery))
+                if isNull update then
+                    ()
+                elif update.ChatMember <> null then
+                    membership.OnChatMemberUpdated(update.ChatMember)
+                elif not (isNull update.CallbackQuery) then
+                    do! handleCallbackQuery update.CallbackQuery
+                elif not (isNull update.Message) then
+                    do! handlePrivateMessage update.Message
+                else
+                    ()
+            with ex ->
+                if not (isNull top) then
+                    %top.SetStatus(ActivityStatusCode.Error)
+                    %top.SetTag("error", true)
+                ExceptionDispatchInfo.Throw ex
         }

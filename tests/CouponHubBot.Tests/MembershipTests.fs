@@ -23,5 +23,22 @@ type MembershipTests(fixture: DefaultCouponHubTestContainers) =
                 $"Expected DM to user 111 with 'только членам'. Got %d{calls.Length} calls")
         }
 
+    [<Fact>]
+    let ``Member /start receives welcome and help text`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let user = Tg.user(id = 112L, username = "member")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! resp = fixture.SendUpdate(Tg.dmMessage("/start", user))
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 112L "Привет",
+                $"Expected DM to user 112 with 'Привет'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 112L "/add",
+                $"Expected DM to user 112 with '/add'. Got %d{calls.Length} calls")
+        }
+
     interface IAssemblyFixture<DefaultCouponHubTestContainers>
 
