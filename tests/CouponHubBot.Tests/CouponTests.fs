@@ -108,15 +108,15 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmCallback($"take:{couponId}", taker))
 
-            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            let! photoCalls = fixture.GetFakeCalls("sendPhoto")
             let takenMsg =
-                msgCalls
+                photoCalls
                 |> Array.tryFind (fun c ->
                     match parseCallBody c.Body with
                     | Some p when p.ChatId = Some 260L ->
-                        p.Text.IsSome && p.Text.Value.Contains("Ты взял купон")
+                        p.Caption.IsSome && p.Caption.Value.Contains("Ты взял купон")
                     | _ -> false)
-            Assert.True(takenMsg.IsSome, "Expected 'Ты взял купон' message to taker")
+            Assert.True(takenMsg.IsSome, "Expected 'Ты взял купон' photo with caption to taker")
             Assert.True(
                 takenMsg.Value.Body.Contains("return:") && takenMsg.Value.Body.Contains("used:") && takenMsg.Value.Body.Contains(":del"),
                 "Expected inline buttons Вернуть/Использован with :del (delete on success)")
