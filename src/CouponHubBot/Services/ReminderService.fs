@@ -9,13 +9,10 @@ open Telegram.Bot
 open Telegram.Bot.Types
 open CouponHubBot
 
-type IReminderRunner =
-    abstract member RunOnce: unit -> Task<bool>
-
 type ReminderService(
     botClient: ITelegramBotClient,
     botConfig: BotConfiguration,
-    db: IDbService,
+    db: DbService,
     logger: ILogger<ReminderService>
 ) =
     inherit BackgroundService()
@@ -64,6 +61,4 @@ type ReminderService(
                         logger.LogError(ex, "Failed to send reminder")
         }
 
-    interface IReminderRunner with
-        member _.RunOnce() = runOnce ()
-
+    member _.RunOnce() = runOnce ()

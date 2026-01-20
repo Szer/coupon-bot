@@ -9,7 +9,6 @@
     <Compile Include="Types.fs" />
     <Compile Include="Utils.fs" />
     <Compile Include="Services/DbService.fs" />
-    <Compile Include="Services/HttpLogging.fs" />
     <Compile Include="Services/MembershipService.fs" />
     <Compile Include="Services/NotificationService.fs" />
     <Compile Include="Services/OcrService.fs" />

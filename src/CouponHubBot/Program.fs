@@ -27,6 +27,7 @@ type DateOnlyTypeHandler() =
         | :? DateOnly as d -> d
         | :? DateTime as dt -> DateOnly.FromDateTime(dt)
         | x -> failwithf "Unsupported DateOnly value: %A" x
+SqlMapper.AddTypeHandler(DateOnlyTypeHandler())
 
 let jsonOptions =
     let opts = JsonSerializerOptions(JsonSerializerDefaults.Web)
@@ -62,23 +63,15 @@ let validateApiKey (ctx: HttpContext) =
 
 let builder = WebApplication.CreateBuilder()
 
-// Register Dapper type handler for DateOnly
-SqlMapper.AddTypeHandler(DateOnlyTypeHandler())
-
-builder.Services.AddSingleton globalBotConfDontUseOnlyRegister |> ignore
+%builder.Services.AddSingleton globalBotConfDontUseOnlyRegister
 // Configure JSON options for Telegram.Bot compatibility
-builder.Services.Configure<JsonSerializerOptions>(fun (opts: JsonSerializerOptions) ->
+%builder.Services.Configure<JsonSerializerOptions>(fun (opts: JsonSerializerOptions) ->
     opts.NumberHandling <- JsonNumberHandling.AllowReadingFromString
-    Telegram.Bot.JsonBotAPI.Configure(opts)
-) |> ignore
+    JsonBotAPI.Configure(opts)
+)
 
 %builder.Services
     .AddHttpClient("telegram_bot_client")
-    .ConfigureHttpClient(fun httpClient ->
-        // Prevent 100s hangs in tests when FakeTgApi is unreachable.
-        httpClient.Timeout <- TimeSpan.FromSeconds(2.0)
-    )
-    .AddHttpMessageHandler<OutgoingHttpLoggingHandler>()
     .AddTypedClient(fun httpClient _sp ->
         let botConf = _sp.GetRequiredService<BotConfiguration>()
         let options =
@@ -89,48 +82,38 @@ builder.Services.Configure<JsonSerializerOptions>(fun (opts: JsonSerializerOptio
                 TelegramBotClientOptions(botConf.BotToken, botConf.TelegramApiBaseUrl)
         TelegramBotClient(options, httpClient) :> ITelegramBotClient)
 
-builder.Services.AddTransient<OutgoingHttpLoggingHandler>() |> ignore
+%builder.Services.AddHttpClient<IOcrService, AzureOcrService>()
 
-builder.Services.AddSingleton<IBotService, BotService>() |> ignore
-builder.Services.AddSingleton<IDbService>(fun _sp -> DbService(Utils.getEnv "DATABASE_URL") :> IDbService) |> ignore
-builder.Services.AddSingleton<IMembershipService, TelegramMembershipService>() |> ignore
-builder.Services.AddSingleton<INotificationService, TelegramNotificationService>() |> ignore
-
-builder.Services.AddHttpClient<IOcrService, AzureOcrService>() |> ignore
-builder.Services.AddHostedService<MembershipCacheInvalidationService>() |> ignore
-
-// Register ReminderService as both hosted service and singleton (for IReminderRunner)
-builder.Services.AddSingleton<ReminderService>() |> ignore
-builder.Services.AddHostedService<ReminderService>(fun sp -> sp.GetRequiredService<ReminderService>()) |> ignore
-builder.Services.AddSingleton<IReminderRunner>(fun sp -> sp.GetRequiredService<ReminderService>() :> IReminderRunner) |> ignore
+%builder
+    .Services
+    .AddSingleton<BotService>()
+    .AddSingleton<DbService>(fun _sp -> DbService(Utils.getEnv "DATABASE_URL"))
+    .AddSingleton<TelegramMembershipService>()
+    .AddSingleton<TelegramNotificationService>()
+    .AddHostedService<MembershipCacheInvalidationService>()
+    .AddSingleton<ReminderService>()
+    .AddHostedService<ReminderService>(fun sp -> sp.GetRequiredService<ReminderService>())
+    .AddSingleton<ReminderService>(fun sp -> sp.GetRequiredService<ReminderService>())
 
 let app = builder.Build()
 
-// Log all incoming requests
-app.Use(Func<HttpContext, Func<Task>, Task>(fun ctx next ->
-    task {
-        let logger = ctx.RequestServices.GetRequiredService<ILogger<Root>>()
-        logger.LogInformation("HTTP REQUEST: {Method} {Path}", ctx.Request.Method, ctx.Request.Path.Value)
-        do! next.Invoke()
-    })) |> ignore
-
 // Health check
-app.MapGet("/health", Func<string>(fun () -> "OK")) |> ignore
+%app.MapGet("/health", Func<string>(fun () -> "OK"))
 
 // Test-only hook to trigger reminder immediately
-app.MapPost("/test/run-reminder", Func<HttpContext, Task<IResult>>(fun ctx ->
+%app.MapPost("/test/run-reminder", Func<HttpContext, Task<IResult>>(fun ctx ->
     task {
         let botConf = ctx.RequestServices.GetRequiredService<BotConfiguration>()
         if not botConf.TestMode then
             return Results.NotFound()
         else
-            let runner = ctx.RequestServices.GetRequiredService<IReminderRunner>()
+            let runner = ctx.RequestServices.GetRequiredService<ReminderService>()
             let! sent = runner.RunOnce()
             return Results.Json({| ok = true; sent = sent |})
-    })) |> ignore
+    }))
 
 // Main webhook endpoint
-app.MapPost("/bot", Func<HttpContext, Task<IResult>>(fun ctx ->
+%app.MapPost("/bot", Func<HttpContext, Task<IResult>>(fun ctx ->
     task {
         // Validate API key
         if not (validateApiKey ctx) then
@@ -145,14 +128,13 @@ app.MapPost("/bot", Func<HttpContext, Task<IResult>>(fun ctx ->
             logger.LogInformation("WEBHOOK: Received update {UpdateId}", update.Id)
             
             try
-                let bot = ctx.RequestServices.GetRequiredService<IBotService>()
+                let bot = ctx.RequestServices.GetRequiredService<BotService>()
                 do! bot.OnUpdate(update)
                 logger.LogInformation("WEBHOOK: Update {UpdateId} processed successfully", update.Id)
                 return Results.Ok()
             with ex ->
                 logger.LogError(ex, "WEBHOOK: Unhandled error in update handler for {UpdateId}", update.Id)
                 return Results.Ok()
-    })) |> ignore
+    }))
 
 app.Run()
-
