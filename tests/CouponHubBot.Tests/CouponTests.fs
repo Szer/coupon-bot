@@ -327,10 +327,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let user = Tg.user(id = 230L, username = "coupons_empty")
             do! fixture.SetChatMemberStatus(user.Id, "member")
-
-            use conn = new NpgsqlConnection(fixture.DbConnectionString)
-            do! conn.OpenAsync()
-            do! conn.ExecuteAsync("TRUNCATE coupon CASCADE") :> Task
+            
+            do! fixture.TruncateCoupons()
 
             let! resp = fixture.SendUpdate(Tg.dmMessage("/coupons", user))
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)

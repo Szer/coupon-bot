@@ -27,8 +27,8 @@ services:
       - ./src/migrations:/flyway/sql:ro
     environment:
       FLYWAY_URL: jdbc:postgresql://postgres:5432/coupon_hub_bot
-      FLYWAY_USER: coupon_hub_bot_service
-      FLYWAY_PASSWORD: coupon_hub_bot_service
+      FLYWAY_USER: admin
+      FLYWAY_PASSWORD: admin
     command: migrate -schemas=public
     restart: "no"
 
