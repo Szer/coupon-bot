@@ -114,10 +114,6 @@ type BotService(
             with _ -> None
         else None
 
-    let formatCouponLine (c: Coupon) =
-        let d = c.expires_at.ToString("dd.MM.yyyy")
-        $"{c.id}. {formatCouponValue c}, истекает {d}"
-
     let formatAvailableCouponLine (idx: int) (c: Coupon) =
         let d = c.expires_at.ToString("dd.MM.yyyy")
         $"{idx}. {formatCouponValue c}, истекает {d}"
@@ -247,7 +243,7 @@ type BotService(
                 do! botClient.SendPhoto(
                         ChatId chatId,
                         InputFileId coupon.photo_file_id,
-                        caption = $"Ты взял купон {couponId}: {formatCouponValue coupon}, истекает {d}",
+                        caption = $"Ты взял(а) купон {couponId}: {formatCouponValue coupon}, истекает {d}",
                         replyMarkup = singleTakenKeyboard coupon)
                     |> taskIgnore
         }
@@ -256,7 +252,7 @@ type BotService(
         task {
             let! updated = db.MarkUsed(couponId, user.id)
             if updated then
-                do! sendText chatId $"Отметил купон {couponId} как использованный."
+                do! sendText chatId $"Отметил(а) купон {couponId} как использованный."
             else
                 do! sendText chatId $"Не получилось отметить купон {couponId}. Убедись что он взят тобой."
             return updated
@@ -266,7 +262,7 @@ type BotService(
         task {
             let! updated = db.ReturnToAvailable(couponId, user.id)
             if updated then
-                do! sendText chatId $"Вернул купон {couponId} в доступные."
+                do! sendText chatId $"Вернул(а) купон {couponId} в доступные."
             else
                 do! sendText chatId $"Не получилось вернуть купон {couponId}. Убедись что он взят тобой."
             return updated
@@ -356,7 +352,7 @@ type BotService(
                     let v = coupon.value.ToString("0.##")
                     let mc = coupon.min_check.ToString("0.##")
                     let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                    do! sendText chatId $"Добавил купон {coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                    do! sendText chatId $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                 | _ ->
                     do! sendText chatId "Не понял discount/min_check/date. Пример: /add 10 50 2026-01-25 (или /add 10 50 25.01.2026)"
             else
@@ -579,7 +575,7 @@ type BotService(
                                 let v = coupon.value.ToString("0.##")
                                 let mc = coupon.min_check.ToString("0.##")
                                 let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                                do! sendText cq.Message.Chat.Id $"Добавил купон {coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                                do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                             else
                                 do! sendText cq.Message.Chat.Id "Не хватает данных для добавления. Начни заново: /add"
                         | "addflow:cancel" ->

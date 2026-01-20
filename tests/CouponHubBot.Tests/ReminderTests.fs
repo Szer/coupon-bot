@@ -97,4 +97,45 @@ VALUES
                 "Expected added section")
         }
 
+    [<Fact>]
+    let ``Overdue taken coupons trigger one DM reminder per user`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (601,'u601','U601',NOW(),NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- Two overdue taken coupons for same user (should still only get 1 DM)
+INSERT INTO coupon(id, owner_id, photo_file_id, value, min_check, expires_at, status, taken_by, taken_at)
+VALUES
+  (8101,601,'p',10.00,50.00,'2026-02-01','taken',601,'2026-01-17T08:00:00Z'),
+  (8102,601,'p',10.00,50.00,'2026-01-10','taken',601,'2026-01-17T09:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+"""
+                )
+                :> Task
+
+            use body = new StringContent("", Encoding.UTF8, "application/json")
+            let! resp = fixture.Bot.PostAsync("/test/run-reminder?nowUtc=2026-01-19T08:00:00Z", body)
+            if not resp.IsSuccessStatusCode then
+                let! text = resp.Content.ReadAsStringAsync()
+                failwith $"Expected 2xx from /test/run-reminder, got {resp.StatusCode}. Body: {text}"
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            let dmCallsToUser =
+                calls
+                |> Array.filter (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p -> p.ChatId = Some 601L
+                    | _ -> false)
+
+            Assert.Equal(1, dmCallsToUser.Length)
+            Assert.True(dmCallsToUser[0].Body.Contains("\"text\""), "Expected DM call to include text")
+        }
+
     interface IAssemblyFixture<DefaultCouponHubTestContainers>

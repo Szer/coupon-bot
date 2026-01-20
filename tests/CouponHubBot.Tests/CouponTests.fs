@@ -105,7 +105,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 |> Array.tryFind (fun c ->
                     match parseCallBody c.Body with
                     | Some p when p.ChatId = Some 260L ->
-                        p.Caption.IsSome && p.Caption.Value.Contains("Ты взял купон")
+                        p.Caption.IsSome && p.Caption.Value.Contains("Ты взял")
                     | _ -> false)
             Assert.True(takenMsg.IsSome, "Expected 'Ты взял купон' photo with caption to taker")
             Assert.True(
@@ -362,6 +362,36 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithAnyText calls 230L [| "нет доступных"; "Сейчас нет" |],
                 $"Expected DM with 'нет доступных' or 'Сейчас нет'. Got %d{calls.Length} calls")
+        }
+
+    [<Fact>]
+    let ``Expired coupons are not shown as available`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 240L, username = "expired_filter")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            // Seed an expired available coupon directly
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (240, 'expired_filter', 'Expired', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (240, 'seed-expired', 10.00, 50.00, (CURRENT_DATE - interval '1 day')::date, 'available');
+"""
+                )
+                :> Task
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithAnyText calls 240L [| "нет доступных"; "Сейчас нет" |],
+                "Expected expired available coupon to be filtered out from /list")
         }
 
     [<Fact>]
