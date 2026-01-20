@@ -9,7 +9,6 @@ type BotConfiguration =
     { BotToken: string
       SecretToken: string
       CommunityChatId: int64
-      LogsChatId: int64 option
       TelegramApiBaseUrl: string | null
       ReminderHourUtc: int
       ReminderRunOnStart: bool
