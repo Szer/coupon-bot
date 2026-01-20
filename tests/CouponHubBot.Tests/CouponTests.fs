@@ -2,6 +2,7 @@ namespace CouponHubBot.Tests
 
 open System
 open System.Net
+open System.Text.Json
 open System.Threading.Tasks
 open Dapper
 open Npgsql
@@ -637,6 +638,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let user = Tg.user(id = 290L, username = "take_alias", firstName = "Alias")
             do! fixture.SetChatMemberStatus(user.Id, "member")
+            do! fixture.TruncateCoupons()
 
             let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", user))
             let! couponId = getLatestCouponId ()
@@ -655,7 +657,52 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let couponsText = extractDmText user.Id callsCoupons
             Assert.True(couponsText.IsSome, "Expected DM sendMessage for /coupons")
             Assert.Contains("Доступные купоны:", couponsText.Value)
-            Assert.Contains(string couponId, couponsText.Value)
+            Assert.Contains("1.", couponsText.Value)
+            Assert.Contains("истекает", couponsText.Value)
+            // Human-visible list uses 1..N, but callback_data must still reference real coupon id
+            let hasTakeButton (callBody: string) =
+                try
+                    use doc = JsonDocument.Parse(callBody)
+                    let root = doc.RootElement
+
+                    let tryGetProp (el: JsonElement) (name: string) =
+                        match el.TryGetProperty(name) with
+                        | true, v -> Some v
+                        | _ -> None
+
+                    let tryGetStringProp (el: JsonElement) (names: string list) =
+                        names
+                        |> List.tryPick (fun n ->
+                            match el.TryGetProperty(n) with
+                            | true, v when v.ValueKind = JsonValueKind.String -> Some(v.GetString())
+                            | _ -> None)
+
+                    let replyMarkupOpt =
+                        tryGetProp root "reply_markup"
+                        |> Option.orElseWith (fun _ -> tryGetProp root "replyMarkup")
+
+                    match replyMarkupOpt with
+                    | None -> false
+                    | Some rm ->
+                        let inlineKbOpt =
+                            tryGetProp rm "inline_keyboard"
+                            |> Option.orElseWith (fun _ -> tryGetProp rm "inlineKeyboard")
+
+                        match inlineKbOpt with
+                        | None -> false
+                        | Some kb ->
+                            kb.EnumerateArray()
+                            |> Seq.collect (fun row -> row.EnumerateArray())
+                            |> Seq.exists (fun btn ->
+                                let textOpt = tryGetStringProp btn [ "text" ]
+                                let cbOpt = tryGetStringProp btn [ "callback_data"; "callbackData" ]
+                                textOpt = Some "Взять 1" && cbOpt = Some $"take:{couponId}")
+                with _ ->
+                    false
+
+            let sampleBody = callsCoupons |> Array.tryHead |> Option.map (fun c -> c.Body) |> Option.defaultValue "<no sendMessage calls>"
+            Assert.True(callsCoupons |> Array.exists (fun c -> hasTakeButton c.Body),
+                $"Expected reply markup to contain button text 'Взять 1' with callback_data take:{couponId}. Sample body: {sampleBody}")
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("/take", user))

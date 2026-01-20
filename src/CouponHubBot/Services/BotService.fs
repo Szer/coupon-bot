@@ -92,10 +92,18 @@ type BotService(
         let d = c.expires_at.ToString("dd.MM.yyyy")
         $"{c.id}. {formatCouponValue c}, истекает {d}"
 
+    let formatAvailableCouponLine (idx: int) (c: Coupon) =
+        let d = c.expires_at.ToString("dd.MM.yyyy")
+        $"{idx}. {formatCouponValue c}, истекает {d}"
+
     let couponsKeyboard (coupons: Coupon array) =
+        // Show only first 5 to keep UX simple (1..5)
         coupons
-        |> Array.truncate 10
-        |> Array.map (fun c -> seq { InlineKeyboardButton.WithCallbackData($"Взять {c.id}", $"take:{c.id}") })
+        |> Array.truncate 5
+        |> Array.indexed
+        |> Array.map (fun (i, c) ->
+            let humanIdx = i + 1
+            seq { InlineKeyboardButton.WithCallbackData($"Взять {humanIdx}", $"take:{c.id}") })
         |> Seq.ofArray
         |> InlineKeyboardMarkup
 
@@ -134,11 +142,11 @@ type BotService(
 
     let handleStart (chatId: int64) =
         sendText chatId
-            "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add — добавить купон\n/coupons — посмотреть доступные\n/take <id> — взять купон\n/used <id> — отметить использованным\n/return <id> — вернуть в доступные\n/my — мои купоны\n/stats — моя статистика\n/help — помощь"
+            "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add — добавить купон\n/coupons — посмотреть доступные\n/take <id> — взять купон (или /take для списка)\n/used <id> — отметить использованным\n/return <id> — вернуть в доступные\n/my — мои купоны\n/stats — моя статистика\n/help — помощь"
 
     let handleHelp (chatId: int64) =
         sendText chatId
-            "Команды (все в личке):\n/add\n/coupons\n/take <id>\n/used <id>\n/return <id>\n/my\n/stats\n/help"
+            "Команды (все в личке):\n/add\n/coupons\n/take <id> (или /take)\n/used <id>\n/return <id>\n/my\n/stats\n/help"
 
     let handleCoupons (chatId: int64) =
         task {
@@ -146,13 +154,14 @@ type BotService(
             if coupons.Length = 0 then
                 do! sendText chatId "Сейчас нет доступных купонов."
             else
+                let shown = coupons |> Array.truncate 5
                 let text =
-                    coupons
-                    |> Array.truncate 50
-                    |> Array.map formatCouponLine
+                    shown
+                    |> Array.indexed
+                    |> Array.map (fun (i, c) -> formatAvailableCouponLine (i + 1) c)
                     |> String.concat "\n"
                 do!
-                    botClient.SendMessage(ChatId chatId, $"Доступные купоны:\n{text}", replyMarkup = couponsKeyboard coupons)
+                    botClient.SendMessage(ChatId chatId, $"Доступные купоны:\n{text}", replyMarkup = couponsKeyboard shown)
                     |> taskIgnore
         }
 
@@ -244,7 +253,7 @@ type BotService(
                             size = 0L || size <= botConfig.OcrMaxFileSizeBytes)
 
                     if candidatePhotos.Length = 0 then
-                        do! sendText chatId $"Фото слишком большое (лимит {botConfig.OcrMaxFileSizeBytes/(1024L*1024L)} MBs). Используй ручной ввод: /add <value> <date>"
+                        do! sendText chatId $"Фото слишком большое (лимит {botConfig.OcrMaxFileSizeBytes/(1024L*1024L)} MBs). Используй ручной ввод: /add <discount> <min_check> <date>"
                     else
                         let largestPhoto =
                             candidatePhotos
