@@ -27,10 +27,11 @@ cp env.example .env
 ```
 
 Update `.env` with your values:
-- `DATABASE_URL` - should point to `localhost:5433` (Postgres from docker-compose, port 5433 to avoid conflict with default PostgreSQL)
+- `DATABASE_URL` - should point to `localhost:5439` (Postgres from docker-compose)
 - `TELEGRAM_API_URL` - set to `http://localhost:8080` if using FakeTgApi, or leave empty for real Telegram API
 - `BOT_TELEGRAM_TOKEN` - your real bot token (or `123:456` for testing with FakeTgApi)
 - `BOT_AUTH_TOKEN` - secret token for webhook authentication
+- `FEEDBACK_ADMINS` - список Telegram userId админов для `/feedback` (например `123,456`)
 
 ### 3. Run Bot in Rider
 
@@ -44,6 +45,8 @@ Update `.env` with your values:
 Open `coupon-hub-bot.http` in Rider and send requests:
 - `GET /health` - health check
 - `POST /bot` - send Telegram update (webhook)
+- `POST /test/run-reminder` - test-only endpoint (requires `TEST_MODE=true`)
+  - можно передать `nowUtc=2026-01-19T08:00:00Z` как query parameter
 
 ### 5. View Logs
 
@@ -67,8 +70,8 @@ docker ps | grep coupon-hub-postgres-dev
 # Check Postgres logs
 docker logs coupon-hub-postgres-dev
 
-# Connect to Postgres manually (from host, use port 5433)
-psql -h localhost -p 5433 -U coupon_hub_bot_service -d coupon_hub_bot
+# Connect to Postgres manually (from host, use port 5439)
+psql -h localhost -p 5439 -U coupon_hub_bot_service -d coupon_hub_bot
 
 # Or from inside container (port 5432)
 docker exec -it coupon-hub-postgres-dev psql -U coupon_hub_bot_service -d coupon_hub_bot
@@ -97,3 +100,13 @@ docker-compose -f docker-compose.dev.yml down -v
 docker-compose -f docker-compose.dev.yml up -d postgres
 docker-compose -f docker-compose.dev.yml --profile migrate run --rm flyway
 ```
+
+## Telemetry (OpenTelemetry)
+
+- Трейсы включены через OTel tracing (HTTP + ASP.NET Core + Npgsql).
+- Метрики включены через `System.Diagnostics.Metrics` и экспортируются через OTel metrics pipeline.
+
+Полезные переменные окружения:
+- `OTEL_EXPORTER_OTLP_ENDPOINT` — куда слать OTel (gRPC)
+- `OTEL_EXPORTER_CONSOLE=true` — включить консольный экспорт (удобно локально)
+- `OTEL_SERVICE_NAME` — имя сервиса (по умолчанию `coupon-hub-bot`)
