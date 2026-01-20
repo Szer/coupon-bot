@@ -14,15 +14,11 @@ type BotCommandsSetupService(botClient: ITelegramBotClient, logger: ILogger<BotC
             task {
                 try
                     let commands =
-                        [| BotCommand(Command = "start", Description = "Начать / приветствие")
-                           BotCommand(Command = "help", Description = "Помощь по командам")
-                           BotCommand(Command = "add", Description = "Добавить купон (фото + подпись)")
-                           BotCommand(Command = "coupons", Description = "Доступные купоны")
-                           BotCommand(Command = "take", Description = "Взять купон: /take <id> (или /take для списка)")
-                           BotCommand(Command = "used", Description = "Использован: /used <id>")
-                           BotCommand(Command = "return", Description = "Вернуть купон: /return <id>")
+                        [| BotCommand(Command = "add", Description = "Добавить купон")
+                           BotCommand(Command = "list", Description = "Доступные купоны")
                            BotCommand(Command = "my", Description = "Мои купоны")
-                           BotCommand(Command = "stats", Description = "Моя статистика") |]
+                           BotCommand(Command = "stats", Description = "Моя статистика")
+                           BotCommand(Command = "feedback", Description = "Фидбэк авторам бота") |]
                     do! botClient.SetMyCommands(commands, scope = BotCommandScope.AllPrivateChats())
                     logger.LogInformation("Bot commands set for Telegram menu (/-autocomplete)")
                 with ex ->

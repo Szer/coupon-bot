@@ -72,6 +72,44 @@ module Handlers =
                     let resultJson =
                         $"""{{"message_id":1,"date":{now},"chat":{{"id":{chatId},"type":"private"}},"caption":"ok"}}"""
                     do! respondJson ctx 200 (okResult resultJson)
+                | "sendMediaGroup" ->
+                    let chatId =
+                        try
+                            use doc = JsonDocument.Parse(body)
+                            match doc.RootElement.TryGetProperty("chat_id") with
+                            | true, v -> v.GetInt64()
+                            | _ -> 1L
+                        with _ -> 1L
+
+                    let count =
+                        try
+                            use doc = JsonDocument.Parse(body)
+                            let media = doc.RootElement.GetProperty("media")
+                            media.EnumerateArray() |> Seq.length
+                        with _ -> 1
+
+                    let now = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    let msgs =
+                        [|
+                            for i in 1 .. count do
+                                $"""{{"message_id":{i},"date":{now},"chat":{{"id":{chatId},"type":"private"}}}}"""
+                        |]
+                        |> String.concat ","
+
+                    let resultJson = $"[{msgs}]"
+                    do! respondJson ctx 200 (okResult resultJson)
+                | "forwardMessage" ->
+                    let chatId =
+                        try
+                            use doc = JsonDocument.Parse(body)
+                            match doc.RootElement.TryGetProperty("chat_id") with
+                            | true, v -> v.GetInt64()
+                            | _ -> 1L
+                        with _ -> 1L
+                    let now = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    let resultJson =
+                        $"""{{"message_id":1,"date":{now},"chat":{{"id":{chatId},"type":"private"}}}}"""
+                    do! respondJson ctx 200 (okResult resultJson)
                 | "answerCallbackQuery" ->
                     do! respondJson ctx 200 (okResult "true")
                 | "getChatMember" ->
