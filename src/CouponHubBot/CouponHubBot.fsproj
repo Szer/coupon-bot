@@ -15,6 +15,7 @@
     <Compile Include="Services/ReminderService.fs" />
     <Compile Include="Telemetry.fs" />
     <Compile Include="Services/BotService.fs" />
+    <Compile Include="Services/BotCommandsSetup.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
