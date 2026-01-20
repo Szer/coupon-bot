@@ -139,16 +139,21 @@ Content-Type: application/json
   }
 }
 
-### Test: Non-member /start (from MembershipTests)
-### This should return "только членам" message
+### ============================================
+### TEST SCENARIOS (from failing tests)
+### ============================================
+
+### Test 1: MembershipTests.Non-member cannot /start
+### Expected: DM to user 111 with "только членам"
+### Note: User 111 must be set as "left" in FakeTgApi mock
 POST {{baseUrl}}/bot
 X-Telegram-Bot-Api-Secret-Token: {{authToken}}
 Content-Type: application/json
 
 {
-  "update_id": 2,
+  "update_id": 100,
   "message": {
-    "message_id": 2,
+    "message_id": 100,
     "date": 0,
     "chat": {
       "id": 111,
@@ -162,4 +167,160 @@ Content-Type: application/json
     },
     "text": "/start"
   }
+}
+
+### Test 2: CouponTests.User can add coupon and group gets notification
+### Expected: 
+###   - DM to user 200 with "Добавил купон"
+###   - Group notification to -42 with "добавил купон"
+### Note: User 200 must be set as "member" in FakeTgApi mock
+POST {{baseUrl}}/bot
+X-Telegram-Bot-Api-Secret-Token: {{authToken}}
+Content-Type: application/json
+
+{
+  "update_id": 200,
+  "message": {
+    "message_id": 200,
+    "date": 0,
+    "chat": {
+      "id": 200,
+      "type": "private"
+    },
+    "from": {
+      "id": 200,
+      "is_bot": false,
+      "first_name": "Вася",
+      "username": "vasya"
+    },
+    "caption": "/add 10 2026-01-25",
+    "photo": [
+      {
+        "file_id": "photo-test-200",
+        "file_unique_id": "photo-test-200-uid",
+        "file_size": 1024,
+        "width": 100,
+        "height": 100
+      }
+    ]
+  }
+}
+
+### Test 3: CouponTests.Taking coupon sends photo to user and notification to group
+### Step 1: Add coupon (user 201)
+POST {{baseUrl}}/bot
+X-Telegram-Bot-Api-Secret-Token: {{authToken}}
+Content-Type: application/json
+
+{
+  "update_id": 201,
+  "message": {
+    "message_id": 201,
+    "date": 0,
+    "chat": {
+      "id": 201,
+      "type": "private"
+    },
+    "from": {
+      "id": 201,
+      "is_bot": false,
+      "first_name": "Петя",
+      "username": "petya"
+    },
+    "caption": "/add 20 2026-01-25",
+    "photo": [
+      {
+        "file_id": "photo-test-201",
+        "file_unique_id": "photo-test-201-uid",
+        "file_size": 1024,
+        "width": 100,
+        "height": 100
+      }
+    ]
+  }
+}
+
+### Step 2: Take coupon (user 202)
+### Expected:
+###   - sendPhoto to user 202
+###   - Group notification to -42 with "взял купон"
+### Note: Replace COUPON_ID with actual ID from step 1
+POST {{baseUrl}}/bot
+X-Telegram-Bot-Api-Secret-Token: {{authToken}}
+Content-Type: application/json
+
+{
+  "update_id": 202,
+  "message": {
+    "message_id": 202,
+    "date": 0,
+    "chat": {
+      "id": 202,
+      "type": "private"
+    },
+    "from": {
+      "id": 202,
+      "is_bot": false,
+      "first_name": "Маша",
+      "username": "masha"
+    },
+    "text": "/take 1"
+  }
+}
+
+### Test 4: ReminderTests.Reminder sends message to group when coupons expire today
+### Expected: Group notification to -42 with "Сегодня истекают"
+### Note: Requires coupon with expires_at = CURRENT_DATE in DB
+POST {{baseUrl}}/test/run-reminder
+Content-Type: application/json
+
+### ============================================
+### FAKE TG API ENDPOINTS (for debugging)
+### ============================================
+### Note: These work only if FakeTgApi is running on localhost:8080
+
+### Get all logged calls
+GET http://localhost:8080/test/calls
+
+### Get calls for specific method
+GET http://localhost:8080/test/calls?method=sendMessage
+
+### Clear all logged calls
+DELETE http://localhost:8080/test/calls
+
+### Set chat member status (for membership tests)
+### Example: Set user 111 as "left" (non-member)
+POST http://localhost:8080/test/mock/chatMember
+Content-Type: application/json
+
+{
+  "userId": 111,
+  "status": "left"
+}
+
+### Set user 200 as "member"
+POST http://localhost:8080/test/mock/chatMember
+Content-Type: application/json
+
+{
+  "userId": 200,
+  "status": "member"
+}
+
+### Set user 201 as "member"
+POST http://localhost:8080/test/mock/chatMember
+Content-Type: application/json
+
+{
+  "userId": 201,
+  "status": "member"
+}
+
+### Set user 202 as "member"
+POST http://localhost:8080/test/mock/chatMember
+Content-Type: application/json
+
+{
+  "userId": 202,
+  "status": "member"
 }
