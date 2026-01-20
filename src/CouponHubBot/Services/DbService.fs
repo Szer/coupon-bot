@@ -163,8 +163,8 @@ SELECT (SELECT c FROM added) AS added,
        (SELECT c FROM taken) AS taken,
        (SELECT c FROM used)  AS used;
 """
-            let! row = conn.QuerySingleAsync<{| added: int; taken: int; used: int |}>(sql, {| user_id = userId |})
-            return row.added, row.taken, row.used
+            let! row = conn.QuerySingleAsync<{| added: int64; taken: int64; used: int64 |}>(sql, {| user_id = userId |})
+            return int row.added, int row.taken, int row.used
         }
 
     member _.TryTakeCoupon(couponId, takerId) =

@@ -67,3 +67,23 @@ type Tg() =
         upd.Message <- msg
         upd
 
+    /// Builds an Update with CallbackQuery (e.g. take:N or confirm_add:GUID) as if from a private chat.
+    static member dmCallback(data: string, fromUser: User) =
+        let chat = Tg.privateChat(id = fromUser.Id)
+        let msg = Message()
+        msg.Id <- nextInt ()
+        msg.Chat <- chat
+        msg.From <- fromUser
+        msg.Date <- DateTime.UtcNow
+
+        let cq = CallbackQuery()
+        cq.Id <- Guid.NewGuid().ToString()
+        cq.Data <- data
+        cq.From <- fromUser
+        cq.ChatInstance <- Guid.NewGuid().ToString()
+        cq.Message <- msg
+
+        let upd = Update()
+        upd.Id <- nextInt ()
+        upd.CallbackQuery <- cq
+        upd

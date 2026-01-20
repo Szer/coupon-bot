@@ -8,6 +8,7 @@ open System.Text.Json
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging
 open CouponHubBot
+open Utils
 
 module private AzureOcr =
     let extractTextFromAzureResponse (json: string) =
@@ -19,7 +20,7 @@ module private AzureOcr =
 
             let addLine (text: string) =
                 if not (String.IsNullOrWhiteSpace text) then
-                    sb.AppendLine(text) |> ignore
+                    %sb.AppendLine(text)
 
             let linesFromBlocks (readResult: JsonElement) =
                 match readResult.TryGetProperty("blocks") with
@@ -68,7 +69,7 @@ type AzureOcrService(httpClient: HttpClient, botConf: BotConfiguration, logger: 
                 else
                     try
                         use! fileResponse = httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead)
-                        fileResponse.EnsureSuccessStatusCode() |> ignore
+                        %fileResponse.EnsureSuccessStatusCode()
 
                         use! fileStream = fileResponse.Content.ReadAsStreamAsync()
                         use streamContent = new StreamContent(fileStream)

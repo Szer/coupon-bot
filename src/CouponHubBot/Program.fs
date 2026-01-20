@@ -1,4 +1,5 @@
 open System
+open System.Collections.Generic
 open System.Data
 open System.Text.Json
 open System.Text.Json.Serialization
@@ -7,13 +8,20 @@ open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Logging
+open OpenTelemetry.Resources
+open OpenTelemetry.Trace
+open OpenTelemetry.Exporter
 open Dapper
 open Npgsql
+open Serilog
+open Serilog.Formatting.Compact
+open Serilog.Enrichers.Span
 open Telegram.Bot
 open Telegram.Bot.Types
 open CouponHubBot
 open CouponHubBot.Utils
 open CouponHubBot.Services
+open CouponHubBot.Telemetry
 
 type Root = class end
 
@@ -63,6 +71,15 @@ let validateApiKey (ctx: HttpContext) =
 
 let builder = WebApplication.CreateBuilder()
 
+// Configure Serilog for structured JSON logging (Loki-friendly) with trace correlation
+%builder.Host.UseSerilog(fun context _ configuration ->
+    %configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .Enrich.FromLogContext()
+        .Enrich.WithSpan()
+        .WriteTo.Console(CompactJsonFormatter())
+)
+
 %builder.Services.AddSingleton globalBotConfDontUseOnlyRegister
 // Configure JSON options for Telegram.Bot compatibility
 %builder.Services.Configure<JsonSerializerOptions>(fun (opts: JsonSerializerOptions) ->
@@ -93,6 +110,27 @@ let builder = WebApplication.CreateBuilder()
     .AddHostedService<MembershipCacheInvalidationService>()
     .AddSingleton<ReminderService>()
     .AddHostedService<ReminderService>(fun sp -> sp.GetRequiredService<ReminderService>())
+
+%builder.Services.AddOpenTelemetry()
+    .WithTracing(fun b ->
+        %b         
+            .AddHttpClientInstrumentation()
+            .AddAspNetCoreInstrumentation()
+            .AddNpgsql()
+            .ConfigureResource(fun r ->
+                %r.AddAttributes([ KeyValuePair("service.name", Utils.getEnvOr "OTEL_SERVICE_NAME" "coupon-hub-bot") ])
+            )
+            .AddSource(botActivity.Name)
+        Utils.getEnvWith "OTEL_EXPORTER_OTLP_ENDPOINT" (fun endpoint ->
+            %b.AddOtlpExporter(fun opts ->
+                opts.Endpoint <- Uri(endpoint)
+                opts.Protocol <- OtlpExportProtocol.Grpc
+            )
+        )
+        Utils.getEnvWith "OTEL_EXPORTER_CONSOLE" (fun v ->
+            if Boolean.Parse(v) then %b.AddConsoleExporter()
+        )
+    )
 
 let app = builder.Build()
 
