@@ -139,11 +139,10 @@ type BotService(
             | Taken coupon ->
                 let v = coupon.value.ToString("0.##")
                 let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                do! botClient.SendPhoto(ChatId chatId, InputFileId coupon.photo_file_id) |> taskIgnore
-                do!
-                    botClient.SendMessage(
+                do! botClient.SendPhoto(
                         ChatId chatId,
-                        $"Ты взял купон {couponId}: {v} EUR, истекает {d}",
+                        InputFileId coupon.photo_file_id,
+                        caption = $"Ты взял купон {couponId}: {v} EUR, истекает {d}",
                         replyMarkup = singleTakenKeyboard coupon)
                     |> taskIgnore
                 do! notifications.CouponTaken(coupon, taker)
