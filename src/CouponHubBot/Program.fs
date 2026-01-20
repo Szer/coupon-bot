@@ -9,8 +9,10 @@ open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Logging
 open OpenTelemetry.Resources
+open OpenTelemetry.Metrics
 open OpenTelemetry.Trace
 open OpenTelemetry.Exporter
+open System.Globalization
 open Dapper
 open Npgsql
 open Serilog
@@ -44,6 +46,16 @@ let jsonOptions =
     opts
 
 let globalBotConfDontUseOnlyRegister =
+    let parseAdmins (raw: string) =
+        if String.IsNullOrWhiteSpace raw then
+            [||]
+        else
+            raw.Split([| ','; ';'; ' ' |], StringSplitOptions.RemoveEmptyEntries)
+            |> Array.choose (fun s ->
+                match Int64.TryParse(s.Trim()) with
+                | true, v -> Some v
+                | _ -> None)
+
     { BotToken = Utils.getEnv "BOT_TELEGRAM_TOKEN"
       SecretToken = Utils.getEnv "BOT_AUTH_TOKEN"
       CommunityChatId = Utils.getEnv "COMMUNITY_CHAT_ID" |> int64
@@ -57,6 +69,7 @@ let globalBotConfDontUseOnlyRegister =
       OcrMaxFileSizeBytes = Utils.getEnvOrInt64 "OCR_MAX_FILE_SIZE_BYTES" (20L * 1024L * 1024L)
       AzureOcrEndpoint = Utils.getEnvOr "AZURE_OCR_ENDPOINT" ""
       AzureOcrKey = Utils.getEnvOr "AZURE_OCR_KEY" ""
+      FeedbackAdminIds = Utils.getEnvOr "FEEDBACK_ADMINS" "" |> parseAdmins
       TestMode = Utils.getEnvOrBool "TEST_MODE" false }
 
 let validateApiKey (ctx: HttpContext) =
@@ -128,6 +141,21 @@ let builder = WebApplication.CreateBuilder()
             if Boolean.Parse(v) then %b.AddConsoleExporter()
         )
     )
+    .WithMetrics(fun m ->
+        %m
+            .AddHttpClientInstrumentation()
+            .AddAspNetCoreInstrumentation()
+            .AddMeter("CouponHubBot.Metrics")
+        Utils.getEnvWith "OTEL_EXPORTER_CONSOLE" (fun v ->
+            if Boolean.Parse(v) then %m.AddConsoleExporter()
+        )
+        Utils.getEnvWith "OTEL_EXPORTER_OTLP_ENDPOINT" (fun endpoint ->
+            %m.AddOtlpExporter(fun opts ->
+                opts.Endpoint <- Uri(endpoint)
+                opts.Protocol <- OtlpExportProtocol.Grpc
+            )
+        )
+    )
 
 let app = builder.Build()
 
@@ -142,7 +170,17 @@ let app = builder.Build()
             return Results.NotFound()
         else
             let runner = ctx.RequestServices.GetRequiredService<ReminderService>()
-            let! sent = runner.RunOnce()
+            let nowUtc =
+                if ctx.Request.Query.ContainsKey("nowUtc") then
+                    try
+                        let raw = string ctx.Request.Query["nowUtc"]
+                        DateTime.Parse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal ||| DateTimeStyles.AssumeUniversal)
+                    with _ ->
+                        DateTime.UtcNow
+                else
+                    DateTime.UtcNow
+
+            let! sent = runner.RunOnce(nowUtc)
             return Results.Json({| ok = true; sent = sent |})
     }))
 

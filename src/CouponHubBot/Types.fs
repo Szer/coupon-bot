@@ -16,6 +16,7 @@ type BotConfiguration =
       OcrMaxFileSizeBytes: int64
       AzureOcrEndpoint: string
       AzureOcrKey: string
+      FeedbackAdminIds: int64 array
       TestMode: bool }
 
 [<CLIMutable>]

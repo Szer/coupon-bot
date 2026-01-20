@@ -111,6 +111,7 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithEnvironment("BOT_AUTH_TOKEN", secret)
             .WithEnvironment("COMMUNITY_CHAT_ID", string communityChatId)
             .WithEnvironment("LOGS_CHAT_ID", "")
+            .WithEnvironment("FEEDBACK_ADMINS", "900,901")
             .WithEnvironment("DATABASE_URL", $"Server={dbAlias};Database=coupon_hub_bot;Port=5432;User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;")
             .WithEnvironment("TELEGRAM_API_URL", $"http://{fakeAlias}:8080")
             .WithEnvironment("ASPNETCORE_HTTP_PORTS", "80")

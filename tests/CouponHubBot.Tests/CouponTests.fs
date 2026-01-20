@@ -33,8 +33,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 200L "Добавил купон",
                 $"Expected DM to user 200 with 'Добавил купон'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "добавил(а) купон",
-                $"Expected group notification to -42 with 'добавил(а) купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -60,10 +58,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 | Some parsed -> parsed.ChatId = Some 202L
                 | _ -> false),
                 $"Expected sendPhoto to user 202. Got %d{photoCalls.Length} calls")
-
-            let! msgCalls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText msgCalls -42L "взял(а) купон",
-                $"Expected group notification to -42 with 'взял(а) купон'. Got %d{msgCalls.Length} calls")
         }
 
     [<Fact>]
@@ -88,10 +82,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 | Some parsed -> parsed.ChatId = Some 204L
                 | _ -> false),
                 $"Expected sendPhoto to user 204. Got %d{photoCalls.Length} calls")
-
-            let! msgCalls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText msgCalls -42L "взял(а) купон",
-                $"Expected group notification to -42 with 'взял(а) купон'. Got %d{msgCalls.Length} calls")
         }
 
     [<Fact>]
@@ -149,8 +139,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls 210L "Пришли фото",
-                $"Expected DM with 'Пришли фото'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 210L "Пришли фото купона",
+                $"Expected DM with 'Пришли фото купона'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -164,8 +154,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls 216L "Пришли фото",
-                $"Expected DM with 'Пришли фото' when /add has args but no photo. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 216L "пришли фото",
+                $"Expected DM instructing photo for manual add. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -195,54 +185,49 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls 212L "Используй подпись вида",
-                $"Expected DM with 'Используй подпись вида'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 212L "Нужна подпись вида",
+                $"Expected DM with 'Нужна подпись вида'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
-    let ``Confirm_add with seeded pending_add adds coupon and sends notification`` () =
+    let ``/add wizard adds coupon via buttons`` () =
         task {
             do! fixture.ClearFakeCalls()
-            let owner = Tg.user(id = 214L, username = "confirm_owner", firstName = "ConfirmOwner")
-            do! fixture.SetChatMemberStatus(owner.Id, "member")
-
-            let pendingId = Guid.NewGuid()
-            use conn = new NpgsqlConnection(fixture.DbConnectionString)
-            //language=postgresql
-            do! conn.ExecuteAsync("""
-                INSERT INTO "user"(id, username, first_name, created_at, updated_at)
-                VALUES (214, 'confirm_owner', 'ConfirmOwner', NOW(), NOW())
-                ON CONFLICT (id) DO NOTHING
-                """) :> Task
-            //language=postgresql
-            do! conn.ExecuteAsync("""
-                INSERT INTO pending_add (id, owner_id, photo_file_id, value, min_check, expires_at)
-                VALUES (@id, 214, 'seed-photo', 25.00, 100.00, '2026-02-15')
-                """, {| id = pendingId |}) :> Task
-
-            let! resp = fixture.SendUpdate(Tg.dmCallback($"confirm_add:{pendingId}", owner))
-            Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
-
-            let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls 214L "Добавил купон",
-                $"Expected DM with 'Добавил купон'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "добавил(а) купон",
-                $"Expected group notification with 'добавил(а) купон'. Got %d{calls.Length} calls")
-        }
-
-    [<Fact>]
-    let ``Confirm_add with missing or already consumed pending says outdated`` () =
-        task {
-            do! fixture.ClearFakeCalls()
-            let user = Tg.user(id = 215L, username = "confirm_outdated")
+            do! fixture.TruncateCoupons()
+            let user = Tg.user(id = 214L, username = "add_wizard", firstName = "Wizard")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let! resp = fixture.SendUpdate(Tg.dmCallback($"confirm_add:{Guid.NewGuid()}", user))
+            let! resp = fixture.SendUpdate(Tg.dmMessage("/add", user))
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls 215L "устарела",
-                $"Expected DM with 'устарела'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 214L "Пришли фото купона",
+                "Expected wizard to ask for photo")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = "wizard-photo"))
+
+            let! callsAfterPhoto = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterPhoto 214L "Выбери скидку",
+                "Expected wizard to ask for discount options after photo")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:disc:10:50", user))
+            let! callsAfterDisc = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterDisc 214L "дату истечения",
+                "Expected wizard to ask for expiry date after discount choice")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:date:today", user))
+            let! callsAfterDate = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterDate 214L "Подтвердить добавление",
+                "Expected wizard confirm step after date choice")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:confirm", user))
+            let! callsAfterConfirm = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterConfirm 214L "Добавил купон",
+                "Expected success message after confirm")
         }
 
     [<Fact>]
@@ -290,8 +275,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 221L "Отметил",
                 $"Expected DM with 'Отметил'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "использовал(а)",
-                $"Expected group notification with 'использовал(а)'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -338,8 +321,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 226L "Вернул",
                 $"Expected DM with 'Вернул'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "вернул",
-                $"Expected group notification with 'вернул'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -400,8 +381,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("/my", taker))
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls 255L "Мои взятые",
-                $"Expected 'Мои взятые'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 255L "Мои купоны",
+                $"Expected 'Мои купоны'. Got %d{calls.Length} calls")
             Assert.True(findCallWithText calls 255L "—",
                 "Expected 0 taken (only used coupon): 'Мои взятые' with '—', not the used coupon")
         }
@@ -422,8 +403,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("/my", owner))
             let! callsOwner = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText callsOwner 231L "Мои взятые",
-                $"Expected 'Мои взятые' for owner. Got %d{callsOwner.Length} calls")
+            Assert.True(findCallWithText callsOwner 231L "Мои купоны",
+                $"Expected 'Мои купоны' for owner. Got %d{callsOwner.Length} calls")
             Assert.True(findCallWithText callsOwner 231L "—",
                 $"Expected '—' when owner has no taken. Got %d{callsOwner.Length} calls")
             Assert.False(findCallWithText callsOwner 231L "Мои добавленные",
@@ -431,13 +412,16 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("/my", taker))
+            let! albumCalls = fixture.GetFakeCalls("sendMediaGroup")
+            Assert.Equal(1, albumCalls.Length)
+
             let! callsTaker = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText callsTaker 232L "Мои взятые",
-                $"Expected 'Мои взятые' for taker. Got %d{callsTaker.Length} calls")
-            Assert.True(findCallWithText callsTaker 232L "12",
-                $"Expected coupon value in /my for taker. Got %d{callsTaker.Length} calls")
+            Assert.True(findCallWithText callsTaker 232L "Мои купоны",
+                $"Expected 'Мои купоны' for taker. Got %d{callsTaker.Length} calls")
+            Assert.True(findCallWithText callsTaker 232L "Купон ID:",
+                "Expected coupon ID in /my text")
             Assert.True(callsTaker |> Array.exists (fun c -> c.Body.Contains("return:") && c.Body.Contains("used:")),
-                "Expected inline keyboard with return: and used: callback_data under taken coupons")
+                "Expected inline keyboard with return: and used: callback_data under /my text message")
         }
 
     [<Fact>]
@@ -458,8 +442,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 236L "Отметил",
                 $"Expected 'Отметил' when pressing Использован. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "использовал(а)",
-                $"Expected group notification. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -480,8 +462,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 238L "Вернул",
                 $"Expected 'Вернул' when pressing Вернуть. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "вернул",
-                $"Expected group notification. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -696,7 +676,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                             |> Seq.exists (fun btn ->
                                 let textOpt = tryGetStringProp btn [ "text" ]
                                 let cbOpt = tryGetStringProp btn [ "callback_data"; "callbackData" ]
-                                textOpt = Some "Взять 1" && cbOpt = Some $"take:{couponId}")
+                                textOpt = Some "Взять 1ый" && cbOpt = Some $"take:{couponId}")
                 with _ ->
                     false
 
@@ -755,6 +735,75 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
+    let ``Limit 4 prevents taking 5th coupon`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let owner = Tg.user(id = 310L, username = "limit_owner", firstName = "Owner")
+            let taker = Tg.user(id = 311L, username = "limit_taker", firstName = "Taker")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let ids = ResizeArray<int>()
+            for i in 1 .. 5 do
+                let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner, fileId = $"limit-photo-{i}"))
+                let! cid = getLatestCouponId ()
+                ids.Add(cid)
+
+            // take first 4
+            for i in 0 .. 3 do
+                do! fixture.ClearFakeCalls()
+                let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {ids[i]}", taker))
+                let! photoCalls = fixture.GetFakeCalls("sendPhoto")
+                Assert.Equal(1, photoCalls.Length)
+
+            // 5th should be rejected
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {ids[4]}", taker))
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls 311L "Нельзя взять больше 4",
+                "Expected limit reached message on 5th take")
+            let! photoCalls = fixture.GetFakeCalls("sendPhoto")
+            Assert.Equal(0, photoCalls.Length)
+        }
+
+    [<Fact>]
+    let ``Limit 4 is race-safe for concurrent takes`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let owner = Tg.user(id = 320L, username = "race_owner", firstName = "Owner")
+            let taker = Tg.user(id = 321L, username = "race_taker", firstName = "Taker")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let ids = ResizeArray<int>()
+            for i in 1 .. 5 do
+                let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner, fileId = $"race-photo-{i}"))
+                let! cid = getLatestCouponId ()
+                ids.Add(cid)
+
+            // Take first 3 sequentially
+            for i in 0 .. 2 do
+                let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {ids[i]}", taker))
+                ()
+
+            // Then take 2 concurrently: only one should succeed (4th), another should hit limit
+            do! fixture.ClearFakeCalls()
+            let t1 = fixture.SendUpdate(Tg.dmMessage($"/take {ids[3]}", taker))
+            let t2 = fixture.SendUpdate(Tg.dmMessage($"/take {ids[4]}", taker))
+            let! _ = Task.WhenAll [| t1 :> Task; t2 :> Task |]
+
+            let! photoCalls = fixture.GetFakeCalls("sendPhoto")
+            Assert.Equal(1, photoCalls.Length)
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls 321L "Нельзя взять больше 4",
+                "Expected one of concurrent takes to be rejected by limit")
+        }
+
+    [<Fact>]
     let ``Stats shows added taken used`` () =
         task {
             do! fixture.ClearFakeCalls()
@@ -774,6 +823,38 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 $"Expected 'Взято' in /stats. Got %d{calls.Length} calls")
             Assert.True(findCallWithText calls 234L "Использовано",
                 $"Expected 'Использовано' in /stats. Got %d{calls.Length} calls")
+        }
+
+    [<Fact>]
+    let ``/feedback forwards next message to admins`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let user = Tg.user(id = 400L, username = "fb_user", firstName = "FB")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/feedback", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 400L "Следующее твоё сообщение",
+                "Expected /feedback instruction message")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("hello admins", user))
+
+            let! fwCalls = fixture.GetFakeCalls("forwardMessage")
+            Assert.Equal(2, fwCalls.Length)
+            let forwardedChatIds =
+                fwCalls
+                |> Array.choose (fun c ->
+                    try
+                        use doc = JsonDocument.Parse(c.Body)
+                        Some(doc.RootElement.GetProperty("chat_id").GetInt64())
+                    with _ -> None)
+                |> Array.sort
+            Assert.Equal<int64 array>([| 900L; 901L |], forwardedChatIds)
+
+            let! doneCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText doneCalls 400L "Спасибо",
+                "Expected user confirmation after forwarding")
         }
 
     interface IAssemblyFixture<DefaultCouponHubTestContainers>

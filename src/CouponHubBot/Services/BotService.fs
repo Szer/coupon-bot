@@ -2,6 +2,7 @@ namespace CouponHubBot.Services
 
 open System
 open System.Diagnostics
+open System.Collections.Generic
 open System.Runtime.ExceptionServices
 open System.Text.Json
 open System.Text.RegularExpressions
@@ -27,10 +28,35 @@ type BotService(
     let sendText (chatId: int64) (text: string) =
         botClient.SendMessage(ChatId chatId, text) |> taskIgnore
 
+    /// Short Russian ordinal form used in UI: 1ый, 2ой, 3ий, 4ый, ...
+    let formatOrdinalShort (n: int) =
+        let suffix =
+            match n with
+            | 2 | 6 | 7 | 8 -> "ой"
+            | 3 -> "ий"
+            | _ -> "ый"
+        $"{n}{suffix}"
+
     let parseInt (s: string) =
         match System.Int32.TryParse(s) with
         | true, v -> Some v
         | _ -> None
+
+    let parseDecimalInvariant (s: string) =
+        let s2 = s.Trim().Replace(',', '.')
+        match Decimal.TryParse(s2, Globalization.NumberStyles.Number, Globalization.CultureInfo.InvariantCulture) with
+        | true, v -> Some v
+        | _ -> None
+
+    let tryParseTwoDecimals (text: string) =
+        if String.IsNullOrWhiteSpace text then None
+        else
+            let parts = text.Split([| ' '; '\t'; '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
+            if parts.Length < 2 then None
+            else
+                match parseDecimalInvariant parts[0], parseDecimalInvariant parts[1] with
+                | Some a, Some b -> Some(a, b)
+                | _ -> None
 
     let tryParseDateOnly (s: string) =
         let styles = System.Globalization.DateTimeStyles.None
@@ -103,21 +129,57 @@ type BotService(
         |> Array.indexed
         |> Array.map (fun (i, c) ->
             let humanIdx = i + 1
-            seq { InlineKeyboardButton.WithCallbackData($"Взять {humanIdx}", $"take:{c.id}") })
+            seq { InlineKeyboardButton.WithCallbackData($"Взять {formatOrdinalShort humanIdx}", $"take:{c.id}") })
         |> Seq.ofArray
         |> InlineKeyboardMarkup
 
-    let addConfirmKeyboard (id: Guid) =
-        seq { seq { InlineKeyboardButton.WithCallbackData("✅ Добавить", $"confirm_add:{id}") } }
+    let addWizardDiscountKeyboard () =
+        seq {
+            seq { InlineKeyboardButton.WithCallbackData("-10€/50€", "addflow:disc:10:50") }
+            seq { InlineKeyboardButton.WithCallbackData("-5€/25€", "addflow:disc:5:25") }
+            seq { InlineKeyboardButton.WithCallbackData("-10€/40€", "addflow:disc:10:40") }
+            seq { InlineKeyboardButton.WithCallbackData("-20€/100€", "addflow:disc:20:100") }
+            seq { InlineKeyboardButton.WithCallbackData("Другой вариант", "addflow:disc:other") }
+        }
         |> InlineKeyboardMarkup
 
+    let addWizardDateKeyboard () =
+        seq {
+            seq { InlineKeyboardButton.WithCallbackData("Сегодня", "addflow:date:today") }
+            seq { InlineKeyboardButton.WithCallbackData("Завтра", "addflow:date:tomorrow") }
+            seq { InlineKeyboardButton.WithCallbackData("Другая дата", "addflow:date:other") }
+        }
+        |> InlineKeyboardMarkup
+
+    let addWizardOcrKeyboard () =
+        seq {
+            seq {
+                InlineKeyboardButton.WithCallbackData("✅ Да, всё верно", "addflow:ocr:yes")
+                InlineKeyboardButton.WithCallbackData("Нет, выбрать вручную", "addflow:ocr:no")
+            }
+        }
+        |> InlineKeyboardMarkup
+
+    let addWizardConfirmKeyboard () =
+        seq {
+            seq {
+                InlineKeyboardButton.WithCallbackData("✅ Добавить", "addflow:confirm")
+                InlineKeyboardButton.WithCallbackData("↩️ Отмена", "addflow:cancel")
+            }
+        }
+        |> InlineKeyboardMarkup
+
+    /// Keyboard for /my list (no :del). One row per coupon, with numbered actions.
     let myTakenKeyboard (taken: Coupon array) =
         taken
-        |> Array.truncate 20
-        |> Array.map (fun c ->
+        |> Array.truncate 4
+        |> Array.indexed
+        |> Array.map (fun (i, c) ->
+            let humanIdx = i + 1
+            let ord = formatOrdinalShort humanIdx
             seq {
-                InlineKeyboardButton.WithCallbackData("Вернуть", $"return:{c.id}")
-                InlineKeyboardButton.WithCallbackData("Использован", $"used:{c.id}")
+                InlineKeyboardButton.WithCallbackData($"Вернуть {ord}", $"return:{c.id}")
+                InlineKeyboardButton.WithCallbackData($"Использован {ord}", $"used:{c.id}")
             })
         |> Seq.ofArray
         |> InlineKeyboardMarkup
@@ -132,6 +194,12 @@ type BotService(
         }
         |> InlineKeyboardMarkup
 
+    let getLargestPhotoFileId (msg: Message) =
+        if isNull msg.Photo || msg.Photo.Length = 0 then None
+        else
+            let p = msg.Photo |> Array.maxBy (fun p -> if p.FileSize.HasValue then p.FileSize.Value else 0)
+            Some p.FileId
+
     let ensureCommunityMember (userId: int64) (chatId: int64) =
         task {
             let! isMember = membership.IsMember(userId)
@@ -142,11 +210,11 @@ type BotService(
 
     let handleStart (chatId: int64) =
         sendText chatId
-            "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add — добавить купон\n/coupons — посмотреть доступные\n/take <id> — взять купон (или /take для списка)\n/used <id> — отметить использованным\n/return <id> — вернуть в доступные\n/my — мои купоны\n/stats — моя статистика\n/help — помощь"
+            "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add (или /a) — добавить купон\n/list (или /l) — доступные купоны\n/my (или /m) — мои купоны\n/stats (или /s) — моя статистика\n/feedback (или /f) — фидбэк авторам\n\nДополнительно (не в меню):\n/take <id>\n/used <id>\n/return <id>\n/help"
 
     let handleHelp (chatId: int64) =
         sendText chatId
-            "Команды (все в личке):\n/add\n/coupons\n/take <id> (или /take)\n/used <id>\n/return <id>\n/my\n/stats\n/help"
+            "Команды (все в личке):\n/add (/a)\n/list (/l)\n/my (/m)\n/stats (/s)\n/feedback (/f)\n\nДополнительно:\n/take <id> (или /take для списка)\n/used <id>\n/return <id>\n/help"
 
     let handleCoupons (chatId: int64) =
         task {
@@ -168,6 +236,10 @@ type BotService(
     let handleTake (taker: DbUser) (chatId: int64) (couponId: int) =
         task {
             match! db.TryTakeCoupon(couponId, taker.id) with
+            | LimitReached ->
+                do!
+                    sendText chatId
+                        "Нельзя взять больше 4 купонов одновременно. Сначала верни или отметь использованным один из купонов."
             | NotFoundOrNotAvailable ->
                 do! sendText chatId $"Купон {couponId} уже взят или не существует."
             | Taken coupon ->
@@ -178,7 +250,6 @@ type BotService(
                         caption = $"Ты взял купон {couponId}: {formatCouponValue coupon}, истекает {d}",
                         replyMarkup = singleTakenKeyboard coupon)
                     |> taskIgnore
-                do! notifications.CouponTaken(coupon, taker)
         }
 
     let handleUsed (user: DbUser) (chatId: int64) (couponId: int) =
@@ -186,9 +257,6 @@ type BotService(
             let! updated = db.MarkUsed(couponId, user.id)
             if updated then
                 do! sendText chatId $"Отметил купон {couponId} как использованный."
-                match! db.GetCouponById(couponId) with
-                | Some coupon -> do! notifications.CouponUsed(coupon, user)
-                | None -> ()
             else
                 do! sendText chatId $"Не получилось отметить купон {couponId}. Убедись что он взят тобой."
             return updated
@@ -199,9 +267,6 @@ type BotService(
             let! updated = db.ReturnToAvailable(couponId, user.id)
             if updated then
                 do! sendText chatId $"Вернул купон {couponId} в доступные."
-                match! db.GetCouponById(couponId) with
-                | Some coupon -> do! notifications.CouponReturned(coupon, user)
-                | None -> ()
             else
                 do! sendText chatId $"Не получилось вернуть купон {couponId}. Убедись что он взят тобой."
             return updated
@@ -216,18 +281,53 @@ type BotService(
     let handleMy (user: DbUser) (chatId: int64) =
         task {
             let! taken = db.GetCouponsTakenBy(user.id)
-            let takenText =
-                if taken.Length = 0 then "—"
-                else taken |> Array.truncate 20 |> Array.map formatCouponLine |> String.concat "\n"
             if taken.Length = 0 then
-                do! sendText chatId $"Мои взятые:\n{takenText}"
+                do! sendText chatId "Мои купоны:\n—"
             else
+                let shown = taken |> Array.truncate 4
+
+                // 1) Album message with photos only (1..4)
+                let media =
+                    shown
+                    |> Array.map (fun c -> InputMediaPhoto(InputFileId c.photo_file_id) :> IAlbumInputMedia)
+                    |> Seq.ofArray
+
+                do! botClient.SendMediaGroup(ChatId chatId, media) |> taskIgnore
+
+                // 2) Text + inline buttons
+                let text =
+                    shown
+                    |> Array.indexed
+                    |> Array.map (fun (i, c) ->
+                        let n = i + 1
+                        let d = c.expires_at.ToString("dd.MM.yyyy")
+                        $"{n}. Купон ID:{c.id} на {formatCouponValue c}, истекает {d}")
+                    |> String.concat "\n"
+
                 do!
-                    botClient.SendMessage(ChatId chatId, $"Мои взятые:\n{takenText}", replyMarkup = myTakenKeyboard taken)
+                    botClient.SendMessage(
+                        ChatId chatId,
+                        $"Мои купоны:\n{text}",
+                        replyMarkup = myTakenKeyboard shown
+                    )
                     |> taskIgnore
         }
 
-    let handleAdd (user: DbUser) (msg: Message) =
+    let handleAddWizardStart (user: DbUser) (chatId: int64) =
+        task {
+            do! db.UpsertPendingAddFlow(
+                    { user_id = user.id
+                      stage = "awaiting_photo"
+                      photo_file_id = null
+                      value = Nullable()
+                      min_check = Nullable()
+                      expires_at = Nullable()
+                      updated_at = DateTime.UtcNow }
+                )
+            do! sendText chatId "Пришли фото купона (просто картинку)."
+        }
+
+    let handleAddManual (user: DbUser) (msg: Message) =
         task {
             use a = botActivity.StartActivity("handleAdd")
             %a.SetTag("userId", user.id)
@@ -240,59 +340,12 @@ type BotService(
                 else caption.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
 
             if not hasPhoto then
-                do! sendText chatId "Пришли фото купона с подписью:\n/add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
-            elif parts.Length = 1 && parts[0] = "/add" then
-                // OCR-assisted flow: attempt to prefill value/date
-                if not botConfig.OcrEnabled then
-                    do! sendText chatId "Используй подпись вида: /add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
-                else
-                    let candidatePhotos =
-                        msg.Photo
-                        |> Array.filter (fun p ->
-                            let size = if p.FileSize.HasValue then int64 p.FileSize.Value else 0L
-                            size = 0L || size <= botConfig.OcrMaxFileSizeBytes)
-
-                    if candidatePhotos.Length = 0 then
-                        do! sendText chatId $"Фото слишком большое (лимит {botConfig.OcrMaxFileSizeBytes/(1024L*1024L)} MBs). Используй ручной ввод: /add <discount> <min_check> <date>"
-                    else
-                        let largestPhoto =
-                            candidatePhotos
-                            |> Array.maxBy (fun p -> if p.FileSize.HasValue then p.FileSize.Value else 0)
-                        let! file = botClient.GetFile(largestPhoto.FileId)
-                        if String.IsNullOrWhiteSpace(file.FilePath) then
-                            do! sendText chatId "Не смог получить путь файла в Telegram. Попробуй ещё раз."
-                        else
-                            let apiBase = if isNull botConfig.TelegramApiBaseUrl then "https://api.telegram.org" else botConfig.TelegramApiBaseUrl
-                            let fileUrl = $"{apiBase}/file/bot{botConfig.BotToken}/{file.FilePath}"
-                            let! ocrText = ocr.TextFromImageUrl(fileUrl)
-                            let amounts = tryParseAmountsFromOcrText ocrText
-                            let valueOpt = if amounts.Length > 0 then Some (amounts |> Array.min) else None
-                            let minCheckOpt = if amounts.Length >= 2 then Some (amounts |> Array.max) else None
-                            let dateOpt = tryParseDateFromOcrText ocrText
-                            match valueOpt, minCheckOpt, dateOpt with
-                            | Some value, Some minCheck, Some expiresAt ->
-                                let id = Guid.NewGuid()
-                                do! db.CreatePendingAdd(id, user.id, largestPhoto.FileId, value, minCheck, expiresAt)
-                                let v = value.ToString("0.##")
-                                let mc = minCheck.ToString("0.##")
-                                let d = expiresAt.ToString("dd.MM.yyyy")
-                                do!
-                                    botClient.SendMessage(
-                                        ChatId chatId,
-                                        $"Я распознал: {v} EUR из {mc} EUR, истекает {d}. Подтвердить добавление?",
-                                        replyMarkup = addConfirmKeyboard id)
-                                    |> taskIgnore
-                            | _ ->
-                                do! sendText chatId "Я не смог распознать discount/min_check и/или дату. Используй ручной ввод: фото с подписью /add <discount> <min_check> <date>"
-            elif parts.Length >= 4 && parts[0] = "/add" then
+                do! sendText chatId "Для ручного добавления пришли фото купона с подписью:\n/add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
+            elif parts.Length >= 4 && (parts[0] = "/add" || parts[0] = "/a") then
                 let valueOpt =
-                    match System.Decimal.TryParse(parts[1], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture) with
-                    | true, v -> Some v
-                    | _ -> None
+                    parseDecimalInvariant parts[1]
                 let minCheckOpt =
-                    match System.Decimal.TryParse(parts[2], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture) with
-                    | true, v -> Some v
-                    | _ -> None
+                    parseDecimalInvariant parts[2]
                 let dateOpt = tryParseDateOnly parts[3]
                 match valueOpt, minCheckOpt, dateOpt with
                 | Some value, Some minCheck, Some expiresAt ->
@@ -304,11 +357,108 @@ type BotService(
                     let mc = coupon.min_check.ToString("0.##")
                     let d = coupon.expires_at.ToString("dd.MM.yyyy")
                     do! sendText chatId $"Добавил купон {coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
-                    do! notifications.CouponAdded(coupon)
                 | _ ->
                     do! sendText chatId "Не понял discount/min_check/date. Пример: /add 10 50 2026-01-25 (или /add 10 50 25.01.2026)"
             else
                 do! sendText chatId "Нужна подпись вида: /add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
+        }
+
+    let handleAddWizardPhoto (user: DbUser) (chatId: int64) (photoFileId: string) =
+        task {
+            do! db.UpsertPendingAddFlow(
+                    { user_id = user.id
+                      stage = "awaiting_discount_choice"
+                      photo_file_id = photoFileId
+                      value = Nullable()
+                      min_check = Nullable()
+                      expires_at = Nullable()
+                      updated_at = DateTime.UtcNow }
+                )
+
+            if not botConfig.OcrEnabled then
+                do!
+                    botClient.SendMessage(
+                        ChatId chatId,
+                        "Выбери скидку и минимальный чек:",
+                        replyMarkup = addWizardDiscountKeyboard()
+                    )
+                    |> taskIgnore
+            else
+                // Attempt OCR prefill (optional).
+                let! file = botClient.GetFile(photoFileId)
+                if String.IsNullOrWhiteSpace(file.FilePath) then
+                    do!
+                        botClient.SendMessage(
+                            ChatId chatId,
+                            "Выбери скидку и минимальный чек:",
+                            replyMarkup = addWizardDiscountKeyboard()
+                        )
+                        |> taskIgnore
+                else
+                    let apiBase =
+                        if isNull botConfig.TelegramApiBaseUrl then "https://api.telegram.org"
+                        else botConfig.TelegramApiBaseUrl
+                    let fileUrl = $"{apiBase}/file/bot{botConfig.BotToken}/{file.FilePath}"
+                    let! ocrText = ocr.TextFromImageUrl(fileUrl)
+                    let amounts = tryParseAmountsFromOcrText ocrText
+                    let valueOpt = if amounts.Length > 0 then Some (amounts |> Array.min) else None
+                    let minCheckOpt = if amounts.Length >= 2 then Some (amounts |> Array.max) else None
+                    let dateOpt = tryParseDateFromOcrText ocrText
+                    match valueOpt, minCheckOpt, dateOpt with
+                    | Some value, Some minCheck, Some expiresAt ->
+                        do! db.UpsertPendingAddFlow(
+                                { user_id = user.id
+                                  stage = "awaiting_ocr_confirm"
+                                  photo_file_id = photoFileId
+                                  value = Nullable(value)
+                                  min_check = Nullable(minCheck)
+                                  expires_at = Nullable(expiresAt)
+                                  updated_at = DateTime.UtcNow }
+                            )
+                        let v = value.ToString("0.##")
+                        let mc = minCheck.ToString("0.##")
+                        let d = expiresAt.ToString("dd.MM.yyyy")
+                        do!
+                            botClient.SendMessage(
+                                ChatId chatId,
+                                $"Я распознал: {v} EUR из {mc} EUR, истекает {d}. Всё верно?",
+                                replyMarkup = addWizardOcrKeyboard()
+                            )
+                            |> taskIgnore
+                    | _ ->
+                        do!
+                            botClient.SendMessage(
+                                ChatId chatId,
+                                "Выбери скидку и минимальный чек:",
+                                replyMarkup = addWizardDiscountKeyboard()
+                            )
+                            |> taskIgnore
+        }
+
+    let handleAddWizardAskDate (chatId: int64) =
+        botClient.SendMessage(ChatId chatId, "Выбери дату истечения:", replyMarkup = addWizardDateKeyboard())
+        |> taskIgnore
+
+    let handleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) =
+        let v = value.ToString("0.##")
+        let mc = minCheck.ToString("0.##")
+        let d = expiresAt.ToString("dd.MM.yyyy")
+        botClient.SendMessage(
+            ChatId chatId,
+            $"Подтвердить добавление купона: {v} EUR из {mc} EUR, истекает {d}?",
+            replyMarkup = addWizardConfirmKeyboard()
+        )
+        |> taskIgnore
+
+    let handleFeedback (user: DbUser) (chatId: int64) =
+        task {
+            if botConfig.FeedbackAdminIds.Length = 0 then
+                do! sendText chatId "Фидбэк пока не настроен (нет админов)."
+            else
+                do! db.SetPendingFeedback(user.id)
+                do!
+                    sendText chatId
+                        "Следующее твоё сообщение в этом чате (в любом виде: текст, фото, голосовое и т.д.) я отправлю моим авторам. Если передумал — просто введи любую команду (например /help)."
         }
 
     let handleCallbackQuery (cq: CallbackQuery) =
@@ -328,38 +478,115 @@ type BotService(
                 let hasData = not (isNull cq.Data)
 
                 if isPrivateChat && hasData && cq.Data.StartsWith("take:") then
+                    Metrics.buttonClickTotal.Add(1L, KeyValuePair("button", box "take"))
                     let idStr = cq.Data.Substring("take:".Length)
                     match parseInt idStr with
                     | Some couponId ->
                         do! handleTake user cq.Message.Chat.Id couponId
                     | None ->
                         ()
-                elif isPrivateChat && hasData && cq.Data.StartsWith("confirm_add:") then
-                    let idStr = cq.Data.Substring("confirm_add:".Length)
-                    match Guid.TryParse(idStr) with
-                    | true, id ->
-                        let! pendingOpt = db.ConsumePendingAdd id
-                        match pendingOpt with
-                        | Some pending ->
-                            let! coupon =
-                                db.AddCoupon(
-                                    pending.owner_id,
-                                    pending.photo_file_id,
-                                    pending.value,
-                                    pending.min_check,
-                                    pending.expires_at,
-                                    null
+                elif isPrivateChat && hasData && cq.Data.StartsWith("addflow:") then
+                    Metrics.buttonClickTotal.Add(1L, KeyValuePair("button", box cq.Data))
+                    match! db.GetPendingAddFlow user.id with
+                    | None ->
+                        do! sendText cq.Message.Chat.Id "Этот шаг добавления уже устарел. Начни заново: /add"
+                    | Some flow ->
+                        match cq.Data with
+                        | "addflow:disc:other" ->
+                            do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_discount_custom"; updated_at = DateTime.UtcNow })
+                            do! sendText cq.Message.Chat.Id "Пришли два числа: скидка и минимальный чек. Например: 10 50"
+                        | d when d.StartsWith("addflow:disc:") ->
+                            // addflow:disc:<value>:<min_check>
+                            let parts = d.Split(':', StringSplitOptions.RemoveEmptyEntries)
+                            if parts.Length >= 4 then
+                                match parseDecimalInvariant parts[2], parseDecimalInvariant parts[3] with
+                                | Some v, Some mc ->
+                                    let next =
+                                        { flow with
+                                            stage = "awaiting_date_choice"
+                                            value = Nullable(v)
+                                            min_check = Nullable(mc)
+                                            updated_at = DateTime.UtcNow }
+                                    do! db.UpsertPendingAddFlow next
+                                    do! handleAddWizardAskDate cq.Message.Chat.Id
+                                | _ ->
+                                    do! sendText cq.Message.Chat.Id "Не понял значения. Попробуй ещё раз: /add"
+                            else
+                                do! sendText cq.Message.Chat.Id "Не понял значения. Попробуй ещё раз: /add"
+                        | "addflow:date:today" ->
+                            if flow.value.HasValue && flow.min_check.HasValue then
+                                let expiresAt = DateOnly.FromDateTime(DateTime.UtcNow)
+                                let next =
+                                    { flow with
+                                        stage = "awaiting_confirm"
+                                        expires_at = Nullable(expiresAt)
+                                        updated_at = DateTime.UtcNow }
+                                do! db.UpsertPendingAddFlow next
+                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                            else
+                                do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
+                        | "addflow:date:tomorrow" ->
+                            if flow.value.HasValue && flow.min_check.HasValue then
+                                let expiresAt = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1.0))
+                                let next =
+                                    { flow with
+                                        stage = "awaiting_confirm"
+                                        expires_at = Nullable(expiresAt)
+                                        updated_at = DateTime.UtcNow }
+                                do! db.UpsertPendingAddFlow next
+                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                            else
+                                do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
+                        | "addflow:date:other" ->
+                            do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_date_custom"; updated_at = DateTime.UtcNow })
+                            do! sendText cq.Message.Chat.Id "Пришли дату истечения (например 25.01.2026 или 2026-01-25)."
+                        | "addflow:ocr:yes" ->
+                            if flow.stage = "awaiting_ocr_confirm" && flow.value.HasValue && flow.min_check.HasValue && flow.expires_at.HasValue then
+                                let next = { flow with stage = "awaiting_confirm"; updated_at = DateTime.UtcNow }
+                                do! db.UpsertPendingAddFlow next
+                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value flow.expires_at.Value
+                            else
+                                do! sendText cq.Message.Chat.Id "Этот шаг уже неактуален. Начни заново: /add"
+                        | "addflow:ocr:no" ->
+                            // Clear OCR suggestion and continue manually
+                            let next =
+                                { flow with
+                                    stage = "awaiting_discount_choice"
+                                    value = Nullable()
+                                    min_check = Nullable()
+                                    expires_at = Nullable()
+                                    updated_at = DateTime.UtcNow }
+                            do! db.UpsertPendingAddFlow next
+                            do!
+                                botClient.SendMessage(
+                                    ChatId cq.Message.Chat.Id,
+                                    "Ок, выбери скидку и минимальный чек:",
+                                    replyMarkup = addWizardDiscountKeyboard()
                                 )
-
-                            let v = coupon.value.ToString("0.##")
-                            let mc = coupon.min_check.ToString("0.##")
-                            let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                            do! sendText cq.Message.Chat.Id $"Добавил купон {coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
-                            do! notifications.CouponAdded(coupon)
-                        | None ->
-                            do! sendText cq.Message.Chat.Id "Эта операция уже устарела. Пришли /add ещё раз."
-                    | _ ->
-                        ()
+                                |> taskIgnore
+                        | "addflow:confirm" ->
+                            if flow.photo_file_id <> null && flow.value.HasValue && flow.min_check.HasValue && flow.expires_at.HasValue then
+                                let! coupon =
+                                    db.AddCoupon(
+                                        user.id,
+                                        flow.photo_file_id,
+                                        flow.value.Value,
+                                        flow.min_check.Value,
+                                        flow.expires_at.Value,
+                                        null
+                                    )
+                                do! db.ClearPendingAddFlow user.id
+                                let v = coupon.value.ToString("0.##")
+                                let mc = coupon.min_check.ToString("0.##")
+                                let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                                do! sendText cq.Message.Chat.Id $"Добавил купон {coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                            else
+                                do! sendText cq.Message.Chat.Id "Не хватает данных для добавления. Начни заново: /add"
+                        | "addflow:cancel" ->
+                            do! db.ClearPendingAddFlow user.id
+                            do! sendText cq.Message.Chat.Id "Ок, отменил добавление купона."
+                        | _ ->
+                            do! sendText cq.Message.Chat.Id "Не понял действие. Начни заново: /add"
                 elif isPrivateChat && hasData && cq.Data.StartsWith("return:") then
                     let deleteOnSuccess = cq.Data.EndsWith(":del")
                     let baseData = if deleteOnSuccess then cq.Data.Substring(0, cq.Data.Length - 4) else cq.Data
@@ -395,13 +622,83 @@ type BotService(
                 if not ok then () else
                 
                 let! user = db.UpsertUser(DbUser.ofTelegramUser msg.From)
+
+                // Pending /feedback: next non-command message is forwarded to admins.
+                let isCommand =
+                    not (isNull msg.Text)
+                    && msg.Text.StartsWith("/")
+
+                if not isCommand then
+                    let! consumed = db.TryConsumePendingFeedback(user.id)
+                    if consumed then
+                        for adminId in botConfig.FeedbackAdminIds do
+                            try
+                                do! botClient.ForwardMessage(ChatId adminId, ChatId msg.Chat.Id, msg.MessageId) |> taskIgnore
+                            with _ -> ()
+                        do! sendText msg.Chat.Id "Спасибо! Сообщение отправлено авторам."
+                    else
+                        ()
+                else
+                    // Any command cancels pending feedback (if present)
+                    do! db.ClearPendingFeedback(user.id)
+
+                    // Any command except /add cancels add wizard (if present)
+                    if msg.Text <> "/add" && msg.Text <> "/a" then
+                        do! db.ClearPendingAddFlow(user.id)
+
+                // Handle add wizard steps for non-command messages (photo / free-form inputs)
+                let mutable handledAddFlow = false
+                if not isCommand then
+                    match! db.GetPendingAddFlow(user.id) with
+                    | Some flow when flow.stage = "awaiting_photo" ->
+                        match getLargestPhotoFileId msg with
+                        | Some photoFileId ->
+                            handledAddFlow <- true
+                            do! handleAddWizardPhoto user msg.Chat.Id photoFileId
+                        | None -> ()
+                    | Some flow when flow.stage = "awaiting_discount_custom" && not (isNull msg.Text) ->
+                        match tryParseTwoDecimals msg.Text with
+                        | Some (v, mc) ->
+                            handledAddFlow <- true
+                            do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_date_choice"; value = Nullable(v); min_check = Nullable(mc); updated_at = DateTime.UtcNow })
+                            do! handleAddWizardAskDate msg.Chat.Id
+                        | None ->
+                            handledAddFlow <- true
+                            do! sendText msg.Chat.Id "Не понял. Пришли два числа: скидка и минимальный чек. Например: 10 50"
+                    | Some flow when flow.stage = "awaiting_date_custom" && not (isNull msg.Text) ->
+                        match tryParseDateOnly msg.Text with
+                        | Some expiresAt ->
+                            if flow.value.HasValue && flow.min_check.HasValue then
+                                handledAddFlow <- true
+                                do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_confirm"; expires_at = Nullable(expiresAt); updated_at = DateTime.UtcNow })
+                                do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                            else
+                                handledAddFlow <- true
+                                do! sendText msg.Chat.Id "Сначала выбери скидку. Начни заново: /add"
+                        | None ->
+                            handledAddFlow <- true
+                            do! sendText msg.Chat.Id "Не понял дату. Примеры: 25.01.2026 или 2026-01-25"
+                    | _ -> ()
+
+                if handledAddFlow then
+                    ()
+                else
+
                 match msg.Text with
                 | "/start" -> do! handleStart msg.Chat.Id
                 | "/help" -> do! handleHelp msg.Chat.Id
-                | "/coupons" -> do! handleCoupons msg.Chat.Id
-                | "/take" -> do! handleCoupons msg.Chat.Id
+                | "/list" -> do! handleCoupons msg.Chat.Id
+                | "/l" -> do! handleCoupons msg.Chat.Id
+                | "/coupons" -> do! handleCoupons msg.Chat.Id // legacy alias
+                | "/take" -> do! handleCoupons msg.Chat.Id // legacy alias (list)
                 | "/my" -> do! handleMy user msg.Chat.Id
+                | "/m" -> do! handleMy user msg.Chat.Id
                 | "/stats" -> do! handleStats user msg.Chat.Id
+                | "/s" -> do! handleStats user msg.Chat.Id
+                | "/feedback" -> do! handleFeedback user msg.Chat.Id
+                | "/f" -> do! handleFeedback user msg.Chat.Id
+                | "/add" -> do! handleAddWizardStart user msg.Chat.Id
+                | "/a" -> do! handleAddWizardStart user msg.Chat.Id
                 | t when not (isNull t) && t.StartsWith("/take ") ->
                     match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
                     | Some couponId -> do! handleTake user msg.Chat.Id couponId
@@ -418,11 +715,11 @@ type BotService(
                         let! _ = handleReturn user msg.Chat.Id couponId
                         ()
                     | None -> do! sendText msg.Chat.Id "Формат: /return <id>"
-                | t when not (isNull t) && t.StartsWith("/add") ->
-                    do! handleAdd user msg
+                | t when not (isNull t) && (t.StartsWith("/add ") || t.StartsWith("/a ")) ->
+                    do! sendText msg.Chat.Id "Для ручного добавления пришли фото с подписью: /add <discount> <min_check> <date>"
                 | _ ->
-                    if msg.Photo <> null && msg.Photo.Length > 0 && not (isNull msg.Caption) && msg.Caption.StartsWith("/add") then
-                        do! handleAdd user msg
+                    if msg.Photo <> null && msg.Photo.Length > 0 && not (isNull msg.Caption) && (msg.Caption.StartsWith("/add") || msg.Caption.StartsWith("/a")) then
+                        do! handleAddManual user msg
                     else
                         logger.LogInformation("Ignoring private message")
             else ()
