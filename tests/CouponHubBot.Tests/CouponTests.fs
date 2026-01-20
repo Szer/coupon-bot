@@ -354,7 +354,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
-    let ``My shows owned and taken`` () =
+    let ``My shows only taken with return and used buttons`` () =
         task {
             do! fixture.ClearFakeCalls()
             let owner = Tg.user(id = 231L, username = "my_owner", firstName = "MO")
@@ -369,16 +369,66 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("/my", owner))
             let! callsOwner = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText callsOwner 231L "Мои добавленные",
-                $"Expected 'Мои добавленные' for owner. Got %d{callsOwner.Length} calls")
-            Assert.True(findCallWithText callsOwner 231L "12",
-                $"Expected coupon value in /my for owner. Got %d{callsOwner.Length} calls")
+            Assert.True(findCallWithText callsOwner 231L "Мои взятые",
+                $"Expected 'Мои взятые' for owner. Got %d{callsOwner.Length} calls")
+            Assert.True(findCallWithText callsOwner 231L "—",
+                $"Expected '—' when owner has no taken. Got %d{callsOwner.Length} calls")
+            Assert.False(findCallWithText callsOwner 231L "Мои добавленные",
+                "Expected no 'Мои добавленные' section")
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("/my", taker))
             let! callsTaker = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText callsTaker 232L "Мои взятые",
                 $"Expected 'Мои взятые' for taker. Got %d{callsTaker.Length} calls")
+            Assert.True(findCallWithText callsTaker 232L "12",
+                $"Expected coupon value in /my for taker. Got %d{callsTaker.Length} calls")
+            Assert.True(callsTaker |> Array.exists (fun c -> c.Body.Contains("return:") && c.Body.Contains("used:")),
+                "Expected inline keyboard with return: and used: callback_data under taken coupons")
+        }
+
+    [<Fact>]
+    let ``My taken inline used button marks coupon`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 235L, username = "my_used_o", firstName = "O")
+            let taker = Tg.user(id = 236L, username = "my_used_t", firstName = "T")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"used:{couponId}", taker))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 236L "Отметил",
+                $"Expected 'Отметил' when pressing Использован. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "использовал",
+                $"Expected group notification. Got %d{calls.Length} calls")
+        }
+
+    [<Fact>]
+    let ``My taken inline return button returns coupon`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 237L, username = "my_ret_o", firstName = "O")
+            let taker = Tg.user(id = 238L, username = "my_ret_t", firstName = "T")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback($"return:{couponId}", taker))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 238L "Вернул",
+                $"Expected 'Вернул' when pressing Вернуть. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "вернул",
+                $"Expected group notification. Got %d{calls.Length} calls")
         }
 
     [<Fact>]

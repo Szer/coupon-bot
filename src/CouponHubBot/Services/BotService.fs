@@ -78,6 +78,17 @@ type BotService(
         seq { seq { InlineKeyboardButton.WithCallbackData("✅ Добавить", $"confirm_add:{id}") } }
         |> InlineKeyboardMarkup
 
+    let myTakenKeyboard (taken: Coupon array) =
+        taken
+        |> Array.truncate 20
+        |> Array.map (fun c ->
+            seq {
+                InlineKeyboardButton.WithCallbackData("Вернуть", $"return:{c.id}")
+                InlineKeyboardButton.WithCallbackData("Использован", $"used:{c.id}")
+            })
+        |> Seq.ofArray
+        |> InlineKeyboardMarkup
+
     let ensureCommunityMember (userId: int64) (chatId: int64) =
         task {
             let! isMember = membership.IsMember(userId)
@@ -155,15 +166,16 @@ type BotService(
 
     let handleMy (user: DbUser) (chatId: int64) =
         task {
-            let! owned = db.GetCouponsByOwner(user.id)
             let! taken = db.GetCouponsTakenBy(user.id)
-            let ownedText =
-                if owned.Length = 0 then "—"
-                else owned |> Array.truncate 20 |> Array.map formatCouponLine |> String.concat "\n"
             let takenText =
                 if taken.Length = 0 then "—"
                 else taken |> Array.truncate 20 |> Array.map formatCouponLine |> String.concat "\n"
-            do! sendText chatId $"Мои добавленные:\n{ownedText}\n\nМои взятые:\n{takenText}"
+            if taken.Length = 0 then
+                do! sendText chatId $"Мои взятые:\n{takenText}"
+            else
+                do!
+                    botClient.SendMessage(ChatId chatId, $"Мои взятые:\n{takenText}", replyMarkup = myTakenKeyboard taken)
+                    |> taskIgnore
         }
 
     let handleAdd (user: DbUser) (msg: Message) =
@@ -289,6 +301,16 @@ type BotService(
                             do! sendText cq.Message.Chat.Id "Эта операция уже устарела. Пришли /add ещё раз."
                     | _ ->
                         ()
+                elif isPrivateChat && hasData && cq.Data.StartsWith("return:") then
+                    let idStr = cq.Data.Substring("return:".Length)
+                    match parseInt idStr with
+                    | Some couponId -> do! handleReturn user cq.Message.Chat.Id couponId
+                    | None -> ()
+                elif isPrivateChat && hasData && cq.Data.StartsWith("used:") then
+                    let idStr = cq.Data.Substring("used:".Length)
+                    match parseInt idStr with
+                    | Some couponId -> do! handleUsed user cq.Message.Chat.Id couponId
+                    | None -> ()
 
             do! botClient.AnswerCallbackQuery(cq.Id)
         }
