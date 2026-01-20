@@ -1,0 +1,89 @@
+# Coupon Hub Bot — правила для агента
+
+## Что это
+
+Telegram-бот для совместного управления купонами Dunnes в закрытом сообществе. Пользователи добавляют купоны (фото + номинал + дата), забирают из «доступных», отмечают «использован» или возвращают. Всё в личке, уведомления — в группу. Язык интерфейса — русский.
+
+Стек: **F# / .NET 10**, PostgreSQL, Dapper, **Telegram.Bot 22.8.1**, ASP.NET Core (webhook), Flyway, Docker. Тесты: Testcontainers (Postgres + Flyway + бот + FakeTgApi).
+
+---
+
+## Ключевая логика
+
+### Сообщение «Ты взял купон» (handleTake)
+
+При взятии купона (команда `/take`, кнопка «Взять N» или `take:{id}`) бот шлёт **одно** сообщение:
+
+- **SendPhoto** с `caption` и `replyMarkup` (не SendPhoto + отдельный SendMessage).
+- Caption: `Ты взял купон {id}: {v} EUR, истекает {d}`.
+- Кнопки: «Вернуть», «Использован» — `singleTakenKeyboard(coupon)`.
+- Callback: `return:{id}:del` и `used:{id}:del`. Суффикс **`:del`** = при успешном действии удалять **это** сообщение (`DeleteMessage`), чтобы в чате не оставалось ни фото, ни кнопок.
+
+### Команда /my (handleMy)
+
+- Показываем **только «Мои взятые»** (не «Мои добавленные»).
+- Список строится из `GetCouponsTakenBy`; под каждым купоном — кнопки «Вернуть» и «Использован».
+- Callback: `return:{id}` и `used:{id}` **без** `:del` — сообщение не удаляем (список может содержать несколько купонов).
+
+### Обработка callback (return / used)
+
+- `return:{id}` или `return:{id}:del` — `handleReturn`; при `:del` и успехе (`ok`) — `DeleteMessage(cq.Message)` в `try/with`.
+- `used:{id}` или `used:{id}:del` — `handleUsed`; при `:del` и успехе — `DeleteMessage(cq.Message)` в `try/with`.
+- Парсинг: `deleteOnSuccess = cq.Data.EndsWith(":del")`, для извлечения `id` отрезать `:del` и взять число после `return:` / `used:`.
+- `handleReturn` и `handleUsed` возвращают `bool` (успех операции), чтобы callback решал, вызывать ли `DeleteMessage`.
+
+### Устаревшие кнопки (stale callbacks)
+
+Кнопки остаются на сообщениях. Возможны нажатия по «старым» данным, например:
+
+- пользователь A взял купон, вернул, потом B взял — A жмёт «Использован» на своём старом сообщении;
+- купон уже отмечен «использован», пользователь снова жмёт «Использован».
+
+В этих случаях `handleReturn` / `handleUsed` дают `false`, бот отвечает «Не получилось... Убедись что он взят тобой», **DeleteMessage не вызывается**. Обработка уже реализована в `DbService` (MarkUsed / ReturnToAvailable не обновляют запись при неверном статусе или `taken_by`).
+
+### GetCouponsTakenBy (DbService)
+
+- Обязательно: `WHERE taken_by = @user_id AND status = 'taken'`. Без `status = 'taken'` в «Мои взятые» попадают использованные купоны (`used`).
+
+---
+
+## Callback-префиксы
+
+| prefix         | действие                         | удаление сообщения при успехе |
+|----------------|----------------------------------|-------------------------------|
+| `take:{id}`    | взять купон                      | —                             |
+| `confirm_add:{guid}` | подтвердить OCR-добавление | —                      |
+| `return:{id}`  | вернуть (из /my)                | нет                           |
+| `return:{id}:del` | вернуть (из «Ты взял»)       | да, `cq.Message`              |
+| `used:{id}`    | использован (из /my)            | нет                           |
+| `used:{id}:del`| использован (из «Ты взял»)      | да, `cq.Message`              |
+
+---
+
+## Тесты
+
+- **Testcontainers**: Postgres, Flyway, образ бота, **FakeTgApi** (HTTP-заглушка Telegram, логирует вызовы в `Store`).
+- `fixture.GetFakeCalls("method")` — массив `FakeCall` (Method, Url, Body, Timestamp). `Body` — JSON тела запроса.
+- `FakeCallHelpers`: `parseCallBody` (ChatId, Text, Caption), `findCallWithText`, `findCallWithAnyText`.
+- Для «Ты взял купон» с кнопками: проверять **sendPhoto** (не sendMessage), `Caption` содержит «Ты взял купон», `Body` — `return:`, `used:`, `:del`.
+- Есть тесты на устаревшие callback (return/used после того, как купон вернули и взял другой, или уже used): ожидаем «Не получилось», `deleteMessage` не вызывается.
+- Тесты на успешные used/return с `:del`: ожидаем «Отметил»/«Вернул» и вызов `deleteMessage`.
+- Тест «Мои взятые = 0 при единственном использованном купоне»: add → take → used, затем /my — ожидается «—», а не список.
+- FakeTgApi: в `Handlers` есть ветки для `sendMessage`, `sendPhoto`, `answerCallbackQuery`, `getChatMember`, `getFile`, `deleteMessage`; остальное — `_` с `okResult "true"`. `Store.logCall` вызывается до `match` по `methodName`.
+
+---
+
+## Структура
+
+- `src/CouponHubBot/Services/BotService.fs` — команды, callback, `handleTake`/`handleMy`/`handleReturn`/`handleUsed`, клавиатуры (`singleTakenKeyboard`, `myTakenKeyboard`).
+- `src/CouponHubBot/Services/DbService.fs` — `GetCouponsTakenBy` (фильтр `status = 'taken'`), `TryTakeCoupon`, `MarkUsed`, `ReturnToAvailable` и т.п.
+- `tests/CouponHubBot.Tests/` — `CouponTests`, `ContainerTestBase`, `FakeCallHelpers`, `TgMessageUtils` (Tg.dmMessage, Tg.dmCallback, Tg.dmPhotoWithCaption).
+- `tests/FakeTgApi/` — Handlers, Store (calls, chatMemberStatus), Types (ApiCallLog: Method, Url, Body, Timestamp).
+
+---
+
+## Полезные детали
+
+- **Telegram.Bot**: `DeleteMessage` (не `DeleteMessageAsync` в актуальной версии), `SendPhoto` с `caption` и `replyMarkup`. Для `cq.Message` при callback — `MessageId` для `DeleteMessage`.
+- Команды `/used` и `/return` по-прежнему вызывают `handleUsed`/`handleReturn`; возвращаемое `bool` в `handlePrivateMessage` гасится через `let! _ = ... ; ()`.
+- В PowerShell на Windows использовать `;` вместо `&&` в цепочках команд.
