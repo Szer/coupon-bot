@@ -138,6 +138,7 @@ ORDER BY created_at DESC, id DESC;
 SELECT *
 FROM coupon
 WHERE taken_by = @user_id
+  AND status = 'taken'
 ORDER BY taken_at DESC NULLS LAST, id DESC;
 """
             let! coupons = conn.QueryAsync<Coupon>(sql, {| user_id = userId |})

@@ -383,6 +383,29 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
+    let ``My shows 0 taken when user has only used coupon`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner = Tg.user(id = 254L, username = "my_used_only_o", firstName = "O")
+            let taker = Tg.user(id = 255L, username = "my_used_only_t", firstName = "T")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/used {couponId}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/my", taker))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 255L "Мои взятые",
+                $"Expected 'Мои взятые'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 255L "—",
+                "Expected 0 taken (only used coupon): 'Мои взятые' with '—', not the used coupon")
+        }
+
+    [<Fact>]
     let ``My shows only taken with return and used buttons`` () =
         task {
             do! fixture.ClearFakeCalls()
