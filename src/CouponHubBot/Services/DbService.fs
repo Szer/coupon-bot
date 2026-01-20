@@ -30,6 +30,11 @@ type UserEventCount =
       first_name: string | null
       count: int64 }
 
+[<CLIMutable>]
+type OverdueTakenUser =
+    { user_id: int64
+      overdue_count: int }
+
 type DbService(connString: string) =
     let openConn() = task {
         let conn = new NpgsqlConnection(connString)
@@ -100,6 +105,7 @@ RETURNING *;
 SELECT *
 FROM coupon
 WHERE status = 'available'
+  AND expires_at >= CURRENT_DATE
 ORDER BY expires_at, id;
 """
             let! coupons = conn.QueryAsync<Coupon>(sql)
@@ -229,6 +235,7 @@ SET status = 'taken',
     taken_at = timezone('utc'::TEXT, NOW())
 WHERE id = @coupon_id
   AND status = 'available'
+  AND expires_at >= CURRENT_DATE
 RETURNING *;
 """
             let! updated =
@@ -313,6 +320,30 @@ ORDER BY id;
 """
             let! coupons = conn.QueryAsync<Coupon>(sql)
             return coupons |> Seq.toArray
+        }
+
+    member _.GetUsersWithOverdueTakenCoupons(nowUtc: DateTime, minAge: TimeSpan) =
+        task {
+            use! conn = openConn()
+            //language=postgresql
+            let sql =
+                """
+SELECT taken_by AS user_id, COUNT(*)::int AS overdue_count
+FROM coupon
+WHERE status = 'taken'
+  AND taken_by IS NOT NULL
+  AND taken_at IS NOT NULL
+  AND taken_at <= (@now_utc - (@min_age_seconds * interval '1 second'))
+GROUP BY taken_by
+ORDER BY taken_by;
+"""
+            let! rows =
+                conn.QueryAsync<OverdueTakenUser>(
+                    sql,
+                    {| now_utc = nowUtc
+                       min_age_seconds = int64 minAge.TotalSeconds |}
+                )
+            return rows |> Seq.toArray
         }
 
     member _.GetUserEventCounts(eventType: string, sinceUtc: DateTime, untilUtc: DateTime) =
