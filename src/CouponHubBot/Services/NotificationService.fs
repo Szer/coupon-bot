@@ -38,7 +38,7 @@ type TelegramNotificationService(
             let! ownerOpt = db.GetUserById(coupon.owner_id)
             let owner = match ownerOpt with | Some o -> o | None -> { id = coupon.owner_id; username = null; first_name = null; last_name = null; created_at = DateTime.UtcNow; updated_at = DateTime.UtcNow }
             let v, mc, d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser owner} добавил купон на {v} EUR из {mc} EUR сроком {d}"
+            do! sendToGroup $"{formatUser owner} добавил(а) купон на {v} EUR из {mc} EUR сроком {d}"
         }
 
     member _.CouponTaken(coupon, taker) =
@@ -47,19 +47,19 @@ type TelegramNotificationService(
             let v, mc, d = fmtCoupon coupon
             match ownerOpt with
             | Some owner ->
-                do! sendToGroup $"{formatUser taker} взял купон на {v} EUR из {mc} EUR сроком {d} от {formatUser owner}"
+                do! sendToGroup $"{formatUser taker} взял(а) купон на {v} EUR из {mc} EUR сроком {d} от {formatUser owner}"
             | None ->
-                do! sendToGroup $"{formatUser taker} взял купон на {v} EUR из {mc} EUR сроком {d}"
+                do! sendToGroup $"{formatUser taker} взял(а) купон на {v} EUR из {mc} EUR сроком {d}"
         }
 
     member _.CouponUsed(coupon, user) =
         task {
             let v, mc, _d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser user} использовал купон на {v} EUR из {mc} EUR"
+            do! sendToGroup $"{formatUser user} использовал(а) купон на {v} EUR из {mc} EUR"
         }
 
     member _.CouponReturned(coupon, user) =
         task {
             let v, mc, d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser user} вернул купон на {v} EUR из {mc} EUR (срок {d}) в общий доступ"
+            do! sendToGroup $"{formatUser user} вернул(а) купон на {v} EUR из {mc} EUR (срок {d}) в общий доступ"
         }

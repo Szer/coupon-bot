@@ -32,8 +32,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 200L "Добавил купон",
                 $"Expected DM to user 200 with 'Добавил купон'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "добавил купон",
-                $"Expected group notification to -42 with 'добавил купон'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "добавил(а) купон",
+                $"Expected group notification to -42 with 'добавил(а) купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -61,8 +61,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 $"Expected sendPhoto to user 202. Got %d{photoCalls.Length} calls")
 
             let! msgCalls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText msgCalls -42L "взял купон",
-                $"Expected group notification to -42 with 'взял купон'. Got %d{msgCalls.Length} calls")
+            Assert.True(findCallWithText msgCalls -42L "взял(а) купон",
+                $"Expected group notification to -42 with 'взял(а) купон'. Got %d{msgCalls.Length} calls")
         }
 
     [<Fact>]
@@ -89,8 +89,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 $"Expected sendPhoto to user 204. Got %d{photoCalls.Length} calls")
 
             let! msgCalls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText msgCalls -42L "взял купон",
-                $"Expected group notification to -42 with 'взял купон'. Got %d{msgCalls.Length} calls")
+            Assert.True(findCallWithText msgCalls -42L "взял(а) купон",
+                $"Expected group notification to -42 with 'взял(а) купон'. Got %d{msgCalls.Length} calls")
         }
 
     [<Fact>]
@@ -225,8 +225,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 214L "Добавил купон",
                 $"Expected DM with 'Добавил купон'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "добавил купон",
-                $"Expected group notification with 'добавил купон'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "добавил(а) купон",
+                $"Expected group notification with 'добавил(а) купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -289,8 +289,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 221L "Отметил",
                 $"Expected DM with 'Отметил'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "использовал",
-                $"Expected group notification with 'использовал'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "использовал(а)",
+                $"Expected group notification with 'использовал(а)'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -457,7 +457,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 236L "Отметил",
                 $"Expected 'Отметил' when pressing Использован. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls -42L "использовал",
+            Assert.True(findCallWithText calls -42L "использовал(а)",
                 $"Expected group notification. Got %d{calls.Length} calls")
         }
 
