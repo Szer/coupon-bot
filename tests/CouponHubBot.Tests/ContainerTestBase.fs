@@ -2,7 +2,6 @@ namespace CouponHubBot.Tests
 
 open System
 open System.IO
-open System.Net
 open System.Net.Http
 open System.Net.Http.Json
 open System.Text
@@ -11,7 +10,6 @@ open System.Threading.Tasks
 open Dapper
 open DotNet.Testcontainers.Builders
 open DotNet.Testcontainers.Configurations
-open DotNet.Testcontainers.Containers
 open Npgsql
 open Testcontainers.PostgreSql
 open Xunit
@@ -145,8 +143,8 @@ ON CONFLICT (id) DO NOTHING;
                 //language=postgresql
                 let couponSql =
                     """
-INSERT INTO coupon(owner_id, photo_file_id, value, expires_at, status)
-VALUES (100, 'seed-photo', 10.00, CURRENT_DATE, 'available');
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (100, 'seed-photo', 10.00, 50.00, CURRENT_DATE, 'available');
 """
                 let! _ = conn.ExecuteAsync(couponSql)
                 ()

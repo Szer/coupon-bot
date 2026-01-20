@@ -18,6 +18,7 @@ type PendingAdd =
       owner_id: int64
       photo_file_id: string
       value: decimal
+      min_check: decimal
       expires_at: DateOnly
       created_at: DateTime }
 
@@ -56,14 +57,14 @@ RETURNING *;
             return inserted
         }
 
-    member _.AddCoupon(ownerId, photoFileId, value, expiresAt, barcodeText) =
+    member _.AddCoupon(ownerId, photoFileId, value, minCheck: decimal, expiresAt, barcodeText) =
         task {
             use! conn = openConn()
             //language=postgresql
             let sql =
                 """
-INSERT INTO coupon (owner_id, photo_file_id, value, expires_at, barcode_text, status)
-VALUES (@owner_id, @photo_file_id, @value, @expires_at, @barcode_text, 'available')
+INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, barcode_text, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, 'available')
 RETURNING *;
 """
             use tx = conn.BeginTransaction()
@@ -73,6 +74,7 @@ RETURNING *;
                     {| owner_id = ownerId
                        photo_file_id = photoFileId
                        value = value
+                       min_check = minCheck
                        expires_at = expiresAt
                        barcode_text = barcodeText |},
                     tx)
@@ -269,14 +271,14 @@ ORDER BY id;
             return coupons |> Seq.toArray
         }
 
-    member _.CreatePendingAdd(id: Guid, ownerId: int64, photoFileId: string, value: decimal, expiresAt: DateOnly) =
+    member _.CreatePendingAdd(id: Guid, ownerId: int64, photoFileId: string, value: decimal, minCheck: decimal, expiresAt: DateOnly) =
         task {
             use! conn = openConn()
             //language=postgresql
             let sql =
                 """
-INSERT INTO pending_add (id, owner_id, photo_file_id, value, expires_at)
-VALUES (@id, @owner_id, @photo_file_id, @value, @expires_at);
+INSERT INTO pending_add (id, owner_id, photo_file_id, value, min_check, expires_at)
+VALUES (@id, @owner_id, @photo_file_id, @value, @min_check, @expires_at);
 """
             let! _ =
                 conn.ExecuteAsync(
@@ -285,6 +287,7 @@ VALUES (@id, @owner_id, @photo_file_id, @value, @expires_at);
                        owner_id = ownerId
                        photo_file_id = photoFileId
                        value = value
+                       min_check = minCheck
                        expires_at = expiresAt |}
                 )
             return ()

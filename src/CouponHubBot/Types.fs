@@ -42,6 +42,7 @@ type Coupon =
       owner_id: int64
       photo_file_id: string
       value: decimal
+      min_check: decimal
       expires_at: DateOnly
       barcode_text: string | null
       status: string
