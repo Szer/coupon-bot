@@ -41,6 +41,7 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
     let mutable botHttp: HttpClient = null
     let mutable fakeHttp: HttpClient = null
     let mutable publicConnectionString: string = null
+    let mutable adminConnectionString: string = null
 
     let network = NetworkBuilder().Build()
 
@@ -157,7 +158,8 @@ VALUES (100, 'seed-photo', 10.00, CURRENT_DATE, 'available');
                 do! dbContainer.StartAsync()
 
                 publicConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;"
-
+                adminConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=admin;Password=admin;Include Error Detail=true;"
+                
                 // init schema/user/db
                 let initSql = File.ReadAllText(Path.Combine(solutionDirPath, "init.sql"))
                 let! initResult = dbContainer.ExecScriptAsync(initSql)
@@ -236,6 +238,13 @@ VALUES (100, 'seed-photo', 10.00, CURRENT_DATE, 'available');
         task {
             use conn = new NpgsqlConnection(publicConnectionString)
             return! conn.QuerySingleAsync<'t>(sql, param)
+        }
+        
+    member _.TruncateCoupons() =
+        task {
+            use conn = new NpgsqlConnection(adminConnectionString)
+            do! conn.OpenAsync()
+            do! conn.ExecuteAsync("TRUNCATE coupon CASCADE") :> Task
         }
 
 type DefaultCouponHubTestContainers() =
