@@ -632,6 +632,82 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
+    let ``/take without id shows available coupons (same as /coupons)`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let user = Tg.user(id = 290L, username = "take_alias", firstName = "Alias")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", user))
+            let! couponId = getLatestCouponId ()
+
+            let extractDmText (chatId: int64) (calls: FakeCall array) =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some chatId -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/coupons", user))
+            let! callsCoupons = fixture.GetFakeCalls("sendMessage")
+            let couponsText = extractDmText user.Id callsCoupons
+            Assert.True(couponsText.IsSome, "Expected DM sendMessage for /coupons")
+            Assert.Contains("Доступные купоны:", couponsText.Value)
+            Assert.Contains(string couponId, couponsText.Value)
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/take", user))
+            let! callsTake = fixture.GetFakeCalls("sendMessage")
+            let takeText = extractDmText user.Id callsTake
+            Assert.True(takeText.IsSome, "Expected DM sendMessage for /take")
+            Assert.Equal(couponsText.Value, takeText.Value)
+        }
+
+    [<Fact>]
+    let ``/add accepts multiple date formats and stores exact date`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 291L, username = "date_formats", firstName = "Dates")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            // Tricky date: 02.01.2026 must be 2 January (not 1 February)
+            let expected = DateOnly(2026, 1, 2)
+            let cases =
+                [| "2026-01-02"
+                   "02.01.2026"
+                   "2.1.2026"
+                   "02/01/2026"
+                   "2/1/2026"
+                   "02-01-2026"
+                   "2-1-2026"
+                   "2026/01/02"
+                   "2026.01.02" |]
+
+            for i, dateStr in cases |> Array.indexed do
+                do! fixture.ClearFakeCalls()
+                let caption = $"/add 10 50 {dateStr}"
+                let! resp = fixture.SendUpdate(Tg.dmPhotoWithCaption(caption, user, fileId = $"photo-dates-{i}"))
+                Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+                let! calls = fixture.GetFakeCalls("sendMessage")
+                let expectedStr = expected.ToString("dd.MM.yyyy")
+                Assert.True(findCallWithText calls user.Id expectedStr, $"Expected DM to include formatted date {expectedStr} for input '{dateStr}'")
+
+                let! couponId = getLatestCouponId ()
+                // Read as text to avoid DateOnly mapping issues in Dapper/Npgsql setup
+                let! expiresIso =
+                    fixture.QuerySingle<string>(
+                        "SELECT expires_at::text FROM coupon WHERE id = @id",
+                        {| id = couponId |}
+                    )
+                Assert.Equal(expected.ToString("yyyy-MM-dd"), expiresIso)
+        }
+
+    [<Fact>]
     let ``Stats shows added taken used`` () =
         task {
             do! fixture.ClearFakeCalls()
