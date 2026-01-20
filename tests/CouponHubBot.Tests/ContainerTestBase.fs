@@ -57,8 +57,8 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithNetwork(network)
             .WithBindMount(Path.Combine(solutionDirPath, "src", "migrations"), "/flyway/sql", AccessMode.ReadOnly)
             .WithEnvironment("FLYWAY_URL", $"jdbc:postgresql://{dbAlias}:5432/coupon_hub_bot")
-            .WithEnvironment("FLYWAY_USER", "coupon_hub_bot_service")
-            .WithEnvironment("FLYWAY_PASSWORD", "coupon_hub_bot_service")
+            .WithEnvironment("FLYWAY_USER", "admin")
+            .WithEnvironment("FLYWAY_PASSWORD", "admin")
             .WithCommand("migrate", "-schemas=public")
             .DependsOn(dbContainer)
             .WithWaitStrategy(
