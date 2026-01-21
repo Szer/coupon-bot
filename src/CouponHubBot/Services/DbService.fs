@@ -13,6 +13,13 @@ type TakeCouponResult =
     | NotFoundOrNotAvailable
     | LimitReached
 
+[<RequireQualifiedAccess>]
+type AddCouponResult =
+    | Added of Coupon
+    | Expired
+    | DuplicatePhoto of existingCouponId: int
+    | DuplicateBarcode of existingCouponId: int
+
 [<CLIMutable>]
 type PendingAddFlow =
     { user_id: int64
@@ -36,7 +43,10 @@ type OverdueTakenUser =
     { user_id: int64
       overdue_count: int }
 
-type DbService(connString: string) =
+type DbService(connString: string, timeProvider: TimeProvider) =
+    let utcNow () = timeProvider.GetUtcNow().UtcDateTime
+    let todayUtc () = DateOnly.FromDateTime(utcNow ())
+
     let openConn() = task {
         let conn = new NpgsqlConnection(connString)
         do! conn.OpenAsync()
@@ -71,45 +81,105 @@ RETURNING *;
             return inserted
         }
 
-    member _.AddCoupon(ownerId, photoFileId, value, minCheck: decimal, expiresAt, barcodeText) =
+    member _.TryAddCoupon(ownerId, photoFileId, value, minCheck: decimal, expiresAt: DateOnly, barcodeText: string | null) =
         task {
-            use! conn = openConn()
-            //language=postgresql
-            let sql =
-                """
+            let todayUtc = todayUtc ()
+            if expiresAt < todayUtc then
+                return AddCouponResult.Expired
+            else
+                use! conn = openConn()
+                use tx = conn.BeginTransaction(IsolationLevel.ReadCommitted)
+
+                // Check duplicate by photo_file_id (always).
+                //language=postgresql
+                let dupPhotoSql =
+                    """
+SELECT id
+FROM coupon
+WHERE photo_file_id = @photo_file_id
+LIMIT 1;
+"""
+
+                let! dupPhoto =
+                    conn.QuerySingleOrDefaultAsync<int>(
+                        dupPhotoSql,
+                        {| photo_file_id = photoFileId |},
+                        tx
+                    )
+
+                if dupPhoto <> 0 then
+                    do! tx.RollbackAsync()
+                    return AddCouponResult.DuplicatePhoto dupPhoto
+                else
+                    // Check duplicate by barcode only when barcode is known.
+                    let hasBarcode = not (String.IsNullOrWhiteSpace barcodeText)
+                    
+                    // Query duplicate barcode id only when barcode is known; otherwise treat as no-dup (0).
+                    //language=postgresql
+                    let dupBarcodeSql =
+                        """
+SELECT id
+FROM coupon
+WHERE barcode_text = @barcode_text
+  AND expires_at >= @today
+LIMIT 1;
+"""
+
+                    let! dupBarcode =
+                        if hasBarcode then
+                            conn.QuerySingleOrDefaultAsync<int>(
+                                dupBarcodeSql,
+                                {| barcode_text = barcodeText
+                                   today = todayUtc |},
+                                tx
+                            )
+                        else
+                            Task.FromResult 0
+
+                    if dupBarcode <> 0 then
+                        do! tx.RollbackAsync()
+                        return AddCouponResult.DuplicateBarcode dupBarcode
+                    else
+
+                        // Insert coupon.
+                        //language=postgresql
+                        let insertSql =
+                            """
 INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, barcode_text, status)
 VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, 'available')
 RETURNING *;
 """
-            use tx = conn.BeginTransaction()
-            let! coupon =
-                conn.QuerySingleAsync<Coupon>(
-                    sql,
-                    {| owner_id = ownerId
-                       photo_file_id = photoFileId
-                       value = value
-                       min_check = minCheck
-                       expires_at = expiresAt
-                       barcode_text = barcodeText |},
-                    tx)
-            do! insertEvent conn tx coupon.id ownerId "added"
-            do! tx.CommitAsync()
-            return coupon
+
+                        let! coupon =
+                            conn.QuerySingleAsync<Coupon>(
+                                insertSql,
+                                {| owner_id = ownerId
+                                   photo_file_id = photoFileId
+                                   value = value
+                                   min_check = minCheck
+                                   expires_at = expiresAt
+                                   barcode_text = barcodeText |},
+                                tx
+                            )
+                        do! insertEvent conn tx coupon.id ownerId "added"
+                        do! tx.CommitAsync()
+                        return AddCouponResult.Added coupon
         }
 
     member _.GetAvailableCoupons() =
         task {
             use! conn = openConn()
+            let today = todayUtc ()
             //language=postgresql
             let sql =
                 """
 SELECT *
 FROM coupon
 WHERE status = 'available'
-  AND expires_at >= CURRENT_DATE
+  AND expires_at >= @today
 ORDER BY expires_at, id;
 """
-            let! coupons = conn.QueryAsync<Coupon>(sql)
+            let! coupons = conn.QueryAsync<Coupon>(sql, {| today = today |})
             return coupons |> Seq.toArray
         }
 
@@ -189,6 +259,8 @@ SELECT (SELECT c FROM added) AS added,
         task {
             use! conn = openConn()
             use tx = conn.BeginTransaction(IsolationLevel.ReadCommitted)
+            let today = todayUtc ()
+            let takenAt = utcNow ()
 
             // Serialize concurrent take attempts for the same user to avoid race conditions on the 4-coupons limit.
             //language=postgresql
@@ -233,17 +305,19 @@ WHERE taken_by = @taker_id
 UPDATE coupon
 SET status = 'taken',
     taken_by = @taker_id,
-    taken_at = timezone('utc'::TEXT, NOW())
+    taken_at = @taken_at
 WHERE id = @coupon_id
   AND status = 'available'
-  AND expires_at >= CURRENT_DATE
+  AND expires_at >= @today
 RETURNING *;
 """
             let! updated =
                 conn.QueryAsync<Coupon>(
                     sql,
                     {| coupon_id = couponId
-                       taker_id = takerId |},
+                       taker_id = takerId
+                       taken_at = takenAt
+                       today = today |},
                     tx
                 )
 
@@ -310,16 +384,17 @@ WHERE id = @coupon_id
     member _.GetExpiringTodayAvailable() =
         task {
             use! conn = openConn()
+            let today = todayUtc ()
             //language=postgresql
             let sql =
                 """
 SELECT *
 FROM coupon
 WHERE status = 'available'
-AND expires_at = CURRENT_DATE
+AND expires_at = @today
 ORDER BY id;
 """
-            let! coupons = conn.QueryAsync<Coupon>(sql)
+            let! coupons = conn.QueryAsync<Coupon>(sql, {| today = today |})
             return coupons |> Seq.toArray
         }
 
@@ -378,15 +453,16 @@ ORDER BY count DESC, e.user_id;
     member _.GetPendingAddFlow(userId: int64) =
         task {
             use! conn = openConn()
+            let nowUtc = utcNow ()
             // Expire after 1 hour of inactivity.
             //language=postgresql
             let expireSql =
                 """
 DELETE FROM pending_add
 WHERE user_id = @user_id
-  AND updated_at < (timezone('utc'::TEXT, NOW()) - interval '1 hour');
+  AND updated_at < (@now_utc - interval '1 hour');
 """
-            let! _ = conn.ExecuteAsync(expireSql, {| user_id = userId |})
+            let! _ = conn.ExecuteAsync(expireSql, {| user_id = userId; now_utc = nowUtc |})
 
             //language=postgresql
             let sql =
@@ -409,7 +485,7 @@ WHERE user_id = @user_id;
             let sql =
                 """
 INSERT INTO pending_add (user_id, stage, photo_file_id, value, min_check, expires_at, barcode_text, updated_at)
-VALUES (@user_id, @stage, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, timezone('utc'::TEXT, NOW()))
+VALUES (@user_id, @stage, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, @updated_at)
 ON CONFLICT (user_id) DO UPDATE
 SET stage = EXCLUDED.stage,
     photo_file_id = EXCLUDED.photo_file_id,

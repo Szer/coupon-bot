@@ -2,6 +2,7 @@ namespace CouponHubBot
 
 open System
 open System.Threading.Tasks
+open System.Globalization
 
 module Utils =
     let inline (~%) x = ignore x
@@ -74,3 +75,25 @@ module Utils =
                             loop (monthOffset + 1)
 
                 loop 0
+
+/// Time helpers (testability via TimeProvider).
+module Time =
+    /// Environment variable that, when set, freezes `TimeProvider` to a constant UTC time.
+    /// Format: any DateTimeOffset parseable string, recommended ISO-8601 like `2026-01-21T08:00:00Z`.
+    [<Literal>]
+    let FixedUtcNowEnvVar = "BOT_FIXED_UTC_NOW"
+
+    type FixedTimeProvider(fixedUtcNow: DateTimeOffset) =
+        inherit TimeProvider()
+        override _.GetUtcNow() = fixedUtcNow
+
+    let private parseFixedUtcNow (raw: string) =
+        match DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal ||| DateTimeStyles.AdjustToUniversal) with
+        | true, dto -> dto
+        | _ -> failwithf "Invalid %s value: '%s'. Expected ISO-8601 like 2026-01-21T08:00:00Z" FixedUtcNowEnvVar raw
+
+    let fromEnvironment () : TimeProvider =
+        match Utils.getEnvOr FixedUtcNowEnvVar "" with
+        | null
+        | "" -> TimeProvider.System
+        | raw -> FixedTimeProvider(parseFixedUtcNow raw) :> TimeProvider

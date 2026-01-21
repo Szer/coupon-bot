@@ -90,6 +90,7 @@ let builder = WebApplication.CreateBuilder()
 )
 
 %builder.Services.AddSingleton globalBotConfDontUseOnlyRegister
+%builder.Services.AddSingleton<TimeProvider>(fun _sp -> CouponHubBot.Time.fromEnvironment ())
 // Configure JSON options for Telegram.Bot compatibility
 %builder.Services.Configure<JsonSerializerOptions>(fun (opts: JsonSerializerOptions) ->
     opts.NumberHandling <- JsonNumberHandling.AllowReadingFromString
@@ -114,7 +115,7 @@ let builder = WebApplication.CreateBuilder()
 %builder
     .Services
     .AddSingleton<BotService>()
-    .AddSingleton<DbService>(fun _sp -> DbService(Utils.getEnv "DATABASE_URL"))
+    .AddSingleton<DbService>(fun sp -> DbService(Utils.getEnv "DATABASE_URL", sp.GetRequiredService<TimeProvider>()))
     .AddSingleton<TelegramMembershipService>()
     .AddSingleton<TelegramNotificationService>()
     .AddHostedService<MembershipCacheInvalidationService>()
@@ -171,15 +172,16 @@ let app = builder.Build()
             return Results.NotFound()
         else
             let runner = ctx.RequestServices.GetRequiredService<ReminderService>()
+            let timeProvider = ctx.RequestServices.GetRequiredService<TimeProvider>()
             let nowUtc =
                 if ctx.Request.Query.ContainsKey("nowUtc") then
                     try
                         let raw = string ctx.Request.Query["nowUtc"]
                         DateTime.Parse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal ||| DateTimeStyles.AssumeUniversal)
                     with _ ->
-                        DateTime.UtcNow
+                        timeProvider.GetUtcNow().UtcDateTime
                 else
-                    DateTime.UtcNow
+                    timeProvider.GetUtcNow().UtcDateTime
 
             let! sent = runner.RunOnce(nowUtc)
             return Results.Json({| ok = true; sent = sent |})

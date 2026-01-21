@@ -13,7 +13,8 @@ type ReminderService(
     botClient: ITelegramBotClient,
     botConfig: BotConfiguration,
     db: DbService,
-    logger: ILogger<ReminderService>
+    logger: ILogger<ReminderService>,
+    time: TimeProvider
 ) =
     inherit BackgroundService()
 
@@ -88,7 +89,7 @@ type ReminderService(
         }
 
     let nextRunUtc (hourUtc: int) =
-        let now = DateTime.UtcNow
+        let now = time.GetUtcNow().UtcDateTime
         let today = DateTime(now.Year, now.Month, now.Day, hourUtc, 0, 0, DateTimeKind.Utc)
         if now <= today then today else today.AddDays(1.0)
 
@@ -96,14 +97,14 @@ type ReminderService(
         task {
             if botConfig.ReminderRunOnStart then
                 try
-                    let! _ = runOnce DateTime.UtcNow
+                    let! _ = runOnce (time.GetUtcNow().UtcDateTime)
                     ()
                 with ex ->
                     logger.LogError(ex, "Failed to run reminder on startup")
 
             while not stoppingToken.IsCancellationRequested do
                 let next = nextRunUtc botConfig.ReminderHourUtc
-                let delay = next - DateTime.UtcNow
+                let delay = next - time.GetUtcNow().UtcDateTime
                 if delay > TimeSpan.Zero then
                     logger.LogInformation("Next reminder run at {NextRunUtc}", next)
                     do! Task.Delay(delay, stoppingToken)
@@ -112,12 +113,12 @@ type ReminderService(
                     ()
                 else
                     try
-                        let! _ = runOnce DateTime.UtcNow
+                        let! _ = runOnce(time.GetUtcNow().UtcDateTime)
                         ()
                     with ex ->
                         logger.LogError(ex, "Failed to send reminder")
         }
 
     member _.RunOnce(?nowUtc: DateTime) =
-        let now = defaultArg nowUtc DateTime.UtcNow
+        let now = defaultArg nowUtc (time.GetUtcNow().UtcDateTime)
         runOnce now

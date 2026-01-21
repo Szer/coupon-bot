@@ -14,14 +14,15 @@ open Telegram.Bot.Types
 type TelegramMembershipService(
     botClient: ITelegramBotClient,
     botConfig: CouponHubBot.BotConfiguration,
-    logger: ILogger<TelegramMembershipService>
+    logger: ILogger<TelegramMembershipService>,
+    time: TimeProvider
 ) =
     // userId -> (isMember, cachedAtUtc)
     let cache = ConcurrentDictionary<int64, bool * DateTime>()
     let expiry = TimeSpan.FromDays(1.0)
 
     let isFresh (cachedAt: DateTime) =
-        DateTime.UtcNow - cachedAt < expiry
+        time.GetUtcNow().UtcDateTime - cachedAt < expiry
 
     let statusIsMember (status: ChatMemberStatus) =
         match status with
@@ -39,7 +40,7 @@ type TelegramMembershipService(
         if update.Chat <> null && update.Chat.Id = botConfig.CommunityChatId && update.NewChatMember <> null then
             let uid = update.NewChatMember.User.Id
             let isMember = statusIsMember update.NewChatMember.Status
-            cache[uid] <- (isMember, DateTime.UtcNow)
+            cache[uid] <- (isMember, time.GetUtcNow().UtcDateTime)
             %span.SetTag("userId", uid)
             %span.SetTag("isMember", isMember)
             %span.SetTag("status", update.NewChatMember.Status)
@@ -52,7 +53,7 @@ type TelegramMembershipService(
                 try
                     let! cm = botClient.GetChatMember(botConfig.CommunityChatId, userId)
                     let isMember = statusIsMember cm.Status
-                    cache[userId] <- (isMember, DateTime.UtcNow)
+                    cache[userId] <- (isMember, time.GetUtcNow().UtcDateTime)
                     return isMember
                 with ex ->
                     logger.LogWarning(ex, "Failed to check membership for {UserId}", userId)

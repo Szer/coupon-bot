@@ -22,7 +22,8 @@ type BotService(
     membership: TelegramMembershipService,
     notifications: TelegramNotificationService,
     couponOcr: CouponOcrEngine,
-    logger: ILogger<BotService>
+    logger: ILogger<BotService>,
+    time: TimeProvider
 ) =
     let sendText (chatId: int64) (text: string) =
         botClient.SendMessage(ChatId chatId, text) |> taskIgnore
@@ -93,7 +94,7 @@ type BotService(
             if isDigitsOnly then
                 match Int32.TryParse(t) with
                 | true, day when day >= 1 && day <= 31 ->
-                    let today = DateOnly.FromDateTime(DateTime.UtcNow)
+                    let today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime)
                     DateUtils.nextDayOfMonthStrictlyFuture today day
                 | _ -> None
             else
@@ -225,13 +226,13 @@ type BotService(
                     sendText chatId
                         "Нельзя взять больше 4 купонов одновременно. Сначала верни или отметь использованным один из купонов."
             | NotFoundOrNotAvailable ->
-                do! sendText chatId $"Купон {couponId} уже взят или не существует."
+                do! sendText chatId $"Купон ID:{couponId} уже взят или не существует."
             | Taken coupon ->
                 let d = coupon.expires_at.ToString("dd.MM.yyyy")
                 do! botClient.SendPhoto(
                         ChatId chatId,
                         InputFileId coupon.photo_file_id,
-                        caption = $"Ты взял(а) купон {couponId}: {formatCouponValue coupon}, истекает {d}",
+                        caption = $"Ты взял(а) купон ID:{couponId}: {formatCouponValue coupon}, истекает {d}",
                         replyMarkup = singleTakenKeyboard coupon)
                     |> taskIgnore
         }
@@ -240,9 +241,9 @@ type BotService(
         task {
             let! updated = db.MarkUsed(couponId, user.id)
             if updated then
-                do! sendText chatId $"Отметил(а) купон {couponId} как использованный."
+                do! sendText chatId $"Отметил купон ID:{couponId} как использованный."
             else
-                do! sendText chatId $"Не получилось отметить купон {couponId}. Убедись что он взят тобой."
+                do! sendText chatId $"Не получилось отметить купон ID:{couponId}. Убедись что он взят тобой."
             return updated
         }
 
@@ -250,9 +251,9 @@ type BotService(
         task {
             let! updated = db.ReturnToAvailable(couponId, user.id)
             if updated then
-                do! sendText chatId $"Вернул(а) купон {couponId} в доступные."
+                do! sendText chatId $"Вернул купон ID:{couponId} в доступные."
             else
-                do! sendText chatId $"Не получилось вернуть купон {couponId}. Убедись что он взят тобой."
+                do! sendText chatId $"Не получилось вернуть купон ID:{couponId}. Убедись что он взят тобой."
             return updated
         }
 
@@ -307,7 +308,7 @@ type BotService(
                       min_check = Nullable()
                       expires_at = Nullable()
                       barcode_text = null
-                      updated_at = DateTime.UtcNow }
+                      updated_at = time.GetUtcNow().UtcDateTime }
                 )
             do! sendText chatId "Пришли фото купона (просто картинку)."
         }
@@ -337,11 +338,18 @@ type BotService(
                     let largestPhoto =
                         msg.Photo
                         |> Array.maxBy (fun p -> if p.FileSize.HasValue then p.FileSize.Value else 0)
-                    let! coupon = db.AddCoupon(user.id, largestPhoto.FileId, value, minCheck, expiresAt, null)
-                    let v = coupon.value.ToString("0.##")
-                    let mc = coupon.min_check.ToString("0.##")
-                    let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                    do! sendText chatId $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                    match! db.TryAddCoupon(user.id, largestPhoto.FileId, value, minCheck, expiresAt, null) with
+                    | AddCouponResult.Added coupon ->
+                        let v = coupon.value.ToString("0.##")
+                        let mc = coupon.min_check.ToString("0.##")
+                        let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                        do! sendText chatId $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                    | AddCouponResult.Expired ->
+                        do! sendText chatId "Нельзя добавить истёкший купон (дата в прошлом). Проверь дату и попробуй ещё раз."
+                    | AddCouponResult.DuplicatePhoto existingId ->
+                        do! sendText chatId $"Похоже, этот купон уже был добавлен ранее (та же фотография). Уже есть купон ID:{existingId}."
+                    | AddCouponResult.DuplicateBarcode existingId ->
+                        do! sendText chatId $"Купон с таким штрихкодом уже есть в базе и ещё не истёк. Уже есть купон ID:{existingId}."
                 | _ ->
                     do! sendText chatId "Не понял discount/min_check/date. Примеры: /add 10 50 2026-01-25 (или /add 10 50 25.01.2026, или /add 10 50 25)"
             else
@@ -358,7 +366,7 @@ type BotService(
                       min_check = Nullable()
                       expires_at = Nullable()
                       barcode_text = null
-                      updated_at = DateTime.UtcNow }
+                      updated_at = time.GetUtcNow().UtcDateTime }
                 )
 
             if not botConfig.OcrEnabled then
@@ -422,7 +430,7 @@ type BotService(
                                       min_check = Nullable(minCheck)
                                       expires_at = Nullable(expiresAt)
                                       barcode_text = barcodeText
-                                      updated_at = DateTime.UtcNow }
+                                      updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let v = value.ToString("0.##")
                             let mc = minCheck.ToString("0.##")
@@ -443,7 +451,7 @@ type BotService(
                                       min_check = Nullable(minCheck)
                                       expires_at = Nullable()
                                       barcode_text = barcodeText
-                                      updated_at = DateTime.UtcNow }
+                                      updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let v = value.ToString("0.##")
                             let mc = minCheck.ToString("0.##")
@@ -466,7 +474,7 @@ type BotService(
                                         | Some d -> Nullable(d)
                                         | None -> Nullable()
                                       barcode_text = barcodeText
-                                      updated_at = DateTime.UtcNow }
+                                      updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let text =
                                 match validToOpt with
@@ -520,7 +528,16 @@ type BotService(
                 let! ok = ensureCommunityMember cq.From.Id cq.Message.Chat.Id
                 if not ok then () else
 
-                let! user = db.UpsertUser(DbUser.ofTelegramUser cq.From)
+                
+                
+                let! user =
+                    { id = cq.From.Id
+                      username = cq.From.Username
+                      first_name = cq.From.FirstName
+                      last_name = cq.From.LastName
+                      created_at = time.GetUtcNow().UtcDateTime
+                      updated_at = time.GetUtcNow().UtcDateTime }
+                    |> db.UpsertUser
 
                 let isPrivateChat = cq.Message.Chat.Type = ChatType.Private
                 let hasData = not (isNull cq.Data)
@@ -552,7 +569,7 @@ type BotService(
                                                 stage = "awaiting_confirm"
                                                 value = Nullable(v)
                                                 min_check = Nullable(mc)
-                                                updated_at = DateTime.UtcNow }
+                                                updated_at = time.GetUtcNow().UtcDateTime }
                                         do! db.UpsertPendingAddFlow next
                                         do! handleAddWizardSendConfirm cq.Message.Chat.Id v mc flow.expires_at.Value
                                     else
@@ -561,7 +578,7 @@ type BotService(
                                                 stage = "awaiting_date_choice"
                                                 value = Nullable(v)
                                                 min_check = Nullable(mc)
-                                                updated_at = DateTime.UtcNow }
+                                                updated_at = time.GetUtcNow().UtcDateTime }
                                         do! db.UpsertPendingAddFlow next
                                         do! handleAddWizardAskDate cq.Message.Chat.Id
                                 | _ ->
@@ -570,24 +587,24 @@ type BotService(
                                 do! sendText cq.Message.Chat.Id "Не понял значения. Попробуй ещё раз: /add"
                         | "addflow:date:today" ->
                             if flow.value.HasValue && flow.min_check.HasValue then
-                                let expiresAt = DateOnly.FromDateTime(DateTime.UtcNow)
+                                let expiresAt = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime)
                                 let next =
                                     { flow with
                                         stage = "awaiting_confirm"
                                         expires_at = Nullable(expiresAt)
-                                        updated_at = DateTime.UtcNow }
+                                        updated_at = time.GetUtcNow().UtcDateTime }
                                 do! db.UpsertPendingAddFlow next
                                 do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt
                             else
                                 do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                         | "addflow:date:tomorrow" ->
                             if flow.value.HasValue && flow.min_check.HasValue then
-                                let expiresAt = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1.0))
+                                let expiresAt = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime.AddDays(1.0))
                                 let next =
                                     { flow with
                                         stage = "awaiting_confirm"
                                         expires_at = Nullable(expiresAt)
-                                        updated_at = DateTime.UtcNow }
+                                        updated_at = time.GetUtcNow().UtcDateTime }
                                 do! db.UpsertPendingAddFlow next
                                 do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt
                             else
@@ -601,8 +618,8 @@ type BotService(
                                 && flow.min_check.HasValue
                                 && flow.expires_at.HasValue
                             then
-                                let! coupon =
-                                    db.AddCoupon(
+                                match!
+                                    db.TryAddCoupon(
                                         user.id,
                                         flow.photo_file_id,
                                         flow.value.Value,
@@ -610,11 +627,22 @@ type BotService(
                                         flow.expires_at.Value,
                                         flow.barcode_text
                                     )
-                                do! db.ClearPendingAddFlow user.id
-                                let v = coupon.value.ToString("0.##")
-                                let mc = coupon.min_check.ToString("0.##")
-                                let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                                do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                                with
+                                | AddCouponResult.Added coupon ->
+                                    do! db.ClearPendingAddFlow user.id
+                                    let v = coupon.value.ToString("0.##")
+                                    let mc = coupon.min_check.ToString("0.##")
+                                    let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                                    do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                                | AddCouponResult.Expired ->
+                                    do! db.ClearPendingAddFlow user.id
+                                    do! sendText cq.Message.Chat.Id "Нельзя добавить истёкший купон (дата в прошлом). Начни заново: /add"
+                                | AddCouponResult.DuplicatePhoto existingId ->
+                                    do! db.ClearPendingAddFlow user.id
+                                    do! sendText cq.Message.Chat.Id $"Похоже, этот купон уже был добавлен ранее (та же фотография). Уже есть купон ID:{existingId}. Начни заново: /add"
+                                | AddCouponResult.DuplicateBarcode existingId ->
+                                    do! db.ClearPendingAddFlow user.id
+                                    do! sendText cq.Message.Chat.Id $"Купон с таким штрихкодом уже есть в базе и ещё не истёк. Уже есть купон ID:{existingId}. Начни заново: /add"
                             else
                                 do! sendText cq.Message.Chat.Id "Этот шаг уже неактуален. Начни заново: /add"
                         | "addflow:ocr:no" ->
@@ -626,7 +654,7 @@ type BotService(
                                     min_check = Nullable()
                                     expires_at = Nullable()
                                     barcode_text = null
-                                    updated_at = DateTime.UtcNow }
+                                    updated_at = time.GetUtcNow().UtcDateTime }
                             do! db.UpsertPendingAddFlow next
                             do!
                                 botClient.SendMessage(
@@ -637,8 +665,8 @@ type BotService(
                                 |> taskIgnore
                         | "addflow:confirm" ->
                             if flow.photo_file_id <> null && flow.value.HasValue && flow.min_check.HasValue && flow.expires_at.HasValue then
-                                let! coupon =
-                                    db.AddCoupon(
+                                match!
+                                    db.TryAddCoupon(
                                         user.id,
                                         flow.photo_file_id,
                                         flow.value.Value,
@@ -646,11 +674,22 @@ type BotService(
                                         flow.expires_at.Value,
                                         flow.barcode_text
                                     )
-                                do! db.ClearPendingAddFlow user.id
-                                let v = coupon.value.ToString("0.##")
-                                let mc = coupon.min_check.ToString("0.##")
-                                let d = coupon.expires_at.ToString("dd.MM.yyyy")
-                                do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                                with
+                                | AddCouponResult.Added coupon ->
+                                    do! db.ClearPendingAddFlow user.id
+                                    let v = coupon.value.ToString("0.##")
+                                    let mc = coupon.min_check.ToString("0.##")
+                                    let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                                    do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                                | AddCouponResult.Expired ->
+                                    do! db.ClearPendingAddFlow user.id
+                                    do! sendText cq.Message.Chat.Id "Нельзя добавить истёкший купон (дата в прошлом). Начни заново: /add"
+                                | AddCouponResult.DuplicatePhoto existingId ->
+                                    do! db.ClearPendingAddFlow user.id
+                                    do! sendText cq.Message.Chat.Id $"Похоже, этот купон уже был добавлен ранее (та же фотография). Уже есть купон ID:{existingId}. Начни заново: /add"
+                                | AddCouponResult.DuplicateBarcode existingId ->
+                                    do! db.ClearPendingAddFlow user.id
+                                    do! sendText cq.Message.Chat.Id $"Купон с таким штрихкодом уже есть в базе и ещё не истёк. Уже есть купон ID:{existingId}. Начни заново: /add"
                             else
                                 do! sendText cq.Message.Chat.Id "Не хватает данных для добавления. Начни заново: /add"
                         | "addflow:cancel" ->
@@ -699,7 +738,14 @@ type BotService(
                 if not ok then %a.SetTag("isMember", false) else
                 
                 %a.SetTag("isMember", true)
-                let! user = db.UpsertUser(DbUser.ofTelegramUser msg.From)
+                let! user =
+                    { id = msg.From.Id
+                      username = msg.From.Username
+                      first_name = msg.From.FirstName
+                      last_name = msg.From.LastName
+                      created_at = time.GetUtcNow().UtcDateTime
+                      updated_at = time.GetUtcNow().UtcDateTime }
+                    |> db.UpsertUser
 
                 // Pending /feedback: next non-command message is forwarded to admins.
                 let isCommand =
@@ -753,7 +799,7 @@ type BotService(
                                                 stage = "awaiting_confirm"
                                                 value = Nullable(v)
                                                 min_check = Nullable(mc)
-                                                updated_at = DateTime.UtcNow }
+                                                updated_at = time.GetUtcNow().UtcDateTime }
                                         )
                                     do! handleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value
                                 else
@@ -762,7 +808,7 @@ type BotService(
                                                 stage = "awaiting_date_choice"
                                                 value = Nullable(v)
                                                 min_check = Nullable(mc)
-                                                updated_at = DateTime.UtcNow }
+                                                updated_at = time.GetUtcNow().UtcDateTime }
                                         )
                                     do! handleAddWizardAskDate msg.Chat.Id
                             | None ->
@@ -773,8 +819,13 @@ type BotService(
                             | Some expiresAt ->
                                 if flow.value.HasValue && flow.min_check.HasValue then
                                     handledAddFlow <- true
-                                    do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_confirm"; expires_at = Nullable(expiresAt); updated_at = DateTime.UtcNow })
-                                    do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                                    let todayUtc = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime)
+                                    if expiresAt < todayUtc then
+                                        // Don't allow past dates (today is ok).
+                                        do! sendText msg.Chat.Id "Эта дата уже в прошлом. Нельзя добавить истёкший купон. Пришли дату заново."
+                                    else
+                                        do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_confirm"; expires_at = Nullable(expiresAt); updated_at = time.GetUtcNow().UtcDateTime })
+                                        do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt
                                 else
                                     handledAddFlow <- true
                                     do! sendText msg.Chat.Id "Сначала выбери скидку. Начни заново: /add"

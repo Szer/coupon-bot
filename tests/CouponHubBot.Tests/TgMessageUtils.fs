@@ -46,7 +46,8 @@ type Tg() =
 
     static member dmPhotoWithCaption(caption: string, fromUser: User, ?fileId: string) =
         let chat = Tg.privateChat(id = fromUser.Id)
-        let fid = defaultArg fileId "photo-1"
+        // photo_file_id is unique in DB; default must be unique to avoid cross-test interference.
+        let fid = defaultArg fileId ($"photo-{nextInt64 ()}")
         let photo = PhotoSize()
         photo.FileId <- fid
         photo.FileUniqueId <- fid + "-uid"

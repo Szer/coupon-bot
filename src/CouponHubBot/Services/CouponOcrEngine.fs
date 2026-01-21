@@ -198,7 +198,7 @@ module private CouponOcrParsing =
             |> Seq.sort
             |> Seq.toArray
 
-type CouponOcrEngine(azureTextOcr: IAzureTextOcr, logger: ILogger<CouponOcrEngine>) =
+type CouponOcrEngine(azureTextOcr: IAzureTextOcr, logger: ILogger<CouponOcrEngine>, time: TimeProvider) =
     let noneMoney: Nullable<decimal> = Nullable()
     let noneDate: Nullable<DateTime> = Nullable()
     let noneBarcode: string | null = null
@@ -342,7 +342,7 @@ type CouponOcrEngine(azureTextOcr: IAzureTextOcr, logger: ILogger<CouponOcrEngin
 
     member _.Recognize(imageBytes: ReadOnlyMemory<byte>) =
         task {
-            let nowUtc = DateTime.UtcNow
+            let nowUtc = time.GetUtcNow().UtcDateTime
             let barcode = tryDecodeBarcode imageBytes
 
             let! ocrText =

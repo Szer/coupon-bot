@@ -7,8 +7,8 @@
 
   <ItemGroup>
     <Compile Include="Telemetry.fs" />
-    <Compile Include="Types.fs" />
     <Compile Include="Utils.fs" />
+    <Compile Include="Types.fs" />
     <Compile Include="Services/DbService.fs" />
     <Compile Include="Services/MembershipService.fs" />
     <Compile Include="Services/NotificationService.fs" />

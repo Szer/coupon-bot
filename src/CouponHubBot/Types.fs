@@ -3,6 +3,7 @@ namespace CouponHubBot
 open System
 open System.Text.Json.Serialization
 open Telegram.Bot.Types
+open CouponHubBot
 
 [<CLIMutable>]
 type BotConfiguration =
@@ -27,15 +28,6 @@ type DbUser =
       last_name: string | null
       created_at: DateTime
       updated_at: DateTime }
-
-module DbUser =
-    let ofTelegramUser (u: User) =
-        { id = u.Id
-          username = u.Username
-          first_name = u.FirstName
-          last_name = u.LastName
-          created_at = DateTime.UtcNow
-          updated_at = DateTime.UtcNow }
 
 [<CLIMutable>]
 type Coupon =

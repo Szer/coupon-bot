@@ -30,6 +30,9 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
     let getLatestMinCheck () =
         fixture.QuerySingle<decimal>("SELECT min_check FROM coupon ORDER BY id DESC LIMIT 1", null)
 
+    let getCouponCount () =
+        fixture.QuerySingle<int64>("SELECT COUNT(*)::bigint FROM coupon", null)
+
     [<Fact>]
     let ``Implicit /add: photo with no pending flows starts OCR wizard`` () =
         task {
@@ -57,6 +60,88 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
             let! callsDone = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText callsDone user.Id "Добавил купон", "Expected coupon to be created after OCR yes")
+        }
+
+    [<Fact>]
+    let ``OCR add: duplicate barcode (non-expired) is rejected (different photo ids)`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 650L, username = "ocr_dup_barcode", firstName = "OCR")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let azure = readAzureCacheJson fileName
+            let bytes = readImageBytes fileName
+
+            // First add (barcode should be decoded from real image bytes).
+            let fileId1 = "ocr-dup-barcode-1"
+            do! fixture.SetTelegramFile(fileId1, bytes)
+            do! fixture.SetAzureOcrResponse(200, azure)
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = fileId1))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
+
+            let! count1 = getCouponCount ()
+            Assert.Equal(1L, count1)
+
+            // Second add with a different photo_file_id, but the same underlying image => same barcode.
+            do! fixture.ClearFakeCalls()
+            let fileId2 = "ocr-dup-barcode-2"
+            do! fixture.SetTelegramFile(fileId2, bytes)
+            do! fixture.SetAzureOcrResponse(200, azure)
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = fileId2))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithAnyText calls user.Id [| "штрихкод"; "штрихкодом" |],
+                "Expected duplicate barcode rejection message")
+
+            let! count2 = getCouponCount ()
+            Assert.Equal(1L, count2)
+        }
+
+    [<Fact>]
+    let ``OCR add: if barcode is not recognized (NULL), barcode dedupe does not block`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 651L, username = "ocr_no_barcode", firstName = "OCR")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let azure = readAzureCacheJson fileName
+
+            // Provide invalid bytes so ZXing/ImageSharp fails -> barcode = null,
+            // while FakeAzureOcrApi still returns a deterministic OCR response.
+            let bytes = [| byte 0x00; byte 0x01; byte 0x02; byte 0x03 |]
+
+            let fileId1 = "ocr-no-barcode-1"
+            do! fixture.SetTelegramFile(fileId1, bytes)
+            do! fixture.SetAzureOcrResponse(200, azure)
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = fileId1))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
+
+            let! count1 = getCouponCount ()
+            Assert.Equal(1L, count1)
+
+            do! fixture.ClearFakeCalls()
+            let fileId2 = "ocr-no-barcode-2"
+            do! fixture.SetTelegramFile(fileId2, bytes)
+            do! fixture.SetAzureOcrResponse(200, azure)
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = fileId2))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls user.Id "Добавил купон", "Expected second coupon to be created when barcode is NULL")
+
+            let! count2 = getCouponCount ()
+            Assert.Equal(2L, count2)
         }
 
     [<Fact>]

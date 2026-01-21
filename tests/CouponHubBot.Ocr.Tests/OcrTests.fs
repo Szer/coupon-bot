@@ -121,6 +121,10 @@ type private AzureOcrCachingHandler(cachePath: string, allowNetwork: bool, log: 
         }
 
 module private Parsing =
+    // OCR test filenames may omit year (MM-dd). Make it deterministic by fixing "current year" to 2026.
+    // This matches the repo's current test data and avoids dependence on real current time.
+    let private fixedNowUtc = DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)
+
     let parseDecimalInvariant (s: string) =
         let s2 = s.Trim().Replace(',', '.')
         Decimal.Parse(s2, NumberStyles.Number, CultureInfo.InvariantCulture)
@@ -134,7 +138,7 @@ module private Parsing =
             DateTime.ParseExact(raw, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None).Date
         else
             let md = DateTime.ParseExact(raw, [| "MM-dd"; "M-d" |], CultureInfo.InvariantCulture, DateTimeStyles.None)
-            DateTime(DateTime.UtcNow.Year, md.Month, md.Day, 0, 0, 0, DateTimeKind.Utc).Date
+            DateTime(fixedNowUtc.Year, md.Month, md.Day, 0, 0, 0, DateTimeKind.Utc).Date
 
     type Expected =
         { CouponValue: decimal
@@ -190,7 +194,12 @@ type OcrTests(output: ITestOutputHelper) =
 
         let azure = AzureOcrService(http, botConf, XUnitLogging.XUnitLogger<AzureOcrService>(output, logs)) :> IAzureTextOcr
 
-        let engine = CouponOcrEngine(azure, XUnitLogging.XUnitLogger<CouponOcrEngine>(output, logs))
+        // Freeze "now" to 2026 so year inference is stable.
+        let timeProvider =
+            CouponHubBot.Time.FixedTimeProvider(DateTimeOffset(2026, 1, 15, 0, 0, 0, TimeSpan.Zero)) :> TimeProvider
+
+        let engine: CouponOcrEngine =
+            CouponOcrEngine(azure, XUnitLogging.XUnitLogger<CouponOcrEngine>(output, logs), timeProvider)
         engine, http, logs
 
     [<Theory>]
