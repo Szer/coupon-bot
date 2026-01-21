@@ -51,3 +51,26 @@ module Utils =
         baseOpts.SerializerOptions.DefaultIgnoreCondition <- System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
         
         baseOpts.SerializerOptions
+
+    module DateUtils =
+        /// Find the next date (strictly after `today`) that has given day-of-month.
+        /// Skips months that don't contain the day (e.g. 31 in April).
+        let nextDayOfMonthStrictlyFuture (today: DateOnly) (dayOfMonth: int) : DateOnly option =
+            if dayOfMonth < 1 || dayOfMonth > 31 then
+                None
+            else
+                // Search forward month-by-month (bounded to avoid infinite loops).
+                let startMonth = DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+
+                let rec loop monthOffset =
+                    if monthOffset > 24 then
+                        None
+                    else
+                        let dt = startMonth.AddMonths(monthOffset)
+                        try
+                            let candidate = DateOnly(dt.Year, dt.Month, dayOfMonth)
+                            if candidate > today then Some candidate else loop (monthOffset + 1)
+                        with _ ->
+                            loop (monthOffset + 1)
+
+                loop 0

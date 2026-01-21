@@ -198,11 +198,6 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             Assert.True(findCallWithText callsDisc user.Id "дату истечения", "Expected wizard to ask for date after discount")
 
             do! fixture.ClearFakeCalls()
-            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:date:other", user))
-            let! callsAsk = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText callsAsk user.Id "Пришли дату", "Expected custom date prompt")
-
-            do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("2026-02-01", user))
             let! callsConfirm = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText callsConfirm user.Id "Подтвердить добавление купона", "Expected confirm after manual date")
@@ -246,11 +241,6 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             Assert.True(findCallWithText calls2 user.Id "выбери дату", "Expected wizard to ask for date when OCR has no date")
             Assert.False(calls2 |> Array.exists (fun c -> c.Body.Contains("addflow:ocr:yes")),
                 "Did not expect OCR yes/no step when expiry date is missing")
-
-            do! fixture.ClearFakeCalls()
-            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:date:other", user))
-            let! callsAsk = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText callsAsk user.Id "Пришли дату", "Expected custom date prompt")
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("2026-02-03", user))
