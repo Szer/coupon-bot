@@ -365,7 +365,7 @@ type BotService(
                 do!
                     botClient.SendMessage(
                         ChatId chatId,
-                        "Выбери скидку и минимальный чек (или пришли `10 50` / `10/50`):",
+                        "Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\".",
                         replyMarkup = addWizardDiscountKeyboard()
                     )
                     |> taskIgnore
@@ -376,7 +376,7 @@ type BotService(
                     do!
                         botClient.SendMessage(
                             ChatId chatId,
-                            "Выбери скидку и минимальный чек (или пришли `10 50` / `10/50`):",
+                            "Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\".",
                             replyMarkup = addWizardDiscountKeyboard()
                         )
                         |> taskIgnore
@@ -389,7 +389,7 @@ type BotService(
                         do!
                             botClient.SendMessage(
                                 ChatId chatId,
-                                "Картинка слишком большая для распознавания. Выбери скидку и минимальный чек (или пришли `10 50` / `10/50`):",
+                                "Картинка слишком большая для распознавания. Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\".",
                                 replyMarkup = addWizardDiscountKeyboard()
                             )
                             |> taskIgnore
@@ -450,7 +450,7 @@ type BotService(
                             do!
                                 botClient.SendMessage(
                                     ChatId chatId,
-                                    $"Я распознал скидку: {v} EUR из {mc} EUR. Теперь выбери дату истечения (или напиши `25`, `25.01.2026`, `2026-01-25`):",
+                                    $"Я распознал скидку: {v} EUR из {mc} EUR. Теперь выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):",
                                     replyMarkup = addWizardDateKeyboard()
                                 )
                                 |> taskIgnore
@@ -472,8 +472,8 @@ type BotService(
                                 match validToOpt with
                                 | Some expiresAt ->
                                     let d = expiresAt.ToString("dd.MM.yyyy")
-                                    $"Я распознал дату истечения {d}. Теперь выбери скидку и минимальный чек:"
-                                | None -> "Выбери скидку и минимальный чек:"
+                                    $"Я распознал дату истечения {d}. Теперь выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\"."
+                                | None -> "Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\"."
                             do!
                                 botClient.SendMessage(
                                     ChatId chatId,
@@ -484,7 +484,7 @@ type BotService(
         }
 
     let handleAddWizardAskDate (chatId: int64) =
-        botClient.SendMessage(ChatId chatId, "Выбери дату истечения (или напиши `25`, `25.01.2026`, `2026-01-25`):", replyMarkup = addWizardDateKeyboard())
+        botClient.SendMessage(ChatId chatId, "Выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):", replyMarkup = addWizardDateKeyboard())
         |> taskIgnore
 
     let handleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) =
@@ -631,7 +631,7 @@ type BotService(
                             do!
                                 botClient.SendMessage(
                                     ChatId cq.Message.Chat.Id,
-                                    "Ок, выбери скидку и минимальный чек:",
+                                    "Ок, выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\".",
                                     replyMarkup = addWizardDiscountKeyboard()
                                 )
                                 |> taskIgnore
