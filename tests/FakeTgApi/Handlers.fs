@@ -156,7 +156,24 @@ module Handlers =
 
     let handleFileDownload (ctx: HttpContext) =
         task {
-            let bytes = Encoding.UTF8.GetBytes(ctx.Request.Path.ToString())
+            // Expected: /file/bot{token}/photos/{fileId}.jpg
+            let path = ctx.Request.Path.ToString()
+            let fileName = IO.Path.GetFileName(path)
+            let fileId =
+                if String.IsNullOrWhiteSpace fileName then null
+                else
+                    // "photos/<fileId>.jpg" (we keep whatever before first '.')
+                    let dot = fileName.IndexOf('.')
+                    if dot > 0 then fileName.Substring(0, dot) else fileName
+
+            let bytes =
+                if not (String.IsNullOrWhiteSpace fileId) then
+                    match Store.files.TryGetValue fileId with
+                    | true, b -> b
+                    | _ -> Encoding.UTF8.GetBytes(path)
+                else
+                    Encoding.UTF8.GetBytes(path)
+
             ctx.Response.StatusCode <- 200
             ctx.Response.ContentType <- "application/octet-stream"
             do! ctx.Response.Body.WriteAsync(bytes.AsMemory(0, bytes.Length))
@@ -195,3 +212,17 @@ module Handlers =
                 do! respondJson ctx 400 (okResult "false")
         }
 
+    let setFile (ctx: HttpContext) =
+        task {
+            let! body = readBody ctx
+            try
+                let payload = JsonSerializer.Deserialize<FileMock>(body, JsonSerializerOptions(JsonSerializerDefaults.Web))
+                if Object.ReferenceEquals(payload, null) || String.IsNullOrWhiteSpace payload.fileId then
+                    do! respondJson ctx 400 (okResult "false")
+                else
+                    let bytes = Convert.FromBase64String(payload.contentBase64)
+                    Store.files[payload.fileId] <- bytes
+                    do! respondJson ctx 200 (okResult "true")
+            with _ ->
+                do! respondJson ctx 400 (okResult "false")
+        }

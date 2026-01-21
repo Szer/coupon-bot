@@ -5,7 +5,6 @@ open System.Diagnostics
 open System.Collections.Generic
 open System.Runtime.ExceptionServices
 open System.Text.Json
-open System.Text.RegularExpressions
 open Microsoft.Extensions.Logging
 open Telegram.Bot
 open Telegram.Bot.Types
@@ -22,7 +21,7 @@ type BotService(
     db: DbService,
     membership: TelegramMembershipService,
     notifications: TelegramNotificationService,
-    ocr: IOcrService,
+    couponOcr: CouponOcrEngine,
     logger: ILogger<BotService>
 ) =
     let sendText (chatId: int64) (text: string) =
@@ -74,45 +73,11 @@ type BotService(
         let mutable parsed = Unchecked.defaultof<DateOnly>
         if DateOnly.TryParseExact(s, formats, culture, styles, &parsed) then Some parsed
         else None
-        
-    let tryParseValueFromOcrText (text: string) =
-        if String.IsNullOrWhiteSpace text then None else
-        let m = Regex.Match(text, @"(?i)(?<n>\d{1,3}(?:[.,]\d{1,2})?)\s*(€|eur)\b")
-        if m.Success then
-            let n = m.Groups.["n"].Value.Replace(',', '.')
-            match Decimal.TryParse(n, Globalization.NumberStyles.Number, Globalization.CultureInfo.InvariantCulture) with
-            | true, v -> Some v
-            | _ -> None
-        else None
-
-    let tryParseAmountsFromOcrText (text: string) =
-        if String.IsNullOrWhiteSpace text then [||] else
-        let ms = Regex.Matches(text, @"(?i)(?<n>\d{1,3}(?:[.,]\d{1,2})?)\s*(€|eur)\b")
-        ms
-        |> Seq.cast<Match>
-        |> Seq.choose (fun m ->
-            let n = m.Groups.["n"].Value.Replace(',', '.')
-            match Decimal.TryParse(n, Globalization.NumberStyles.Number, Globalization.CultureInfo.InvariantCulture) with
-            | true, v -> Some v
-            | _ -> None)
-        |> Seq.toArray
 
     let formatCouponValue (c: Coupon) =
         let v = c.value.ToString("0.##")
         let mc = c.min_check.ToString("0.##")
         $"{v} EUR из {mc} EUR"
-
-    let tryParseDateFromOcrText (text: string) =
-        if String.IsNullOrWhiteSpace text then None else
-        let m = Regex.Match(text, @"(?<d>\d{1,2})[./-](?<m>\d{1,2})[./-](?<y>\d{2,4})")
-        if m.Success then
-            let d = int m.Groups.["d"].Value
-            let mo = int m.Groups.["m"].Value
-            let yRaw = int m.Groups.["y"].Value
-            let y = if yRaw < 100 then 2000 + yRaw else yRaw
-            try Some (DateOnly(y, mo, d))
-            with _ -> None
-        else None
 
     let formatAvailableCouponLine (idx: int) (c: Coupon) =
         let d = c.expires_at.ToString("dd.MM.yyyy")
@@ -318,6 +283,7 @@ type BotService(
                       value = Nullable()
                       min_check = Nullable()
                       expires_at = Nullable()
+                      barcode_text = null
                       updated_at = DateTime.UtcNow }
                 )
             do! sendText chatId "Пришли фото купона (просто картинку)."
@@ -368,6 +334,7 @@ type BotService(
                       value = Nullable()
                       min_check = Nullable()
                       expires_at = Nullable()
+                      barcode_text = null
                       updated_at = DateTime.UtcNow }
                 )
 
@@ -380,7 +347,7 @@ type BotService(
                     )
                     |> taskIgnore
             else
-                // Attempt OCR prefill (optional).
+                // Attempt OCR prefill (optional). Download photo into memory, then run OCR engine.
                 let! file = botClient.GetFile(photoFileId)
                 if String.IsNullOrWhiteSpace(file.FilePath) then
                     do!
@@ -391,44 +358,106 @@ type BotService(
                         )
                         |> taskIgnore
                 else
-                    let apiBase =
-                        if isNull botConfig.TelegramApiBaseUrl then "https://api.telegram.org"
-                        else botConfig.TelegramApiBaseUrl
-                    let fileUrl = $"{apiBase}/file/bot{botConfig.BotToken}/{file.FilePath}"
-                    let! ocrText = ocr.TextFromImageUrl(fileUrl)
-                    let amounts = tryParseAmountsFromOcrText ocrText
-                    let valueOpt = if amounts.Length > 0 then Some (amounts |> Array.min) else None
-                    let minCheckOpt = if amounts.Length >= 2 then Some (amounts |> Array.max) else None
-                    let dateOpt = tryParseDateFromOcrText ocrText
-                    match valueOpt, minCheckOpt, dateOpt with
-                    | Some value, Some minCheck, Some expiresAt ->
-                        do! db.UpsertPendingAddFlow(
-                                { user_id = user.id
-                                  stage = "awaiting_ocr_confirm"
-                                  photo_file_id = photoFileId
-                                  value = Nullable(value)
-                                  min_check = Nullable(minCheck)
-                                  expires_at = Nullable(expiresAt)
-                                  updated_at = DateTime.UtcNow }
-                            )
-                        let v = value.ToString("0.##")
-                        let mc = minCheck.ToString("0.##")
-                        let d = expiresAt.ToString("dd.MM.yyyy")
+                    use ms = new System.IO.MemoryStream()
+                    do! botClient.DownloadFile(file.FilePath, ms)
+                    let bytes = ms.ToArray()
+
+                    if int64 bytes.Length > botConfig.OcrMaxFileSizeBytes then
                         do!
                             botClient.SendMessage(
                                 ChatId chatId,
-                                $"Я распознал: {v} EUR из {mc} EUR, истекает {d}. Всё верно?",
-                                replyMarkup = addWizardOcrKeyboard()
-                            )
-                            |> taskIgnore
-                    | _ ->
-                        do!
-                            botClient.SendMessage(
-                                ChatId chatId,
-                                "Выбери скидку и минимальный чек:",
+                                "Картинка слишком большая для распознавания. Выбери скидку и минимальный чек:",
                                 replyMarkup = addWizardDiscountKeyboard()
                             )
                             |> taskIgnore
+                    else
+                        let! ocr = couponOcr.Recognize(ReadOnlyMemory<byte>(bytes))
+
+                        let valueOpt =
+                            if ocr.couponValue.HasValue then
+                                Some ocr.couponValue.Value
+                            else None
+                        let minCheckOpt =
+                            if ocr.minCheck.HasValue then
+                                Some ocr.minCheck.Value
+                            else None
+                        let validToOpt =
+                            if ocr.validTo.HasValue then
+                                Some (DateOnly.FromDateTime(ocr.validTo.Value))
+                            else None
+                        let barcodeText =
+                            if String.IsNullOrWhiteSpace ocr.barcode then null else ocr.barcode
+
+                        // Persist whatever we managed to recognize, and continue the wizard from the first missing step.
+                        match valueOpt, minCheckOpt, validToOpt with
+                        | Some value, Some minCheck, Some expiresAt ->
+                            do! db.UpsertPendingAddFlow(
+                                    { user_id = user.id
+                                      stage = "awaiting_ocr_confirm"
+                                      photo_file_id = photoFileId
+                                      value = Nullable(value)
+                                      min_check = Nullable(minCheck)
+                                      expires_at = Nullable(expiresAt)
+                                      barcode_text = barcodeText
+                                      updated_at = DateTime.UtcNow }
+                                )
+                            let v = value.ToString("0.##")
+                            let mc = minCheck.ToString("0.##")
+                            let d = expiresAt.ToString("dd.MM.yyyy")
+                            do!
+                                botClient.SendMessage(
+                                    ChatId chatId,
+                                    $"Я распознал: {v} EUR из {mc} EUR, истекает {d}. Всё верно?",
+                                    replyMarkup = addWizardOcrKeyboard()
+                                )
+                                |> taskIgnore
+                        | Some value, Some minCheck, None ->
+                            do! db.UpsertPendingAddFlow(
+                                    { user_id = user.id
+                                      stage = "awaiting_date_choice"
+                                      photo_file_id = photoFileId
+                                      value = Nullable(value)
+                                      min_check = Nullable(minCheck)
+                                      expires_at = Nullable()
+                                      barcode_text = barcodeText
+                                      updated_at = DateTime.UtcNow }
+                                )
+                            let v = value.ToString("0.##")
+                            let mc = minCheck.ToString("0.##")
+                            do!
+                                botClient.SendMessage(
+                                    ChatId chatId,
+                                    $"Я распознал скидку: {v} EUR из {mc} EUR. Теперь выбери дату истечения:",
+                                    replyMarkup = addWizardDateKeyboard()
+                                )
+                                |> taskIgnore
+                        | _ ->
+                            do! db.UpsertPendingAddFlow(
+                                    { user_id = user.id
+                                      stage = "awaiting_discount_choice"
+                                      photo_file_id = photoFileId
+                                      value = Nullable()
+                                      min_check = Nullable()
+                                      expires_at =
+                                        match validToOpt with
+                                        | Some d -> Nullable(d)
+                                        | None -> Nullable()
+                                      barcode_text = barcodeText
+                                      updated_at = DateTime.UtcNow }
+                                )
+                            let text =
+                                match validToOpt with
+                                | Some expiresAt ->
+                                    let d = expiresAt.ToString("dd.MM.yyyy")
+                                    $"Я распознал дату истечения {d}. Теперь выбери скидку и минимальный чек:"
+                                | None -> "Выбери скидку и минимальный чек:"
+                            do!
+                                botClient.SendMessage(
+                                    ChatId chatId,
+                                    text,
+                                    replyMarkup = addWizardDiscountKeyboard()
+                                )
+                                |> taskIgnore
         }
 
     let handleAddWizardAskDate (chatId: int64) =
@@ -497,14 +526,24 @@ type BotService(
                             if parts.Length >= 4 then
                                 match parseDecimalInvariant parts[2], parseDecimalInvariant parts[3] with
                                 | Some v, Some mc ->
-                                    let next =
-                                        { flow with
-                                            stage = "awaiting_date_choice"
-                                            value = Nullable(v)
-                                            min_check = Nullable(mc)
-                                            updated_at = DateTime.UtcNow }
-                                    do! db.UpsertPendingAddFlow next
-                                    do! handleAddWizardAskDate cq.Message.Chat.Id
+                                    if flow.expires_at.HasValue then
+                                        let next =
+                                            { flow with
+                                                stage = "awaiting_confirm"
+                                                value = Nullable(v)
+                                                min_check = Nullable(mc)
+                                                updated_at = DateTime.UtcNow }
+                                        do! db.UpsertPendingAddFlow next
+                                        do! handleAddWizardSendConfirm cq.Message.Chat.Id v mc flow.expires_at.Value
+                                    else
+                                        let next =
+                                            { flow with
+                                                stage = "awaiting_date_choice"
+                                                value = Nullable(v)
+                                                min_check = Nullable(mc)
+                                                updated_at = DateTime.UtcNow }
+                                        do! db.UpsertPendingAddFlow next
+                                        do! handleAddWizardAskDate cq.Message.Chat.Id
                                 | _ ->
                                     do! sendText cq.Message.Chat.Id "Не понял значения. Попробуй ещё раз: /add"
                             else
@@ -551,6 +590,7 @@ type BotService(
                                     value = Nullable()
                                     min_check = Nullable()
                                     expires_at = Nullable()
+                                    barcode_text = null
                                     updated_at = DateTime.UtcNow }
                             do! db.UpsertPendingAddFlow next
                             do!
@@ -569,7 +609,7 @@ type BotService(
                                         flow.value.Value,
                                         flow.min_check.Value,
                                         flow.expires_at.Value,
-                                        null
+                                        flow.barcode_text
                                     )
                                 do! db.ClearPendingAddFlow user.id
                                 let v = coupon.value.ToString("0.##")
@@ -663,8 +703,24 @@ type BotService(
                         match tryParseTwoDecimals msg.Text with
                         | Some (v, mc) ->
                             handledAddFlow <- true
-                            do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_date_choice"; value = Nullable(v); min_check = Nullable(mc); updated_at = DateTime.UtcNow })
-                            do! handleAddWizardAskDate msg.Chat.Id
+                            if flow.expires_at.HasValue then
+                                do! db.UpsertPendingAddFlow(
+                                        { flow with
+                                            stage = "awaiting_confirm"
+                                            value = Nullable(v)
+                                            min_check = Nullable(mc)
+                                            updated_at = DateTime.UtcNow }
+                                    )
+                                do! handleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value
+                            else
+                                do! db.UpsertPendingAddFlow(
+                                        { flow with
+                                            stage = "awaiting_date_choice"
+                                            value = Nullable(v)
+                                            min_check = Nullable(mc)
+                                            updated_at = DateTime.UtcNow }
+                                    )
+                                do! handleAddWizardAskDate msg.Chat.Id
                         | None ->
                             handledAddFlow <- true
                             do! sendText msg.Chat.Id "Не понял. Пришли два числа: скидка и минимальный чек. Например: 10 50"
