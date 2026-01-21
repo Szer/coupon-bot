@@ -293,8 +293,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:disc:10:50", user))
             do! fixture.ClearFakeCalls()
-            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:date:other", user))
-            do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("2026-02-01", user))
 
             let! callsConfirm1 = fixture.GetFakeCalls("sendMessage")
@@ -316,8 +314,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:disc:5:25", user))
             do! fixture.ClearFakeCalls()
-            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:date:other", user))
-            do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("2026-03-03", user))
 
             do! fixture.ClearFakeCalls()
@@ -337,6 +333,106 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Equal(25m, mc)
             Assert.Equal("2026-03-03", exp)
             Assert.Equal("wizard-photo-new", photoId)
+        }
+
+    [<Fact>]
+    let ``/add wizard: user can type discount as X/Y`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let user = Tg.user(id = 218L, username = "add_wizard_disc_slash", firstName = "Wizard")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/add", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = "wizard-photo-slash"))
+
+            let! callsAfterPhoto = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterPhoto 218L "Выбери скидку",
+                "Expected wizard to ask for discount options after photo")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("10/50", user))
+            let! callsAfterDisc = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterDisc 218L "дату истечения",
+                "Expected wizard to ask for expiry date after manual discount input")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("2026-02-02", user))
+            let! callsAfterDate = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterDate 218L "Подтвердить добавление",
+                "Expected wizard confirm step after manual date input")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:confirm", user))
+            let! callsAfterConfirm = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterConfirm 218L "Добавил купон",
+                "Expected success message after confirm")
+
+            let! v = getLatestCouponValue ()
+            let! mc = getLatestCouponMinCheck ()
+            let! exp = getLatestCouponExpiresIso ()
+            let! photoId = getLatestCouponPhotoFileId ()
+            Assert.Equal(10m, v)
+            Assert.Equal(50m, mc)
+            Assert.Equal("2026-02-02", exp)
+            Assert.Equal("wizard-photo-slash", photoId)
+        }
+
+    [<Fact>]
+    let ``/add wizard: user can type expiry date as day-of-month number`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let user = Tg.user(id = 219L, username = "add_wizard_day_number", firstName = "Wizard")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let today = DateOnly.FromDateTime(DateTime.UtcNow)
+            let day =
+                if today.Day <= 27 then today.Day + 1
+                else 1
+
+            let expected =
+                // Same algorithm as the bot: next such day strictly in the future (UTC),
+                // skipping months that don't contain the day (e.g. 31 in April).
+                let startMonth = DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+
+                let rec loop monthOffset =
+                    if monthOffset > 24 then
+                        failwith "Expected to compute next day-of-month"
+                    else
+                        let dt = startMonth.AddMonths(monthOffset)
+                        try
+                            let candidate = DateOnly(dt.Year, dt.Month, day)
+                            if candidate > today then candidate else loop (monthOffset + 1)
+                        with _ ->
+                            loop (monthOffset + 1)
+
+                (loop 0).ToString("yyyy-MM-dd")
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/add", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = "wizard-photo-day"))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:disc:10:50", user))
+
+            let! callsAfterDisc = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterDisc 219L "дату истечения",
+                "Expected wizard to ask for expiry date after discount choice")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage(day.ToString(), user))
+
+            let! callsAfterDate = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAfterDate 219L "Подтвердить добавление",
+                "Expected wizard confirm step after day-of-month input")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:confirm", user))
+
+            let! exp = getLatestCouponExpiresIso ()
+            Assert.Equal(expected, exp)
         }
 
     [<Fact>]

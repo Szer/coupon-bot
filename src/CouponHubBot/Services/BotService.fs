@@ -50,12 +50,22 @@ type BotService(
     let tryParseTwoDecimals (text: string) =
         if String.IsNullOrWhiteSpace text then None
         else
-            let parts = text.Split([| ' '; '\t'; '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
-            if parts.Length < 2 then None
+            let t = text.Trim()
+            // Support both "X Y" and "X/Y" formats (spaces around '/' are ok).
+            if t.Contains("/") then
+                let parts = t.Split([| '/' |], StringSplitOptions.RemoveEmptyEntries)
+                if parts.Length <> 2 then None
+                else
+                    match parseDecimalInvariant parts[0], parseDecimalInvariant parts[1] with
+                    | Some a, Some b -> Some(a, b)
+                    | _ -> None
             else
-                match parseDecimalInvariant parts[0], parseDecimalInvariant parts[1] with
-                | Some a, Some b -> Some(a, b)
-                | _ -> None
+                let parts = t.Split([| ' '; '\t'; '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
+                if parts.Length < 2 then None
+                else
+                    match parseDecimalInvariant parts[0], parseDecimalInvariant parts[1] with
+                    | Some a, Some b -> Some(a, b)
+                    | _ -> None
 
     let tryParseDateOnly (s: string) =
         let styles = System.Globalization.DateTimeStyles.None
@@ -71,8 +81,23 @@ type BotService(
                "dd-MM-yyyy"
                "d-M-yyyy" |]
         let mutable parsed = Unchecked.defaultof<DateOnly>
-        if DateOnly.TryParseExact(s, formats, culture, styles, &parsed) then Some parsed
-        else None
+        let t = if isNull s then "" else s.Trim()
+        if DateOnly.TryParseExact(t, formats, culture, styles, &parsed) then
+            Some parsed
+        else
+            // Shortcut: allow user to send a single day-of-month number (1..31),
+            // and interpret it as the next such day strictly in the future (UTC).
+            let isDigitsOnly =
+                not (String.IsNullOrWhiteSpace t) && t |> Seq.forall Char.IsDigit
+
+            if isDigitsOnly then
+                match Int32.TryParse(t) with
+                | true, day when day >= 1 && day <= 31 ->
+                    let today = DateOnly.FromDateTime(DateTime.UtcNow)
+                    DateUtils.nextDayOfMonthStrictlyFuture today day
+                | _ -> None
+            else
+                None
 
     let formatCouponValue (c: Coupon) =
         let v = c.value.ToString("0.##")
@@ -100,7 +125,6 @@ type BotService(
             seq { InlineKeyboardButton.WithCallbackData("10€/40€", "addflow:disc:10:40") }
             seq { InlineKeyboardButton.WithCallbackData("10€/50€", "addflow:disc:10:50") }
             seq { InlineKeyboardButton.WithCallbackData("20€/100€", "addflow:disc:20:100") }
-            seq { InlineKeyboardButton.WithCallbackData("Другой вариант", "addflow:disc:other") }
         }
         |> InlineKeyboardMarkup
 
@@ -108,7 +132,6 @@ type BotService(
         seq {
             seq { InlineKeyboardButton.WithCallbackData("Сегодня", "addflow:date:today") }
             seq { InlineKeyboardButton.WithCallbackData("Завтра", "addflow:date:tomorrow") }
-            seq { InlineKeyboardButton.WithCallbackData("Другая дата", "addflow:date:other") }
         }
         |> InlineKeyboardMarkup
 
@@ -302,7 +325,7 @@ type BotService(
                 else caption.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
 
             if not hasPhoto then
-                do! sendText chatId "Для ручного добавления пришли фото купона с подписью:\n/add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
+                do! sendText chatId "Для ручного добавления пришли фото купона с подписью:\n/add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026 (или просто день: /add 10 50 25)"
             elif parts.Length >= 4 && (parts[0] = "/add" || parts[0] = "/a") then
                 let valueOpt =
                     parseDecimalInvariant parts[1]
@@ -320,7 +343,7 @@ type BotService(
                     let d = coupon.expires_at.ToString("dd.MM.yyyy")
                     do! sendText chatId $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                 | _ ->
-                    do! sendText chatId "Не понял discount/min_check/date. Пример: /add 10 50 2026-01-25 (или /add 10 50 25.01.2026)"
+                    do! sendText chatId "Не понял discount/min_check/date. Примеры: /add 10 50 2026-01-25 (или /add 10 50 25.01.2026, или /add 10 50 25)"
             else
                 do! sendText chatId "Нужна подпись вида: /add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
         }
@@ -342,7 +365,7 @@ type BotService(
                 do!
                     botClient.SendMessage(
                         ChatId chatId,
-                        "Выбери скидку и минимальный чек:",
+                        "Выбери скидку и минимальный чек (или пришли `10 50` / `10/50`):",
                         replyMarkup = addWizardDiscountKeyboard()
                     )
                     |> taskIgnore
@@ -353,7 +376,7 @@ type BotService(
                     do!
                         botClient.SendMessage(
                             ChatId chatId,
-                            "Выбери скидку и минимальный чек:",
+                            "Выбери скидку и минимальный чек (или пришли `10 50` / `10/50`):",
                             replyMarkup = addWizardDiscountKeyboard()
                         )
                         |> taskIgnore
@@ -366,7 +389,7 @@ type BotService(
                         do!
                             botClient.SendMessage(
                                 ChatId chatId,
-                                "Картинка слишком большая для распознавания. Выбери скидку и минимальный чек:",
+                                "Картинка слишком большая для распознавания. Выбери скидку и минимальный чек (или пришли `10 50` / `10/50`):",
                                 replyMarkup = addWizardDiscountKeyboard()
                             )
                             |> taskIgnore
@@ -427,7 +450,7 @@ type BotService(
                             do!
                                 botClient.SendMessage(
                                     ChatId chatId,
-                                    $"Я распознал скидку: {v} EUR из {mc} EUR. Теперь выбери дату истечения:",
+                                    $"Я распознал скидку: {v} EUR из {mc} EUR. Теперь выбери дату истечения (или напиши `25`, `25.01.2026`, `2026-01-25`):",
                                     replyMarkup = addWizardDateKeyboard()
                                 )
                                 |> taskIgnore
@@ -461,7 +484,7 @@ type BotService(
         }
 
     let handleAddWizardAskDate (chatId: int64) =
-        botClient.SendMessage(ChatId chatId, "Выбери дату истечения:", replyMarkup = addWizardDateKeyboard())
+        botClient.SendMessage(ChatId chatId, "Выбери дату истечения (или напиши `25`, `25.01.2026`, `2026-01-25`):", replyMarkup = addWizardDateKeyboard())
         |> taskIgnore
 
     let handleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) =
@@ -517,9 +540,6 @@ type BotService(
                         do! sendText cq.Message.Chat.Id "Этот шаг добавления уже устарел. Начни заново: /add"
                     | Some flow ->
                         match cq.Data with
-                        | "addflow:disc:other" ->
-                            do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_discount_custom"; updated_at = DateTime.UtcNow })
-                            do! sendText cq.Message.Chat.Id "Пришли два числа: скидка и минимальный чек. Например: 10 50"
                         | d when d.StartsWith("addflow:disc:") ->
                             // addflow:disc:<value>:<min_check>
                             let parts = d.Split(':', StringSplitOptions.RemoveEmptyEntries)
@@ -572,9 +592,6 @@ type BotService(
                                 do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt
                             else
                                 do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
-                        | "addflow:date:other" ->
-                            do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_date_custom"; updated_at = DateTime.UtcNow })
-                            do! sendText cq.Message.Chat.Id "Пришли дату истечения (например 25.01.2026 или 2026-01-25)."
                         | "addflow:ocr:yes" ->
                             // If OCR fully recognized and user confirms, add immediately (no extra confirm screen).
                             if
@@ -726,7 +743,7 @@ type BotService(
                                 handledAddFlow <- true
                                 do! handleAddWizardPhoto user msg.Chat.Id photoFileId
                             | None -> ()
-                        | Some flow when flow.stage = "awaiting_discount_custom" && not (isNull msg.Text) ->
+                        | Some flow when flow.stage = "awaiting_discount_choice" && not (isNull msg.Text) ->
                             match tryParseTwoDecimals msg.Text with
                             | Some (v, mc) ->
                                 handledAddFlow <- true
@@ -750,8 +767,8 @@ type BotService(
                                     do! handleAddWizardAskDate msg.Chat.Id
                             | None ->
                                 handledAddFlow <- true
-                                do! sendText msg.Chat.Id "Не понял. Пришли два числа: скидка и минимальный чек. Например: 10 50"
-                        | Some flow when flow.stage = "awaiting_date_custom" && not (isNull msg.Text) ->
+                                do! sendText msg.Chat.Id "Не понял. Пришли два числа: скидка и минимальный чек. Например: 10 50 или 10/50"
+                        | Some flow when flow.stage = "awaiting_date_choice" && not (isNull msg.Text) ->
                             match tryParseDateOnly msg.Text with
                             | Some expiresAt ->
                                 if flow.value.HasValue && flow.min_check.HasValue then
@@ -763,7 +780,7 @@ type BotService(
                                     do! sendText msg.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                             | None ->
                                 handledAddFlow <- true
-                                do! sendText msg.Chat.Id "Не понял дату. Примеры: 25.01.2026 или 2026-01-25"
+                                do! sendText msg.Chat.Id "Не понял дату. Примеры: 25, 25.01.2026 или 2026-01-25"
                         | Some _ ->
                             // If user sends a photo at a stage where we don't expect photos (e.g. awaiting_confirm),
                             // don't silently ignore: warn how to proceed.
