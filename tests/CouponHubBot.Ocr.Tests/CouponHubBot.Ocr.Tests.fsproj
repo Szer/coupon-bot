@@ -21,7 +21,6 @@
     <Content Include="Images\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <None Include="Images\.gitkeep" />
   </ItemGroup>
 
   <ItemGroup>

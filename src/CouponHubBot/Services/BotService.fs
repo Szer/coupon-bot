@@ -73,15 +73,11 @@ type BotService(
         let mutable parsed = Unchecked.defaultof<DateOnly>
         if DateOnly.TryParseExact(s, formats, culture, styles, &parsed) then Some parsed
         else None
-        
-    // OCR parsing moved to CouponOcrEngine (keeps /add flow testable without docker).
 
     let formatCouponValue (c: Coupon) =
         let v = c.value.ToString("0.##")
         let mc = c.min_check.ToString("0.##")
         $"{v} EUR из {mc} EUR"
-
-    // OCR date parsing moved to CouponOcrEngine.
 
     let formatAvailableCouponLine (idx: int) (c: Coupon) =
         let d = c.expires_at.ToString("dd.MM.yyyy")
