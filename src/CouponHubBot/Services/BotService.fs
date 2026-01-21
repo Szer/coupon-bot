@@ -613,10 +613,17 @@ type BotService(
 
     let handlePrivateMessage (msg: Message) =
         task {
+            use a =
+                botActivity
+                    .StartActivity("handlePrivateMessage")
+
             if msg.Chat <> null && msg.Chat.Type = ChatType.Private && msg.From <> null then
+                %a.SetTag("fromId", msg.From.Id)
+                %a.SetTag("text", msg.Text)
                 let! ok = ensureCommunityMember msg.From.Id msg.Chat.Id
-                if not ok then () else
+                if not ok then %a.SetTag("isMember", false) else
                 
+                %a.SetTag("isMember", true)
                 let! user = db.UpsertUser(DbUser.ofTelegramUser msg.From)
 
                 // Pending /feedback: next non-command message is forwarded to admins.

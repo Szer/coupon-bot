@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Telemetry.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Utils.fs" />
     <Compile Include="Services/DbService.fs" />
@@ -13,7 +14,6 @@
     <Compile Include="Services/NotificationService.fs" />
     <Compile Include="Services/OcrService.fs" />
     <Compile Include="Services/ReminderService.fs" />
-    <Compile Include="Telemetry.fs" />
     <Compile Include="Services/BotService.fs" />
     <Compile Include="Services/BotCommandsSetup.fs" />
     <Compile Include="Program.fs" />

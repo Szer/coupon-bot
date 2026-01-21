@@ -3,6 +3,8 @@ namespace CouponHubBot.Services
 open System
 open System.Collections.Concurrent
 open System.Threading.Tasks
+open CouponHubBot.Telemetry
+open CouponHubBot.Utils
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Telegram.Bot
@@ -31,10 +33,16 @@ type TelegramMembershipService(
     member _.InvalidateCache() = cache.Clear()
 
     member _.OnChatMemberUpdated(update: ChatMemberUpdated) =
+        use span =
+            botActivity
+                .StartActivity("onChatMemberUpdated")
         if update.Chat <> null && update.Chat.Id = botConfig.CommunityChatId && update.NewChatMember <> null then
             let uid = update.NewChatMember.User.Id
             let isMember = statusIsMember update.NewChatMember.Status
             cache[uid] <- (isMember, DateTime.UtcNow)
+            %span.SetTag("userId", uid)
+            %span.SetTag("isMember", isMember)
+            %span.SetTag("status", update.NewChatMember.Status)
 
     member _.IsMember(userId) =
         task {
