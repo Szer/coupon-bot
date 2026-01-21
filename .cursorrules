@@ -93,6 +93,11 @@ OCR-ветка:
 - Логирует вызовы в `Store.calls` (Method, Url, Body, Timestamp).
 - Реализованы `sendMessage`, `sendPhoto`, `sendMediaGroup`, `forwardMessage`, `answerCallbackQuery`, `getChatMember`, `getFile`, `deleteMessage`.
 
+## Тесты: кириллица в JSON body (FakeTgApi)
+- Никогда не делай `call.Body.Contains("...русский текст...")` по сырым JSON строкам: кириллица часто приходит как `\uXXXX`.
+- Всегда парси `call.Body` через `JsonDocument.Parse(...)` и сравнивай строки, полученные через `.GetString()` (это делает unescape).
+- Для проверок кнопок/markup также парси JSON и смотри поля (`reply_markup.inline_keyboard[].[].callback_data`), а не substring по `Body`.
+
 #### Файлы (DownloadFile) — важно для ZXing
 
 Чтобы бот реально скачал фото байтами (а не “путь как строку”):

@@ -96,10 +96,10 @@ type BotService(
 
     let addWizardDiscountKeyboard () =
         seq {
-            seq { InlineKeyboardButton.WithCallbackData("-10€/50€", "addflow:disc:10:50") }
-            seq { InlineKeyboardButton.WithCallbackData("-5€/25€", "addflow:disc:5:25") }
-            seq { InlineKeyboardButton.WithCallbackData("-10€/40€", "addflow:disc:10:40") }
-            seq { InlineKeyboardButton.WithCallbackData("-20€/100€", "addflow:disc:20:100") }
+            seq { InlineKeyboardButton.WithCallbackData("5€/25€", "addflow:disc:5:25") }
+            seq { InlineKeyboardButton.WithCallbackData("10€/40€", "addflow:disc:10:40") }
+            seq { InlineKeyboardButton.WithCallbackData("10€/50€", "addflow:disc:10:50") }
+            seq { InlineKeyboardButton.WithCallbackData("20€/100€", "addflow:disc:20:100") }
             seq { InlineKeyboardButton.WithCallbackData("Другой вариант", "addflow:disc:other") }
         }
         |> InlineKeyboardMarkup
@@ -576,10 +576,28 @@ type BotService(
                             do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_date_custom"; updated_at = DateTime.UtcNow })
                             do! sendText cq.Message.Chat.Id "Пришли дату истечения (например 25.01.2026 или 2026-01-25)."
                         | "addflow:ocr:yes" ->
-                            if flow.stage = "awaiting_ocr_confirm" && flow.value.HasValue && flow.min_check.HasValue && flow.expires_at.HasValue then
-                                let next = { flow with stage = "awaiting_confirm"; updated_at = DateTime.UtcNow }
-                                do! db.UpsertPendingAddFlow next
-                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value flow.expires_at.Value
+                            // If OCR fully recognized and user confirms, add immediately (no extra confirm screen).
+                            if
+                                flow.stage = "awaiting_ocr_confirm"
+                                && flow.photo_file_id <> null
+                                && flow.value.HasValue
+                                && flow.min_check.HasValue
+                                && flow.expires_at.HasValue
+                            then
+                                let! coupon =
+                                    db.AddCoupon(
+                                        user.id,
+                                        flow.photo_file_id,
+                                        flow.value.Value,
+                                        flow.min_check.Value,
+                                        flow.expires_at.Value,
+                                        flow.barcode_text
+                                    )
+                                do! db.ClearPendingAddFlow user.id
+                                let v = coupon.value.ToString("0.##")
+                                let mc = coupon.min_check.ToString("0.##")
+                                let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                                do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                             else
                                 do! sendText cq.Message.Chat.Id "Этот шаг уже неактуален. Начни заново: /add"
                         | "addflow:ocr:no" ->
@@ -671,17 +689,7 @@ type BotService(
                     not (isNull msg.Text)
                     && msg.Text.StartsWith("/")
 
-                if not isCommand then
-                    let! consumed = db.TryConsumePendingFeedback(user.id)
-                    if consumed then
-                        for adminId in botConfig.FeedbackAdminIds do
-                            try
-                                do! botClient.ForwardMessage(ChatId adminId, ChatId msg.Chat.Id, msg.MessageId) |> taskIgnore
-                            with _ -> ()
-                        do! sendText msg.Chat.Id "Спасибо! Сообщение отправлено авторам."
-                    else
-                        ()
-                else
+                if isCommand then
                     // Any command cancels pending feedback (if present)
                     do! db.ClearPendingFeedback(user.id)
 
@@ -689,55 +697,81 @@ type BotService(
                     if msg.Text <> "/add" && msg.Text <> "/a" then
                         do! db.ClearPendingAddFlow(user.id)
 
-                // Handle add wizard steps for non-command messages (photo / free-form inputs)
+                // Handle add wizard steps for non-command messages (photo / free-form inputs).
+                // Important: if /feedback consumes this message, do NOT run /add implicit flow.
                 let mutable handledAddFlow = false
                 if not isCommand then
-                    match! db.GetPendingAddFlow(user.id) with
-                    | Some flow when flow.stage = "awaiting_photo" ->
-                        match getLargestPhotoFileId msg with
-                        | Some photoFileId ->
-                            handledAddFlow <- true
-                            do! handleAddWizardPhoto user msg.Chat.Id photoFileId
-                        | None -> ()
-                    | Some flow when flow.stage = "awaiting_discount_custom" && not (isNull msg.Text) ->
-                        match tryParseTwoDecimals msg.Text with
-                        | Some (v, mc) ->
-                            handledAddFlow <- true
-                            if flow.expires_at.HasValue then
-                                do! db.UpsertPendingAddFlow(
-                                        { flow with
-                                            stage = "awaiting_confirm"
-                                            value = Nullable(v)
-                                            min_check = Nullable(mc)
-                                            updated_at = DateTime.UtcNow }
-                                    )
-                                do! handleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value
-                            else
-                                do! db.UpsertPendingAddFlow(
-                                        { flow with
-                                            stage = "awaiting_date_choice"
-                                            value = Nullable(v)
-                                            min_check = Nullable(mc)
-                                            updated_at = DateTime.UtcNow }
-                                    )
-                                do! handleAddWizardAskDate msg.Chat.Id
+                    let! feedbackConsumed = db.TryConsumePendingFeedback(user.id)
+                    if feedbackConsumed then
+                        for adminId in botConfig.FeedbackAdminIds do
+                            try
+                                do! botClient.ForwardMessage(ChatId adminId, ChatId msg.Chat.Id, msg.MessageId) |> taskIgnore
+                            with _ -> ()
+                        do! sendText msg.Chat.Id "Спасибо! Сообщение отправлено авторам."
+                        handledAddFlow <- true
+                    else
+                        let! pendingFlow = db.GetPendingAddFlow(user.id)
+                        match pendingFlow with
                         | None ->
-                            handledAddFlow <- true
-                            do! sendText msg.Chat.Id "Не понял. Пришли два числа: скидка и минимальный чек. Например: 10 50"
-                    | Some flow when flow.stage = "awaiting_date_custom" && not (isNull msg.Text) ->
-                        match tryParseDateOnly msg.Text with
-                        | Some expiresAt ->
-                            if flow.value.HasValue && flow.min_check.HasValue then
+                            // UX: if no pending flow is active, a plain photo starts /add implicitly.
+                            // Do NOT override explicit /add manual flow via caption.
+                            match getLargestPhotoFileId msg with
+                            | Some photoFileId when isNull msg.Caption || (not (msg.Caption.StartsWith("/add")) && not (msg.Caption.StartsWith("/a"))) ->
                                 handledAddFlow <- true
-                                do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_confirm"; expires_at = Nullable(expiresAt); updated_at = DateTime.UtcNow })
-                                do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                                do! handleAddWizardPhoto user msg.Chat.Id photoFileId
+                            | _ -> ()
+                        | Some flow when flow.stage = "awaiting_photo" ->
+                            match getLargestPhotoFileId msg with
+                            | Some photoFileId ->
+                                handledAddFlow <- true
+                                do! handleAddWizardPhoto user msg.Chat.Id photoFileId
+                            | None -> ()
+                        | Some flow when flow.stage = "awaiting_discount_custom" && not (isNull msg.Text) ->
+                            match tryParseTwoDecimals msg.Text with
+                            | Some (v, mc) ->
+                                handledAddFlow <- true
+                                if flow.expires_at.HasValue then
+                                    do! db.UpsertPendingAddFlow(
+                                            { flow with
+                                                stage = "awaiting_confirm"
+                                                value = Nullable(v)
+                                                min_check = Nullable(mc)
+                                                updated_at = DateTime.UtcNow }
+                                        )
+                                    do! handleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value
+                                else
+                                    do! db.UpsertPendingAddFlow(
+                                            { flow with
+                                                stage = "awaiting_date_choice"
+                                                value = Nullable(v)
+                                                min_check = Nullable(mc)
+                                                updated_at = DateTime.UtcNow }
+                                        )
+                                    do! handleAddWizardAskDate msg.Chat.Id
+                            | None ->
+                                handledAddFlow <- true
+                                do! sendText msg.Chat.Id "Не понял. Пришли два числа: скидка и минимальный чек. Например: 10 50"
+                        | Some flow when flow.stage = "awaiting_date_custom" && not (isNull msg.Text) ->
+                            match tryParseDateOnly msg.Text with
+                            | Some expiresAt ->
+                                if flow.value.HasValue && flow.min_check.HasValue then
+                                    handledAddFlow <- true
+                                    do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_confirm"; expires_at = Nullable(expiresAt); updated_at = DateTime.UtcNow })
+                                    do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                                else
+                                    handledAddFlow <- true
+                                    do! sendText msg.Chat.Id "Сначала выбери скидку. Начни заново: /add"
+                            | None ->
+                                handledAddFlow <- true
+                                do! sendText msg.Chat.Id "Не понял дату. Примеры: 25.01.2026 или 2026-01-25"
+                        | Some _ ->
+                            // If user sends a photo at a stage where we don't expect photos (e.g. awaiting_confirm),
+                            // don't silently ignore: warn how to proceed.
+                            if msg.Photo <> null && msg.Photo.Length > 0 then
+                                handledAddFlow <- true
+                                do! sendText msg.Chat.Id "Сейчас идёт добавление купона. Закончи текущий шаг или начни заново: /add"
                             else
-                                handledAddFlow <- true
-                                do! sendText msg.Chat.Id "Сначала выбери скидку. Начни заново: /add"
-                        | None ->
-                            handledAddFlow <- true
-                            do! sendText msg.Chat.Id "Не понял дату. Примеры: 25.01.2026 или 2026-01-25"
-                    | _ -> ()
+                                ()
 
                 if handledAddFlow then
                     ()
