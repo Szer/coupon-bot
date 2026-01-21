@@ -20,6 +20,21 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             return! conn.QuerySingleAsync<int>(sql)
         }
 
+    let getCouponCount () =
+        fixture.QuerySingle<int64>("SELECT COUNT(*)::bigint FROM coupon", null)
+
+    let getLatestCouponValue () =
+        fixture.QuerySingle<decimal>("SELECT value FROM coupon ORDER BY id DESC LIMIT 1", null)
+
+    let getLatestCouponMinCheck () =
+        fixture.QuerySingle<decimal>("SELECT min_check FROM coupon ORDER BY id DESC LIMIT 1", null)
+
+    let getLatestCouponExpiresIso () =
+        fixture.QuerySingle<string>("SELECT expires_at::text FROM coupon ORDER BY id DESC LIMIT 1", null)
+
+    let getLatestCouponPhotoFileId () =
+        fixture.QuerySingle<string>("SELECT photo_file_id FROM coupon ORDER BY id DESC LIMIT 1", null)
+
     [<Fact>]
     let ``User can add coupon and group gets notification`` () =
         task {
@@ -228,6 +243,100 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! callsAfterConfirm = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText callsAfterConfirm 214L "Добавил купон",
                 "Expected success message after confirm")
+        }
+
+    [<Fact>]
+    let ``/add wizard: unexpected photo on confirm is ignored and asks to finish or restart`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let user = Tg.user(id = 215L, username = "add_unexpected_photo", firstName = "Wizard")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/add", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = "wizard-photo-1"))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:disc:10:50", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:date:today", user))
+
+            let! callsConfirm = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsConfirm 215L "Подтвердить добавление",
+                "Expected wizard confirm step before sending unexpected photo")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = "wizard-photo-unexpected"))
+
+            let! callsAfter = fixture.GetFakeCalls("sendMessage")
+            // Desired UX: warn user instead of silently ignoring.
+            Assert.True(findCallWithText callsAfter 215L "Сейчас идёт добавление купона. Закончи текущий шаг или начни заново: /add",
+                "Expected warning telling user to finish current add or restart with /add")
+
+            let! count = getCouponCount ()
+            Assert.Equal(0L, count)
+        }
+
+    [<Fact>]
+    let ``/add wizard: sending /add at confirm restarts flow and adds new coupon (not old)`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let user = Tg.user(id = 217L, username = "add_restart_at_confirm", firstName = "Wizard")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            // Start first wizard and reach confirm (but do not confirm).
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/add", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = "wizard-photo-old"))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:disc:10:50", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:date:other", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("2026-02-01", user))
+
+            let! callsConfirm1 = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsConfirm1 217L "Подтвердить добавление",
+                "Expected confirm step for first wizard")
+
+            let! countBefore = getCouponCount ()
+            Assert.Equal(0L, countBefore)
+
+            // Restart with /add and create a different coupon.
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/add", user))
+            let! callsAskPhoto = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsAskPhoto 217L "Пришли фото купона",
+                "Expected wizard to restart and ask for photo")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = "wizard-photo-new"))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:disc:5:25", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:date:other", user))
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("2026-03-03", user))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:confirm", user))
+            let! callsDone = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsDone 217L "Добавил купон",
+                "Expected success message after confirm for restarted wizard")
+
+            let! countAfter = getCouponCount ()
+            Assert.Equal(1L, countAfter)
+
+            let! v = getLatestCouponValue ()
+            let! mc = getLatestCouponMinCheck ()
+            let! exp = getLatestCouponExpiresIso ()
+            let! photoId = getLatestCouponPhotoFileId ()
+            Assert.Equal(5m, v)
+            Assert.Equal(25m, mc)
+            Assert.Equal("2026-03-03", exp)
+            Assert.Equal("wizard-photo-new", photoId)
         }
 
     [<Fact>]

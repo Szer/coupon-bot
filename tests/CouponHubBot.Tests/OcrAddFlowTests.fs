@@ -3,6 +3,7 @@ namespace CouponHubBot.Tests
 open System
 open System.IO
 open System.Net
+open System.Text.Json
 open System.Threading.Tasks
 open DotNet.Testcontainers.Configurations
 open Xunit
@@ -30,7 +31,102 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
         fixture.QuerySingle<decimal>("SELECT min_check FROM coupon ORDER BY id DESC LIMIT 1", null)
 
     [<Fact>]
-    let ``/add wizard OCR: fully recognized -> confirm -> coupon created`` () =
+    let ``Implicit /add: photo with no pending flows starts OCR wizard`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 603L, username = "ocr_implicit", firstName = "OCR")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let fileId = "ocr-photo-implicit"
+
+            do! fixture.SetTelegramFile(fileId, readImageBytes fileName)
+            do! fixture.SetAzureOcrResponse(200, readAzureCacheJson fileName)
+
+            let! resp = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = fileId))
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls user.Id "Я распознал:", "Expected OCR prefill message after implicit add")
+            Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("addflow:ocr:yes") && c.Body.Contains("addflow:ocr:no")),
+                "Expected OCR yes/no buttons")
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
+            let! callsDone = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsDone user.Id "Добавил купон", "Expected coupon to be created after OCR yes")
+        }
+
+    [<Fact>]
+    let ``Implicit /add: does not start while /feedback pending (photo is forwarded)`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 604L, username = "fb_blocks_implicit", firstName = "FB")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/feedback", user))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = "any-photo-id"))
+
+            let! fwCalls = fixture.GetFakeCalls("forwardMessage")
+            Assert.Equal(2, fwCalls.Length)
+
+            let! msgCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText msgCalls user.Id "Спасибо", "Expected user confirmation after forwarding photo feedback")
+
+            // IMPORTANT: FakeTgApi stores JSON with \uXXXX escapes for Cyrillic.
+            // Always parse JSON and read strings via GetString() to compare Russian text.
+            let texts =
+                msgCalls
+                |> Array.choose (fun c ->
+                    try
+                        use doc = JsonDocument.Parse(c.Body)
+                        let root = doc.RootElement
+                        match root.TryGetProperty("text") with
+                        | true, t when t.ValueKind = JsonValueKind.String -> Some(t.GetString())
+                        | _ -> None
+                    with _ ->
+                        None)
+
+            Assert.False(
+                texts |> Array.exists (fun t -> not (isNull t) && t.Contains("Я распознал:")),
+                "Did not expect implicit /add OCR flow during feedback"
+            )
+
+            let hasAddFlowButtons =
+                msgCalls
+                |> Array.exists (fun c ->
+                    try
+                        use doc = JsonDocument.Parse(c.Body)
+                        let root = doc.RootElement
+                        match root.TryGetProperty("reply_markup") with
+                        | true, rm ->
+                            match rm.TryGetProperty("inline_keyboard") with
+                            | true, kb when kb.ValueKind = JsonValueKind.Array ->
+                                kb.EnumerateArray()
+                                |> Seq.exists (fun row ->
+                                    row.EnumerateArray()
+                                    |> Seq.exists (fun btn ->
+                                        match btn.TryGetProperty("callback_data") with
+                                        | true, cd when cd.ValueKind = JsonValueKind.String ->
+                                            let s = cd.GetString()
+                                            not (isNull s) && s.StartsWith("addflow:")
+                                        | _ -> false))
+                            | _ -> false
+                        | _ -> false
+                    with _ ->
+                        false)
+
+            Assert.False(hasAddFlowButtons, "Did not expect implicit /add flow buttons during feedback (message should be forwarded only)")
+        }
+
+    [<Fact>]
+    let ``/add wizard OCR: fully recognized -> user confirms -> coupon created`` () =
         task {
             do! fixture.ClearFakeCalls()
             do! fixture.TruncateCoupons()
@@ -62,12 +158,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
             let! calls3 = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls3 user.Id "Подтвердить добавление купона", "Expected confirm screen after OCR yes")
-
-            do! fixture.ClearFakeCalls()
-            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:confirm", user))
-            let! calls4 = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls4 user.Id "Добавил купон", "Expected success message after confirm")
+            Assert.True(findCallWithText calls3 user.Id "Добавил купон", "Expected success message right after OCR yes")
 
             let! v = getLatestValue ()
             let! mc = getLatestMinCheck ()
