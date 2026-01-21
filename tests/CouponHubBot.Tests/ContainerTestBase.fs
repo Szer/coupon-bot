@@ -47,6 +47,12 @@ type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
     let botToken = "123:456"
     let communityChatId = -42L
 
+    // Freeze application time inside the bot container so tests are deterministic.
+    // Keep it early enough so hardcoded 2026-01-xx dates in tests are not "expired".
+    let fixedUtcNow = DateTimeOffset.Parse("2026-01-01T00:00:00Z", Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.AssumeUniversal ||| Globalization.DateTimeStyles.AdjustToUniversal)
+    let fixedDate = fixedUtcNow.UtcDateTime.Date
+    let fixedDateIso = fixedDate.ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
+
     let mutable botHttp: HttpClient = null
     let mutable fakeHttp: HttpClient = null
     let mutable fakeAzureHttp: HttpClient = null
@@ -155,6 +161,7 @@ type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
                 .WithEnvironment("REMINDER_RUN_ON_START", "false")
                 .WithEnvironment("REMINDER_HOUR_UTC", "8")
                 .WithEnvironment("TEST_MODE", "true")
+                .WithEnvironment("BOT_FIXED_UTC_NOW", fixedUtcNow.ToString("o"))
                 .DependsOn(flywayContainer)
                 .DependsOn(fakeContainer)
         let b = if ocrEnabled then b.DependsOn(fakeAzureContainer) else b
@@ -183,9 +190,9 @@ ON CONFLICT (id) DO NOTHING;
                 let couponSql =
                     """
 INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
-VALUES (100, 'seed-photo', 10.00, 50.00, CURRENT_DATE, 'available');
+VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
 """
-                let! _ = conn.ExecuteAsync(couponSql)
+                let! _ = conn.ExecuteAsync(couponSql, {| expires_at = fixedDateIso |})
                 ()
         }
 
@@ -250,6 +257,8 @@ VALUES (100, 'seed-photo', 10.00, 50.00, CURRENT_DATE, 'available');
     member _.Bot = botHttp
         member _.TelegramApi = fakeHttp
     member _.DbConnectionString = publicConnectionString
+    member _.FixedUtcNow = fixedUtcNow
+    member _.FixedToday = DateOnly.FromDateTime(fixedUtcNow.UtcDateTime)
     
 
 

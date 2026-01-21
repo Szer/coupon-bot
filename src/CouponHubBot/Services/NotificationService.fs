@@ -11,7 +11,8 @@ type TelegramNotificationService(
     botClient: ITelegramBotClient,
     botConfig: BotConfiguration,
     db: DbService,
-    logger: ILogger<TelegramNotificationService>
+    logger: ILogger<TelegramNotificationService>,
+    time: TimeProvider
 ) =
     let formatUser (u: DbUser) =
         match u.username, u.first_name with
@@ -36,7 +37,7 @@ type TelegramNotificationService(
     member _.CouponAdded(coupon) =
         task {
             let! ownerOpt = db.GetUserById(coupon.owner_id)
-            let owner = match ownerOpt with | Some o -> o | None -> { id = coupon.owner_id; username = null; first_name = null; last_name = null; created_at = DateTime.UtcNow; updated_at = DateTime.UtcNow }
+            let owner = match ownerOpt with | Some o -> o | None -> { id = coupon.owner_id; username = null; first_name = null; last_name = null; created_at = time.GetUtcNow().UtcDateTime; updated_at = time.GetUtcNow().UtcDateTime }
             let v, mc, d = fmtCoupon coupon
             do! sendToGroup $"{formatUser owner} добавил(а) купон на {v} EUR из {mc} EUR сроком {d}"
         }

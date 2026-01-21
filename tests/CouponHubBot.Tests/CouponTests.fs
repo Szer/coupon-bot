@@ -36,6 +36,50 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         fixture.QuerySingle<string>("SELECT photo_file_id FROM coupon ORDER BY id DESC LIMIT 1", null)
 
     [<Fact>]
+    let ``Cannot add expired coupon (manual /add with past date)`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let user = Tg.user(id = 910L, username = "add_expired", firstName = "Expired")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let! resp = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2000-01-01", user, fileId = "expired-photo"))
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithAnyText calls user.Id [| "истёкш"; "истекш" |],
+                "Expected message about expired coupon")
+
+            let! count = getCouponCount ()
+            Assert.Equal(0L, count)
+        }
+
+    [<Fact>]
+    let ``Cannot add duplicate coupon by photo_file_id`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let user = Tg.user(id = 911L, username = "add_dup_photo", firstName = "DupPhoto")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let fileId = "dup-photo-1"
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", user, fileId = fileId))
+            let! count1 = getCouponCount ()
+            Assert.Equal(1L, count1)
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", user, fileId = fileId))
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithAnyText calls user.Id [| "уже был добавлен"; "та же фотография" |],
+                "Expected message about duplicate photo upload")
+
+            let! count2 = getCouponCount ()
+            Assert.Equal(1L, count2)
+        }
+
+    [<Fact>]
     let ``User can add coupon and group gets notification`` () =
         task {
             do! fixture.ClearFakeCalls()
@@ -387,7 +431,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let user = Tg.user(id = 219L, username = "add_wizard_day_number", firstName = "Wizard")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let today = DateOnly.FromDateTime(DateTime.UtcNow)
+            let today = fixture.FixedToday
             let day =
                 if today.Day <= 27 then today.Day + 1
                 else 1
@@ -580,6 +624,7 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
 
             // Seed an expired available coupon directly
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            let yesterdayIso = fixture.FixedToday.AddDays(-1).ToString("yyyy-MM-dd")
             do!
                 conn.ExecuteAsync(
                     """
@@ -588,8 +633,9 @@ VALUES (240, 'expired_filter', 'Expired', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
-VALUES (240, 'seed-expired', 10.00, 50.00, (CURRENT_DATE - interval '1 day')::date, 'available');
+VALUES (240, 'seed-expired', 10.00, 50.00, @yesterday::date, 'available');
 """
+                    , {| yesterday = yesterdayIso |}
                 )
                 :> Task
 
@@ -936,18 +982,23 @@ VALUES (240, 'seed-expired', 10.00, 50.00, (CURRENT_DATE - interval '1 day')::da
             let user = Tg.user(id = 291L, username = "date_formats", firstName = "Dates")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            // Tricky date: 02.01.2026 must be 2 January (not 1 February)
-            let expected = DateOnly(2026, 1, 2)
+            // Tricky date: 02.01.YYYY must be 2 January (not 1 February).
+            // Must be in the future to pass "no expired coupons" rule.
+            let today = fixture.FixedToday
+            let year =
+                let candidate = DateOnly(today.Year, 1, 2)
+                if candidate > today then today.Year else today.Year + 1
+            let expected = DateOnly(year, 1, 2)
             let cases =
-                [| "2026-01-02"
-                   "02.01.2026"
-                   "2.1.2026"
-                   "02/01/2026"
-                   "2/1/2026"
-                   "02-01-2026"
-                   "2-1-2026"
-                   "2026/01/02"
-                   "2026.01.02" |]
+                [| $"{year}-01-02"
+                   $"02.01.{year}"
+                   $"2.1.{year}"
+                   $"02/01/{year}"
+                   $"2/1/{year}"
+                   $"02-01-{year}"
+                   $"2-1-{year}"
+                   $"{year}/01/02"
+                   $"{year}.01.02" |]
 
             for i, dateStr in cases |> Array.indexed do
                 do! fixture.ClearFakeCalls()

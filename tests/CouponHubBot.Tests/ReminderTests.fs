@@ -22,7 +22,8 @@ type ReminderTests(fixture: DefaultCouponHubTestContainers) =
             //language=postgresql
             do! conn.ExecuteAsync("INSERT INTO \"user\"(id, username, first_name, created_at, updated_at) VALUES (500,'owner','Owner',NOW(),NOW()) ON CONFLICT DO NOTHING;") :> Task
             //language=postgresql
-            do! conn.ExecuteAsync("INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status) VALUES (500,'seed-photo',10.00,50.00,CURRENT_DATE,'available');") :> Task
+            let todayIso = fixture.FixedToday.ToString("yyyy-MM-dd")
+            do! conn.ExecuteAsync("INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status) VALUES (500,'seed-photo-500',10.00,50.00,@today::date,'available');", {| today = todayIso |}) :> Task
 
             // Trigger reminder via test endpoint
             use body = new StringContent("", Encoding.UTF8, "application/json")
@@ -51,9 +52,9 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO coupon(id, owner_id, photo_file_id, value, min_check, expires_at, status)
 VALUES
-  (7101,501,'p',10.00,50.00,'2026-02-01','used'),
-  (7102,501,'p',10.00,50.00,'2026-02-01','used'),
-  (7103,502,'p',10.00,50.00,'2026-02-01','available')
+  (7101,501,'p-7101',10.00,50.00,'2026-02-01','used'),
+  (7102,501,'p-7102',10.00,50.00,'2026-02-01','used'),
+  (7103,502,'p-7103',10.00,50.00,'2026-02-01','available')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO coupon_event(coupon_id, user_id, event_type, created_at)
@@ -113,8 +114,8 @@ ON CONFLICT (id) DO NOTHING;
 -- Two overdue taken coupons for same user (should still only get 1 DM)
 INSERT INTO coupon(id, owner_id, photo_file_id, value, min_check, expires_at, status, taken_by, taken_at)
 VALUES
-  (8101,601,'p',10.00,50.00,'2026-02-01','taken',601,'2026-01-17T08:00:00Z'),
-  (8102,601,'p',10.00,50.00,'2026-01-10','taken',601,'2026-01-17T09:00:00Z')
+  (8101,601,'p-8101',10.00,50.00,'2026-02-01','taken',601,'2026-01-17T08:00:00Z'),
+  (8102,601,'p-8102',10.00,50.00,'2026-01-10','taken',601,'2026-01-17T09:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 """
                 )
