@@ -54,12 +54,31 @@ module private AzureOcr =
             null
 
 [<AllowNullLiteral>]
-type IOcrService =
-    abstract member TextFromImageUrl: url: string -> Task<string>
+type IAzureTextOcr =
+    abstract member TextFromImageBytes: imageBytes: ReadOnlyMemory<byte> -> Task<string>
 
 type AzureOcrService(httpClient: HttpClient, botConf: BotConfiguration, logger: ILogger<AzureOcrService>) =
-    interface IOcrService with
-        member _.TextFromImageUrl(url: string) =
+    let buildAnalyzeUri (baseEndpoint: string) =
+        // Expect base resource URL like:
+        //   https://<name>.cognitiveservices.azure.com
+        // and we build the full request URL explicitly.
+        //
+        // If a full URL is provided, we still try to treat it as base (drop path/query).
+        let baseUri = Uri(baseEndpoint.Trim())
+
+        let normalizedBase =
+            UriBuilder(baseUri.Scheme, baseUri.Host, baseUri.Port).Uri
+
+        let analyze =
+            Uri(normalizedBase, "/computervision/imageanalysis:analyze")
+
+        let b = UriBuilder(analyze)
+        // Required query for stream OCR
+        b.Query <- "overload=stream&api-version=2024-02-01&features=read"
+        b.Uri.ToString()
+
+    interface IAzureTextOcr with
+        member _.TextFromImageBytes(imageBytes: ReadOnlyMemory<byte>) =
             task {
                 if not botConf.OcrEnabled then
                     return null
@@ -68,18 +87,19 @@ type AzureOcrService(httpClient: HttpClient, botConf: BotConfiguration, logger: 
                     return null
                 else
                     try
-                        use! fileResponse = httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead)
-                        %fileResponse.EnsureSuccessStatusCode()
+                        use bytesContent = new ByteArrayContent(imageBytes.ToArray())
+                        bytesContent.Headers.ContentType <- MediaTypeHeaderValue("application/octet-stream")
+                        bytesContent.Headers.ContentLength <- imageBytes.Length
 
-                        use! fileStream = fileResponse.Content.ReadAsStreamAsync()
-                        use streamContent = new StreamContent(fileStream)
-                        streamContent.Headers.ContentType <- MediaTypeHeaderValue("application/octet-stream")
-                        if fileResponse.Content.Headers.ContentLength.HasValue then
-                            streamContent.Headers.ContentLength <- fileResponse.Content.Headers.ContentLength.Value
+                        let url =
+                            try buildAnalyzeUri botConf.AzureOcrEndpoint
+                            with ex ->
+                                logger.LogWarning(ex, "Invalid AZURE_OCR_ENDPOINT (expected base URL). Value: {Endpoint}", botConf.AzureOcrEndpoint)
+                                botConf.AzureOcrEndpoint
 
-                        use request = new HttpRequestMessage(HttpMethod.Post, botConf.AzureOcrEndpoint)
+                        use request = new HttpRequestMessage(HttpMethod.Post, url)
                         request.Headers.Add("Ocp-Apim-Subscription-Key", botConf.AzureOcrKey)
-                        request.Content <- streamContent
+                        request.Content <- bytesContent
 
                         use! response = httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead)
                         let! responseContent = response.Content.ReadAsStringAsync()

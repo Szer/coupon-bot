@@ -108,7 +108,8 @@ let builder = WebApplication.CreateBuilder()
                 TelegramBotClientOptions(botConf.BotToken, botConf.TelegramApiBaseUrl)
         TelegramBotClient(options, httpClient) :> ITelegramBotClient)
 
-%builder.Services.AddHttpClient<IOcrService, AzureOcrService>()
+%builder.Services.AddHttpClient<IAzureTextOcr, AzureOcrService>()
+%builder.Services.AddSingleton<CouponOcrEngine>()
 
 %builder
     .Services

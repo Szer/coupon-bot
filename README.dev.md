@@ -61,6 +61,37 @@ FakeTgApi logs:
 
 ## Troubleshooting
 
+## OCR (CouponOcrEngine) — отдельный test suite (без Docker)
+
+Чтобы не гонять `/add` флоу с докерами, OCR вынесен в отдельный класс `CouponOcrEngine` и тестируется отдельным набором тестов.
+
+### Что нужно
+
+- **Картинки**: положи файлы в `tests/CouponHubBot.Ocr.Tests/Images/`
+- **Имена файлов** (ожидаемые значения берутся из имени):
+  - формат: `[couponValue]_[minCheck]_[validFrom]_[validTo]_[barcode].[ext]`
+  - пример: `10_50_2025-01-01_2025-02-01_123456789.jpg`
+  - расширение может быть любым, что умеет читать ImageSharp (jpg/png/webp/…)
+
+### Переменные окружения (обязательны)
+
+Тесты делают реальные HTTP вызовы в Azure Computer Vision (text OCR):
+- `AZURE_OCR_ENDPOINT` (базовый URL ресурса, например `https://<name>.cognitiveservices.azure.com`)
+- `AZURE_OCR_KEY`
+
+Если переменные не заданы:
+- если для всех картинок уже есть файлы в `tests/CouponHubBot.Ocr.Tests/AzureCache/` — тесты пройдут **без Azure** (только по кешу)
+- если для какой-то картинки кеша нет — тест suite упадёт с понятной ошибкой (**cache miss + нет env**)
+
+### Запуск
+
+```bash
+dotnet test tests/CouponHubBot.Ocr.Tests/CouponHubBot.Ocr.Tests.fsproj -c Release
+```
+
+### Кеширование ответов Azure OCR (в git)
+
+- При первом прогоне для каждой картинки создаётся файл в `tests/CouponHubBot.Ocr.Tests/AzureCache/`.\n- При последующих прогонах Azure **не вызывается**, текст OCR берётся из кеша.\n- Чтобы инвалидировать кеш, просто удали нужные файлы из `tests/CouponHubBot.Ocr.Tests/AzureCache/` (ты как раз это и планировал делать).\n+
 ### Database Connection Issues
 
 ```bash

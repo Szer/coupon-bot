@@ -21,6 +21,7 @@ type PendingAddFlow =
       value: Nullable<decimal>
       min_check: Nullable<decimal>
       expires_at: Nullable<DateOnly>
+      barcode_text: string | null
       updated_at: DateTime }
 
 [<CLIMutable>]
@@ -407,14 +408,15 @@ WHERE user_id = @user_id;
             //language=postgresql
             let sql =
                 """
-INSERT INTO pending_add (user_id, stage, photo_file_id, value, min_check, expires_at, updated_at)
-VALUES (@user_id, @stage, @photo_file_id, @value, @min_check, @expires_at, timezone('utc'::TEXT, NOW()))
+INSERT INTO pending_add (user_id, stage, photo_file_id, value, min_check, expires_at, barcode_text, updated_at)
+VALUES (@user_id, @stage, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, timezone('utc'::TEXT, NOW()))
 ON CONFLICT (user_id) DO UPDATE
 SET stage = EXCLUDED.stage,
     photo_file_id = EXCLUDED.photo_file_id,
     value = EXCLUDED.value,
     min_check = EXCLUDED.min_check,
     expires_at = EXCLUDED.expires_at,
+    barcode_text = EXCLUDED.barcode_text,
     updated_at = EXCLUDED.updated_at;
 """
             let! _ = conn.ExecuteAsync(sql, flow)

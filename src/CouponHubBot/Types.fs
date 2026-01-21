@@ -51,6 +51,17 @@ type Coupon =
       taken_at: Nullable<DateTime>
       created_at: DateTime }
 
+/// OCR result for coupon photo.
+/// Each field is optional: when present it's trusted enough to pre-fill /add wizard,
+/// and the user still confirms everything before saving.
+[<CLIMutable>]
+type CouponOCR =
+    { couponValue: Nullable<decimal>
+      minCheck: Nullable<decimal>
+      validFrom: Nullable<DateTime>
+      validTo: Nullable<DateTime>
+      barcode: string | null }
+
 [<CLIMutable>]
 type CouponEvent =
     { id: int

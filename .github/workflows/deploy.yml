@@ -27,7 +27,7 @@ jobs:
       with:
         global-json-file: global.json
     - name: Tests
-      run: dotnet test -c Release --logger "trx;LogFileName=test-results.trx"
+      run: dotnet test -c Release "tests/CouponHubBot.Tests/CouponHubBot.Tests.fsproj" --logger "trx;LogFileName=test-results.trx"
       
     # upload test results
     - name: Upload dotnet test results

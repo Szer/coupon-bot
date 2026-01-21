@@ -13,6 +13,7 @@
     <Compile Include="Services/MembershipService.fs" />
     <Compile Include="Services/NotificationService.fs" />
     <Compile Include="Services/OcrService.fs" />
+    <Compile Include="Services/CouponOcrEngine.fs" />
     <Compile Include="Services/ReminderService.fs" />
     <Compile Include="Services/BotService.fs" />
     <Compile Include="Services/BotCommandsSetup.fs" />
@@ -31,7 +32,10 @@
     <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
     <PackageReference Include="Serilog.Enrichers.Span" Version="3.1.0" />
     <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="Telegram.Bot" Version="22.8.1" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <PackageReference Include="ZXing.Net.Bindings.ImageSharp.V3" Version="0.16.18" />
   </ItemGroup>
 
 </Project>
