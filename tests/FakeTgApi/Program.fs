@@ -15,6 +15,7 @@ app.MapGet("/file/bot{token}/{*path}", Func<HttpContext, Threading.Tasks.Task>(f
 app.MapGet("/test/calls", Func<HttpContext, Threading.Tasks.Task>(fun ctx -> getCalls ctx)) |> ignore
 app.MapDelete("/test/calls", Func<HttpContext, Threading.Tasks.Task>(fun ctx -> clearCalls ctx)) |> ignore
 app.MapPost("/test/mock/chatMember", Func<HttpContext, Threading.Tasks.Task>(fun ctx -> setChatMember ctx)) |> ignore
+app.MapPost("/test/mock/file", Func<HttpContext, Threading.Tasks.Task>(fun ctx -> setFile ctx)) |> ignore
 
 app.MapGet("/health", Func<string>(fun () -> "OK")) |> ignore
 

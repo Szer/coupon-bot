@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -13,6 +13,7 @@
     <Compile Include="ContainerTestBase.fs" />
     <Compile Include="FakeCallHelpers.fs" />
     <Compile Include="MembershipTests.fs" />
+    <Compile Include="OcrAddFlowTests.fs" />
     <Compile Include="CouponTests.fs" />
     <Compile Include="ReminderTests.fs" />
     <Compile Include="Program.fs" />

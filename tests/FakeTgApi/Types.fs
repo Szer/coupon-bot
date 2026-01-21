@@ -14,3 +14,8 @@ type ChatMemberMock =
     { userId: int64
       status: string } // "member" | "left" | "kicked" | "administrator"
 
+[<CLIMutable>]
+type FileMock =
+    { fileId: string
+      contentBase64: string }
+

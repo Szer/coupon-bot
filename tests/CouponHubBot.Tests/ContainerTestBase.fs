@@ -26,18 +26,30 @@ type ChatMemberMock =
     { userId: int64
       status: string }
 
+[<CLIMutable>]
+type FileMock =
+    { fileId: string
+      contentBase64: string }
+
+[<CLIMutable>]
+type AzureResponseMock =
+    { status: int
+      body: string }
+
 [<AbstractClass>]
-type CouponHubTestContainers(seedExpiringToday: bool) =
+type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
     let solutionDir = CommonDirectoryPath.GetSolutionDirectory()
     let solutionDirPath = solutionDir.DirectoryPath
     let dbAlias = "coupon-db"
     let fakeAlias = "fake-tg-api"
+    let fakeAzureAlias = "fake-azure-ocr"
     let secret = "OUR_SECRET"
     let botToken = "123:456"
     let communityChatId = -42L
 
     let mutable botHttp: HttpClient = null
     let mutable fakeHttp: HttpClient = null
+    let mutable fakeAzureHttp: HttpClient = null
     let mutable publicConnectionString: string = null
     let mutable adminConnectionString: string = null
 
@@ -91,6 +103,26 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(8080, fun x -> x.WithTimeout(TimeSpan.FromMinutes(1.0)) |> ignore))
             .Build()
 
+    let fakeAzureImage =
+        ImageFromDockerfileBuilder()
+            .WithDockerfileDirectory(solutionDir, String.Empty)
+            .WithDockerfile("./tests/FakeAzureOcrApi/Dockerfile")
+            .WithName("coupon-hub-fake-azure-ocr-test")
+            .WithDeleteIfExists(true)
+            .WithCleanUp(true)
+            .WithBuildArgument("FORCE_REBUILD", DateTime.UtcNow.Ticks.ToString())
+            .Build()
+
+    let fakeAzureContainer =
+        ContainerBuilder()
+            .WithImage(fakeAzureImage)
+            .WithNetwork(network)
+            .WithNetworkAliases(fakeAzureAlias)
+            .WithPortBinding(8081, true)
+            .WithEnvironment("ASPNETCORE_URLS", "http://*:8081")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(8081, fun x -> x.WithTimeout(TimeSpan.FromMinutes(1.0)) |> ignore))
+            .Build()
+
     let botImage =
         ImageFromDockerfileBuilder()
             .WithDockerfileDirectory(solutionDir, String.Empty)
@@ -103,24 +135,30 @@ type CouponHubTestContainers(seedExpiringToday: bool) =
             .Build()
 
     let botContainer =
-        ContainerBuilder()
-            .WithImage(botImage)
-            .WithNetwork(network)
-            .WithPortBinding(80, true)
-            .WithEnvironment("BOT_TELEGRAM_TOKEN", botToken)
-            .WithEnvironment("BOT_AUTH_TOKEN", secret)
-            .WithEnvironment("COMMUNITY_CHAT_ID", string communityChatId)
-            .WithEnvironment("LOGS_CHAT_ID", "")
-            .WithEnvironment("FEEDBACK_ADMINS", "900,901")
-            .WithEnvironment("DATABASE_URL", $"Server={dbAlias};Database=coupon_hub_bot;Port=5432;User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;")
-            .WithEnvironment("TELEGRAM_API_URL", $"http://{fakeAlias}:8080")
-            .WithEnvironment("ASPNETCORE_HTTP_PORTS", "80")
-            .WithEnvironment("OCR_ENABLED", "false")
-            .WithEnvironment("REMINDER_RUN_ON_START", "false")
-            .WithEnvironment("REMINDER_HOUR_UTC", "8")
-            .WithEnvironment("TEST_MODE", "true")
-            .DependsOn(flywayContainer)
-            .DependsOn(fakeContainer)
+        let b =
+            ContainerBuilder()
+                .WithImage(botImage)
+                .WithNetwork(network)
+                .WithPortBinding(80, true)
+                .WithEnvironment("BOT_TELEGRAM_TOKEN", botToken)
+                .WithEnvironment("BOT_AUTH_TOKEN", secret)
+                .WithEnvironment("COMMUNITY_CHAT_ID", string communityChatId)
+                .WithEnvironment("LOGS_CHAT_ID", "")
+                .WithEnvironment("FEEDBACK_ADMINS", "900,901")
+                .WithEnvironment("DATABASE_URL", $"Server={dbAlias};Database=coupon_hub_bot;Port=5432;User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;")
+                .WithEnvironment("TELEGRAM_API_URL", $"http://{fakeAlias}:8080")
+                .WithEnvironment("ASPNETCORE_HTTP_PORTS", "80")
+                .WithEnvironment("OCR_ENABLED", if ocrEnabled then "true" else "false")
+                .WithEnvironment("OCR_MAX_FILE_SIZE_BYTES", "52428800")
+                .WithEnvironment("AZURE_OCR_ENDPOINT", if ocrEnabled then $"http://{fakeAzureAlias}:8081" else "")
+                .WithEnvironment("AZURE_OCR_KEY", if ocrEnabled then "fake-key" else "")
+                .WithEnvironment("REMINDER_RUN_ON_START", "false")
+                .WithEnvironment("REMINDER_HOUR_UTC", "8")
+                .WithEnvironment("TEST_MODE", "true")
+                .DependsOn(flywayContainer)
+                .DependsOn(fakeContainer)
+        let b = if ocrEnabled then b.DependsOn(fakeAzureContainer) else b
+        b
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(80, fun s -> s.WithTimeout(TimeSpan.FromMinutes(2.0)) |> ignore))
             .Build()
 
@@ -172,10 +210,14 @@ VALUES (100, 'seed-photo', 10.00, 50.00, CURRENT_DATE, 'available');
 
                 // build images & start fake + bot
                 let fakeImageTask = fakeImage.CreateAsync()
+                let fakeAzureImageTask =
+                    if ocrEnabled then fakeAzureImage.CreateAsync() else Task.CompletedTask
                 let botImageTask = botImage.CreateAsync()
-                do! Task.WhenAll(fakeImageTask, botImageTask)
+                do! Task.WhenAll(fakeImageTask, fakeAzureImageTask, botImageTask)
                 
                 do! fakeContainer.StartAsync()
+                if ocrEnabled then
+                    do! fakeAzureContainer.StartAsync()
                 do! botContainer.StartAsync()
                 
                 // Important: mapped ports are accessible from host via 127.0.0.1, not via container network aliases.
@@ -186,14 +228,20 @@ VALUES (100, 'seed-photo', 10.00, 50.00, CURRENT_DATE, 'available');
 
                 fakeHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{fakeContainer.GetMappedPublicPort(8080)}"))
                 fakeHttp.Timeout <- TimeSpan.FromSeconds(5.0)
+                if ocrEnabled then
+                    fakeAzureHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{fakeAzureContainer.GetMappedPublicPort(8081)}"))
+                    fakeAzureHttp.Timeout <- TimeSpan.FromSeconds(5.0)
             }
 
         member _.DisposeAsync() =
             task {
                 if not (isNull botHttp) then botHttp.Dispose()
                 if not (isNull fakeHttp) then fakeHttp.Dispose()
+                if not (isNull fakeAzureHttp) then fakeAzureHttp.Dispose()
                 do! botContainer.DisposeAsync()
                 do! fakeContainer.DisposeAsync()
+                if ocrEnabled then
+                    do! fakeAzureContainer.DisposeAsync()
                 do! flywayContainer.DisposeAsync()
                 do! dbContainer.DisposeAsync()
             }
@@ -224,6 +272,24 @@ VALUES (100, 'seed-photo', 10.00, 50.00, CURRENT_DATE, 'available');
             return ()
         }
 
+    member _.SetTelegramFile(fileId: string, bytes: byte[]) =
+        task {
+            let payload: FileMock =
+                { fileId = fileId
+                  contentBase64 = Convert.ToBase64String(bytes) }
+            let! _ = fakeHttp.PostAsJsonAsync("/test/mock/file", payload)
+            return ()
+        }
+
+    member _.SetAzureOcrResponse(status: int, body: string) =
+        task {
+            if not ocrEnabled then
+                invalidOp "This fixture has OCR disabled (no FakeAzureOcrApi container)."
+            let payload: AzureResponseMock = { status = status; body = body }
+            let! _ = fakeAzureHttp.PostAsJsonAsync("/test/mock/response", payload)
+            return ()
+        }
+
     member _.SendUpdate(update: Telegram.Bot.Types.Update) =
         task {
             let jsonOptions = JsonSerializerOptions(JsonSerializerDefaults.Web)
@@ -247,5 +313,8 @@ VALUES (100, 'seed-photo', 10.00, 50.00, CURRENT_DATE, 'available');
         }
 
 type DefaultCouponHubTestContainers() =
-    inherit CouponHubTestContainers(seedExpiringToday = false)
+    inherit CouponHubTestContainers(seedExpiringToday = false, ocrEnabled = false)
+
+type OcrCouponHubTestContainers() =
+    inherit CouponHubTestContainers(seedExpiringToday = false, ocrEnabled = true)
 
