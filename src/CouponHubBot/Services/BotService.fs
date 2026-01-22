@@ -109,6 +109,34 @@ type BotService(
         let d = c.expires_at.ToString("dd.MM.yyyy")
         $"{idx}. {formatCouponValue c}, истекает {d}"
 
+    /// Picks up to 5 coupons for /list, ensuring at least one coupon with the minimal min_check
+    /// among all available coupons (if any exist). Input is expected to be sorted by expires_at, id.
+    let pickCouponsForList (coupons: Coupon array) =
+        let takeCount = min 5 coupons.Length
+        if takeCount <= 0 then
+            [||]
+        else
+            let baseShown = coupons |> Array.truncate takeCount
+            let minCheck = (coupons |> Array.minBy (fun c -> c.min_check)).min_check
+
+            if baseShown |> Array.exists (fun c -> c.min_check = minCheck) then
+                baseShown
+            else
+                let bestSmall =
+                    coupons
+                    |> Array.filter (fun c -> c.min_check = minCheck)
+                    |> Array.minBy (fun c -> c.expires_at, c.id)
+
+                // Replace the "least urgent" item from baseShown (the last one, since baseShown is sorted).
+                let replaced =
+                    if takeCount = 1 then
+                        [| bestSmall |]
+                    else
+                        Array.append baseShown.[0 .. takeCount - 2] [| bestSmall |]
+
+                // Keep presentation stable: still ordered by expiry (and id as a tiebreaker).
+                replaced |> Array.sortBy (fun c -> c.expires_at, c.id)
+
     let couponsKeyboard (coupons: Coupon array) =
         // Show only first 5 to keep UX simple (1..5)
         coupons
@@ -207,7 +235,7 @@ type BotService(
             if coupons.Length = 0 then
                 do! sendText chatId "Сейчас нет доступных купонов."
             else
-                let shown = coupons |> Array.truncate 5
+                let shown = pickCouponsForList coupons
                 let text =
                     shown
                     |> Array.indexed
