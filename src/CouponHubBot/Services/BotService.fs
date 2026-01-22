@@ -103,14 +103,14 @@ type BotService(
     let formatCouponValue (c: Coupon) =
         let v = c.value.ToString("0.##")
         let mc = c.min_check.ToString("0.##")
-        $"{v} EUR из {mc} EUR"
+        $"{v}€ из {mc}€"
 
     let formatUiDate (d: DateOnly) =
         Utils.DateFormatting.formatDateNoYearWithDow d
 
     let formatAvailableCouponLine (idx: int) (c: Coupon) =
         let d = formatUiDate c.expires_at
-        $"{idx}. {formatCouponValue c}, истекает {d}"
+        $"{idx}. {formatCouponValue c}, до {d}"
 
     /// Picks up to 5 coupons for /list, ensuring at least one coupon with the minimal min_check
     /// among all available coupons (if any exist). Input is expected to be sorted by expires_at, id.
@@ -327,7 +327,7 @@ type BotService(
                     |> Array.map (fun (i, c) ->
                         let n = i + 1
                         let d = formatUiDate c.expires_at
-                        $"{n}. Купон ID:{c.id} на {formatCouponValue c}, истекает {d}")
+                        $"{n}. Купон ID:{c.id} на {formatCouponValue c}, до {d}")
                     |> String.concat "\n"
 
                 do!
@@ -384,7 +384,7 @@ type BotService(
                         let v = coupon.value.ToString("0.##")
                         let mc = coupon.min_check.ToString("0.##")
                         let d = formatUiDate coupon.expires_at
-                        do! sendText chatId $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                        do! sendText chatId $"Добавил купон ID:{coupon.id}: {v}€ из {mc}€, до {d}"
                     | AddCouponResult.Expired ->
                         do! sendText chatId "Нельзя добавить истёкший купон (дата в прошлом). Проверь дату и попробуй ещё раз."
                     | AddCouponResult.DuplicatePhoto existingId ->
@@ -479,7 +479,7 @@ type BotService(
                             do!
                                 botClient.SendMessage(
                                     ChatId chatId,
-                                    $"Я распознал: {v} EUR из {mc} EUR, истекает {d}. Всё верно?",
+                                    $"Я распознал: {v}€ из {mc}€, до {d}. Всё верно?",
                                     replyMarkup = addWizardOcrKeyboard()
                                 )
                                 |> taskIgnore
@@ -499,7 +499,7 @@ type BotService(
                             do!
                                 botClient.SendMessage(
                                     ChatId chatId,
-                                    $"Я распознал скидку: {v} EUR из {mc} EUR. Теперь выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):",
+                                    $"Я распознал скидку: {v}€ из {mc}€. Теперь выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):",
                                     replyMarkup = addWizardDateKeyboard()
                                 )
                                 |> taskIgnore
@@ -542,7 +542,7 @@ type BotService(
         let d = formatUiDate expiresAt
         botClient.SendMessage(
             ChatId chatId,
-            $"Подтвердить добавление купона: {v} EUR из {mc} EUR, истекает {d}?",
+            $"Подтвердить добавление купона: {v}€ из {mc}€, до {d}?",
             replyMarkup = addWizardConfirmKeyboard()
         )
         |> taskIgnore
@@ -674,7 +674,7 @@ type BotService(
                                     let v = coupon.value.ToString("0.##")
                                     let mc = coupon.min_check.ToString("0.##")
                                     let d = formatUiDate coupon.expires_at
-                                    do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                                    do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v}€ из {mc}€, до {d}"
                                 | AddCouponResult.Expired ->
                                     do! db.ClearPendingAddFlow user.id
                                     do! sendText cq.Message.Chat.Id "Нельзя добавить истёкший купон (дата в прошлом). Начни заново: /add"
@@ -721,7 +721,7 @@ type BotService(
                                     let v = coupon.value.ToString("0.##")
                                     let mc = coupon.min_check.ToString("0.##")
                                     let d = formatUiDate coupon.expires_at
-                                    do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
+                                    do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v}€ из {mc}€, до {d}"
                                 | AddCouponResult.Expired ->
                                     do! db.ClearPendingAddFlow user.id
                                     do! sendText cq.Message.Chat.Id "Нельзя добавить истёкший купон (дата в прошлом). Начни заново: /add"
