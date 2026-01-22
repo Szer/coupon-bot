@@ -646,6 +646,91 @@ VALUES (240, 'seed-expired', 10.00, 50.00, @yesterday::date, 'available');
         }
 
     [<Fact>]
+    let ``/list always includes at least one coupon with minimal min_check`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 241L, username = "list_min_check")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            // Seed 6 available coupons:
+            // - 5 earliest by expires_at have larger min_check (50)
+            // - 1 later-expiring has minimal min_check (25)
+            // Expected: /list (top 5) still contains at least one "из 25 EUR".
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (@uid, @uname, 'ListMinCheck', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+"""
+                    , {| uid = user.Id; uname = "list_min_check" |}
+                )
+                :> Task
+
+            let mkIso (d: DateOnly) =
+                d.ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
+
+            // 5 "big min_check" coupons that would normally fill the top-5 list.
+            for i in 1..5 do
+                let expiresIso = mkIso (fixture.FixedToday.AddDays(i))
+                do!
+                    conn.ExecuteAsync(
+                        """
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
+"""
+                        , {| owner_id = user.Id
+                             photo_file_id = $"seed-list-big-{i}"
+                             value = 10.00m
+                             min_check = 50.00m
+                             expires_at = expiresIso |}
+                    )
+                    :> Task
+
+            // 1 "smallest min_check" coupon expiring later.
+            let smallExpiresIso = mkIso (fixture.FixedToday.AddDays(30))
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
+"""
+                    , {| owner_id = user.Id
+                         photo_file_id = "seed-list-small-1"
+                         value = 5.00m
+                         min_check = 25.00m
+                         expires_at = smallExpiresIso |}
+                )
+                :> Task
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            let couponsText =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some user.Id -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            Assert.True(couponsText.IsSome, "Expected /list to send a DM message")
+            Assert.Contains("Доступные купоны:", couponsText.Value)
+            Assert.Contains("из 25 EUR", couponsText.Value)
+
+            let itemLines =
+                couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
+
+            Assert.Equal(5, itemLines.Length)
+        }
+
+    [<Fact>]
     let ``My shows 0 taken when user has only used coupon`` () =
         task {
             do! fixture.ClearFakeCalls()
