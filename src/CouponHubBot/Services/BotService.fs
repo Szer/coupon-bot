@@ -105,8 +105,11 @@ type BotService(
         let mc = c.min_check.ToString("0.##")
         $"{v} EUR из {mc} EUR"
 
+    let formatUiDate (d: DateOnly) =
+        Utils.DateFormatting.formatDateNoYearWithDow d
+
     let formatAvailableCouponLine (idx: int) (c: Coupon) =
-        let d = c.expires_at.ToString("dd.MM.yyyy")
+        let d = formatUiDate c.expires_at
         $"{idx}. {formatCouponValue c}, истекает {d}"
 
     /// Picks up to 5 coupons for /list, ensuring at least one coupon with the minimal min_check
@@ -256,7 +259,7 @@ type BotService(
             | NotFoundOrNotAvailable ->
                 do! sendText chatId $"Купон ID:{couponId} уже взят или не существует."
             | Taken coupon ->
-                let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                let d = formatUiDate coupon.expires_at
                 do! botClient.SendPhoto(
                         ChatId chatId,
                         InputFileId coupon.photo_file_id,
@@ -294,8 +297,11 @@ type BotService(
     let handleMy (user: DbUser) (chatId: int64) =
         task {
             let! taken = db.GetCouponsTakenBy(user.id)
+            let todayStr =
+                Utils.TimeZones.dublinToday time
+                |> formatUiDate
             if taken.Length = 0 then
-                do! sendText chatId "Мои купоны:\n—"
+                do! sendText chatId $"{todayStr}\n\nМои купоны:\n—"
             else
                 let shown = taken |> Array.truncate 4
 
@@ -313,14 +319,14 @@ type BotService(
                     |> Array.indexed
                     |> Array.map (fun (i, c) ->
                         let n = i + 1
-                        let d = c.expires_at.ToString("dd.MM.yyyy")
+                        let d = formatUiDate c.expires_at
                         $"{n}. Купон ID:{c.id} на {formatCouponValue c}, истекает {d}")
                     |> String.concat "\n"
 
                 do!
                     botClient.SendMessage(
                         ChatId chatId,
-                        $"Мои купоны:\n{text}",
+                        $"{todayStr}\n\nМои купоны:\n{text}",
                         replyMarkup = myTakenKeyboard shown
                     )
                     |> taskIgnore
@@ -370,7 +376,7 @@ type BotService(
                     | AddCouponResult.Added coupon ->
                         let v = coupon.value.ToString("0.##")
                         let mc = coupon.min_check.ToString("0.##")
-                        let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                        let d = formatUiDate coupon.expires_at
                         do! sendText chatId $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                     | AddCouponResult.Expired ->
                         do! sendText chatId "Нельзя добавить истёкший купон (дата в прошлом). Проверь дату и попробуй ещё раз."
@@ -462,7 +468,7 @@ type BotService(
                                 )
                             let v = value.ToString("0.##")
                             let mc = minCheck.ToString("0.##")
-                            let d = expiresAt.ToString("dd.MM.yyyy")
+                            let d = formatUiDate expiresAt
                             do!
                                 botClient.SendMessage(
                                     ChatId chatId,
@@ -507,7 +513,7 @@ type BotService(
                             let text =
                                 match validToOpt with
                                 | Some expiresAt ->
-                                    let d = expiresAt.ToString("dd.MM.yyyy")
+                                    let d = formatUiDate expiresAt
                                     $"Я распознал дату истечения {d}. Теперь выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\"."
                                 | None -> "Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\"."
                             do!
@@ -526,7 +532,7 @@ type BotService(
     let handleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) =
         let v = value.ToString("0.##")
         let mc = minCheck.ToString("0.##")
-        let d = expiresAt.ToString("dd.MM.yyyy")
+        let d = formatUiDate expiresAt
         botClient.SendMessage(
             ChatId chatId,
             $"Подтвердить добавление купона: {v} EUR из {mc} EUR, истекает {d}?",
@@ -660,7 +666,7 @@ type BotService(
                                     do! db.ClearPendingAddFlow user.id
                                     let v = coupon.value.ToString("0.##")
                                     let mc = coupon.min_check.ToString("0.##")
-                                    let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                                    let d = formatUiDate coupon.expires_at
                                     do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                                 | AddCouponResult.Expired ->
                                     do! db.ClearPendingAddFlow user.id
@@ -707,7 +713,7 @@ type BotService(
                                     do! db.ClearPendingAddFlow user.id
                                     let v = coupon.value.ToString("0.##")
                                     let mc = coupon.min_check.ToString("0.##")
-                                    let d = coupon.expires_at.ToString("dd.MM.yyyy")
+                                    let d = formatUiDate coupon.expires_at
                                     do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v} EUR из {mc} EUR, истекает {d}"
                                 | AddCouponResult.Expired ->
                                     do! db.ClearPendingAddFlow user.id

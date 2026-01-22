@@ -1092,7 +1092,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
                 let! calls = fixture.GetFakeCalls("sendMessage")
-                let expectedStr = expected.ToString("dd.MM.yyyy")
+                let expectedStr = expected.ToString("d MMMM, dddd", System.Globalization.CultureInfo("ru-RU"))
                 Assert.True(findCallWithText calls user.Id expectedStr, $"Expected DM to include formatted date {expectedStr} for input '{dateStr}'")
 
                 let! couponId = getLatestCouponId ()

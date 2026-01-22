@@ -23,7 +23,7 @@ type TelegramNotificationService(
     let fmtCoupon (c: Coupon) =
         let v = c.value.ToString("0.##")
         let mc = c.min_check.ToString("0.##")
-        let d = c.expires_at.ToString("dd.MM.yyyy")
+        let d = Utils.DateFormatting.formatDateNoYearWithDow c.expires_at
         v, mc, d
 
     let sendToGroup (text: string) =
