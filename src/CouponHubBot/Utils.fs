@@ -76,6 +76,42 @@ module Utils =
 
                 loop 0
 
+    module DateFormatting =
+        let private ru = CultureInfo("ru-RU")
+
+        /// User-facing date format: day + full month name + full day-of-week, no year.
+        /// Example: "22 января, четверг"
+        let formatDateNoYearWithDow (d: DateOnly) =
+            d.ToString("d MMMM, dddd", ru)
+
+    module TimeZones =
+        let private tryFind (id: string) =
+            try
+                Some(TimeZoneInfo.FindSystemTimeZoneById(id))
+            with _ ->
+                None
+
+        // NOTE:
+        // - Linux containers typically have IANA TZ IDs (e.g. "Europe/Dublin")
+        // - Windows typically uses Windows TZ IDs (e.g. "GMT Standard Time")
+        let private dublinTzLazy =
+            lazy (
+                match tryFind "Europe/Dublin" with
+                | Some tz -> tz
+                | None ->
+                    match tryFind "GMT Standard Time" with
+                    | Some tz -> tz
+                    | None -> TimeZoneInfo.Utc
+            )
+
+        let getDublinTimeZone () = dublinTzLazy.Value
+
+        /// Returns "today" date in Europe/Dublin (derived from TimeProvider UTC now).
+        let dublinToday (time: TimeProvider) =
+            let nowUtc = time.GetUtcNow().UtcDateTime
+            let local = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, getDublinTimeZone ())
+            DateOnly.FromDateTime(local)
+
 /// Time helpers (testability via TimeProvider).
 module Time =
     /// Environment variable that, when set, freezes `TimeProvider` to a constant UTC time.
