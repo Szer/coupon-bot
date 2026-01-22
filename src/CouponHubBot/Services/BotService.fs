@@ -234,9 +234,12 @@ type BotService(
 
     let handleCoupons (chatId: int64) =
         task {
+            let todayStr =
+                Utils.TimeZones.dublinToday time
+                |> formatUiDate
             let! coupons = db.GetAvailableCoupons()
             if coupons.Length = 0 then
-                do! sendText chatId "Сейчас нет доступных купонов."
+                do! sendText chatId $"{todayStr}\n\nСейчас нет доступных купонов."
             else
                 let shown = pickCouponsForList coupons
                 let text =
@@ -245,7 +248,11 @@ type BotService(
                     |> Array.map (fun (i, c) -> formatAvailableCouponLine (i + 1) c)
                     |> String.concat "\n"
                 do!
-                    botClient.SendMessage(ChatId chatId, $"Доступные купоны:\n{text}", replyMarkup = couponsKeyboard shown)
+                    botClient.SendMessage(
+                        ChatId chatId,
+                        $"{todayStr}\n\nДоступные купоны:\n{text}",
+                        replyMarkup = couponsKeyboard shown
+                    )
                     |> taskIgnore
         }
 
