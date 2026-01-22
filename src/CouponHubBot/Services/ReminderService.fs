@@ -49,7 +49,7 @@ type ReminderService(
             if coupons.Length > 0 then
                 let total = coupons |> Array.sumBy (fun c -> c.value)
                 let totalStr = total.ToString("0.##")
-                let msg = $"Сегодня истекают {coupons.Length} купонов на общую сумму {totalStr} EUR!"
+                 let msg = $"Сегодня истекают {coupons.Length} купонов на общую сумму {totalStr}€!"
                 do! botClient.SendMessage(ChatId botConfig.CommunityChatId, msg) :> Task
                 anySent <- true
 

@@ -657,7 +657,7 @@ VALUES (240, 'seed-expired', 10.00, 50.00, @yesterday::date, 'available');
             // Seed 6 available coupons:
             // - 5 earliest by expires_at have larger min_check (50)
             // - 1 later-expiring has minimal min_check (25)
-            // Expected: /list (top 5) still contains at least one "из 25 EUR".
+            // Expected: /list (top 5) still contains at least one "из 25€".
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
 
             do!
@@ -721,7 +721,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
 
             Assert.True(couponsText.IsSome, "Expected /list to send a DM message")
             Assert.Contains("Доступные купоны:", couponsText.Value)
-            Assert.Contains("из 25 EUR", couponsText.Value)
+            Assert.Contains("из 25€", couponsText.Value)
 
             let itemLines =
                 couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -1004,7 +1004,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
             Assert.True(couponsText.IsSome, "Expected DM sendMessage for /coupons")
             Assert.Contains("Доступные купоны:", couponsText.Value)
             Assert.Contains("1.", couponsText.Value)
-            Assert.Contains("истекает", couponsText.Value)
+            Assert.Contains("до ", couponsText.Value)
             // Human-visible list uses 1..N, but callback_data must still reference real coupon id
             let hasTakeButton (callBody: string) =
                 try
