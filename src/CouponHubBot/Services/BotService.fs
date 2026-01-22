@@ -112,38 +112,51 @@ type BotService(
         let d = formatUiDate c.expires_at
         $"{idx}. {formatCouponValue c}, до {d}"
 
-    /// Picks up to 5 coupons for /list, ensuring at least one coupon with the minimal min_check
-    /// among all available coupons (if any exist). Input is expected to be sorted by expires_at, id.
-    let pickCouponsForList (coupons: Coupon array) =
-        let takeCount = min 5 coupons.Length
-        if takeCount <= 0 then
+    /// Picks coupons for /list:
+    /// 1) all expiring today (Dublin),
+    /// 2) at least 1 coupon for each min_check in [25; 40; 50; 100] when available,
+    /// 3) the result of (1)+(2) may exceed 5 and must not be truncated,
+    /// 4) if the result is still < 5, fill with the nearest-by-expiry coupons up to 5.
+    /// Input is expected to be sorted by expires_at, id.
+    let pickCouponsForList (today: DateOnly) (coupons: Coupon array) =
+        if coupons.Length = 0 then
             [||]
         else
-            let baseShown = coupons |> Array.truncate takeCount
-            let minCheck = (coupons |> Array.minBy (fun c -> c.min_check)).min_check
+            let distinctById (arr: Coupon array) =
+                let seen = HashSet<int>()
+                arr |> Array.filter (fun c -> seen.Add c.id)
 
-            if baseShown |> Array.exists (fun c -> c.min_check = minCheck) then
-                baseShown
-            else
-                let bestSmall =
-                    coupons
-                    |> Array.filter (fun c -> c.min_check = minCheck)
-                    |> Array.minBy (fun c -> c.expires_at, c.id)
+            let expiringToday =
+                coupons
+                |> Array.filter (fun c -> c.expires_at = today)
 
-                // Replace the "least urgent" item from baseShown (the last one, since baseShown is sorted).
-                let replaced =
-                    if takeCount = 1 then
-                        [| bestSmall |]
-                    else
-                        Array.append baseShown.[0 .. takeCount - 2] [| bestSmall |]
+            let requiredMinChecks = [| 25m; 40m; 50m; 100m |]
 
-                // Keep presentation stable: still ordered by expiry (and id as a tiebreaker).
-                replaced |> Array.sortBy (fun c -> c.expires_at, c.id)
+            let onePerMinCheck =
+                requiredMinChecks
+                |> Array.choose (fun mc -> coupons |> Array.tryFind (fun c -> c.min_check = mc))
+
+            let selected =
+                Array.append expiringToday onePerMinCheck
+                |> distinctById
+
+            let target = min 5 coupons.Length
+
+            let filled =
+                if selected.Length >= target then
+                    selected
+                else
+                    let selectedIds = HashSet<int>(selected |> Array.map (fun c -> c.id))
+                    let fill =
+                        coupons
+                        |> Array.filter (fun c -> not (selectedIds.Contains c.id))
+                        |> Array.truncate (target - selected.Length)
+                    Array.append selected fill
+
+            filled |> Array.sortBy (fun c -> c.expires_at, c.id)
 
     let couponsKeyboard (coupons: Coupon array) =
-        // Show only first 5 to keep UX simple (1..5)
         coupons
-        |> Array.truncate 5
         |> Array.indexed
         |> Array.map (fun (i, c) ->
             let humanIdx = i + 1
@@ -234,14 +247,15 @@ type BotService(
 
     let handleCoupons (chatId: int64) =
         task {
-            let todayStr =
+            let today =
                 Utils.TimeZones.dublinToday time
-                |> formatUiDate
+            let todayStr = today |> formatUiDate
             let! coupons = db.GetAvailableCoupons()
+            let totalStr = $"Всего доступно купонов: {coupons.Length}"
             if coupons.Length = 0 then
-                do! sendText chatId $"{todayStr}\n\nСейчас нет доступных купонов."
+                do! sendText chatId $"{todayStr}\n{totalStr}\n\nСейчас нет доступных купонов."
             else
-                let shown = pickCouponsForList coupons
+                let shown = pickCouponsForList today coupons
                 let text =
                     shown
                     |> Array.indexed
@@ -250,7 +264,7 @@ type BotService(
                 do!
                     botClient.SendMessage(
                         ChatId chatId,
-                        $"{todayStr}\n\nДоступные купоны:\n{text}",
+                        $"{todayStr}\n{totalStr}\n\nДоступные купоны:\n{text}",
                         replyMarkup = couponsKeyboard shown
                     )
                     |> taskIgnore
