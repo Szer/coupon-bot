@@ -43,6 +43,11 @@ type OverdueTakenUser =
     { user_id: int64
       overdue_count: int }
 
+[<CLIMutable>]
+type EventTypeCountRow =
+    { event_type: string
+      count: int64 }
+
 type DbService(connString: string, timeProvider: TimeProvider) =
     let utcNow () = timeProvider.GetUtcNow().UtcDateTime
     let todayUtc () = DateOnly.FromDateTime(utcNow ())
@@ -238,21 +243,23 @@ ORDER BY taken_at DESC NULLS LAST, id DESC;
             //language=postgresql
             let sql =
                 """
-WITH added AS (
-    SELECT COUNT(*) AS c FROM coupon WHERE owner_id = @user_id
-),
-taken AS (
-    SELECT COUNT(*) AS c FROM coupon WHERE taken_by = @user_id
-),
-used AS (
-    SELECT COUNT(*) AS c FROM coupon WHERE taken_by = @user_id AND status = 'used'
-)
-SELECT (SELECT c FROM added) AS added,
-       (SELECT c FROM taken) AS taken,
-       (SELECT c FROM used)  AS used;
+SELECT event_type, COUNT(*)::bigint AS count
+FROM coupon_event
+WHERE user_id = @user_id
+GROUP BY event_type;
 """
-            let! row = conn.QuerySingleAsync<{| added: int64; taken: int64; used: int64 |}>(sql, {| user_id = userId |})
-            return int row.added, int row.taken, int row.used
+            let! rows = conn.QueryAsync<EventTypeCountRow>(sql, {| user_id = userId |})
+
+            let counts =
+                rows
+                |> Seq.fold (fun acc r -> acc |> Map.add r.event_type r.count) Map.empty
+
+            let get (eventType: string) =
+                counts
+                |> Map.tryFind eventType
+                |> Option.defaultValue 0L
+
+            return get "added", get "taken", get "returned", get "used"
         }
 
     member _.TryTakeCoupon(couponId, takerId) =
