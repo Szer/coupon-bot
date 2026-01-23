@@ -311,8 +311,10 @@ type BotService(
 
     let handleStats (user: DbUser) (chatId: int64) =
         task {
-            let! added, taken, used = db.GetUserStats(user.id)
-            do! sendText chatId $"Статистика:\nДобавлено: {added}\nВзято: {taken}\nИспользовано: {used}"
+            let! added, taken, returned, used = db.GetUserStats(user.id)
+            do!
+                sendText chatId
+                    $"Статистика:\nДобавлено: {added}\nВзято: {taken}\nВозвращено: {returned}\nИспользовано: {used}"
         }
 
     let handleMy (user: DbUser) (chatId: int64) =

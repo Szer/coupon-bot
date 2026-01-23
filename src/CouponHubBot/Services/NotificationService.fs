@@ -15,10 +15,12 @@ type TelegramNotificationService(
     time: TimeProvider
 ) =
     let formatUser (u: DbUser) =
-        match u.username, u.first_name with
-        | un, _ when not (String.IsNullOrWhiteSpace un) -> "@" + un
-        | _, fn when not (String.IsNullOrWhiteSpace fn) -> fn
-        | _ -> string u.id
+        if not (String.IsNullOrWhiteSpace u.username) then
+            "@" + u.username
+        elif not (String.IsNullOrWhiteSpace u.first_name) || not (String.IsNullOrWhiteSpace u.last_name) then
+            String.Join(" ", u.first_name, u.last_name)
+        else
+            string u.id
 
     let fmtCoupon (c: Coupon) =
         let v = c.value.ToString("0.##")

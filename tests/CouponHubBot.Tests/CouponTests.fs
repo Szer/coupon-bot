@@ -1388,6 +1388,33 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
         }
 
     [<Fact>]
+    let ``Stats counts events even if coupon was returned`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let owner = Tg.user(id = 235L, username = "stats_owner2", firstName = "SO2")
+            let taker = Tg.user(id = 236L, username = "stats_taker2", firstName = "ST2")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/return {couponId}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/stats", taker))
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 236L "Взято: 1", "Expected taken event count to be 1")
+            Assert.True(findCallWithText calls 236L "Возвращено: 1", "Expected returned event count to be 1")
+            Assert.True(findCallWithText calls 236L "Добавлено: 0", "Expected added event count to be 0 for taker")
+            Assert.True(findCallWithText calls 236L "Использовано: 0", "Expected used event count to be 0 for taker")
+        }
+
+    [<Fact>]
     let ``/feedback forwards next message to admins`` () =
         task {
             do! fixture.ClearFakeCalls()
