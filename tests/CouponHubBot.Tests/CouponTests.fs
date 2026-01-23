@@ -921,6 +921,149 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
         }
 
     [<Fact>]
+    let ``/list fill prefers non-fivers over fivers`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 245L, username = "list_fill_pref_non_fivers")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (@uid, @uname, 'ListFillPref', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+"""
+                    , {| uid = user.Id; uname = "list_fill_pref_non_fivers" |}
+                )
+                :> Task
+
+            // All coupons are NOT expiring today, ordered by increasing expires_at:
+            // min_check: 50, 25, 50, 25, 50, 50 (values for readability: 10,5,10,5,10,10)
+            let seed (i: int) (value: decimal) (minCheck: decimal) =
+                let expiresIso =
+                    fixture.FixedToday.AddDays(10 + i).ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
+                conn.ExecuteAsync(
+                    """
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
+"""
+                    , {| owner_id = user.Id
+                         photo_file_id = $"seed-fill-pref-{i}"
+                         value = value
+                         min_check = minCheck
+                         expires_at = expiresIso |}
+                )
+                :> Task
+
+            do! seed 1 10.00m 50.00m
+            do! seed 2 5.00m 25.00m
+            do! seed 3 10.00m 50.00m
+            do! seed 4 5.00m 25.00m
+            do! seed 5 10.00m 50.00m
+            do! seed 6 10.00m 50.00m
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let couponsText =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some user.Id -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            Assert.True(couponsText.IsSome, "Expected /list to send a DM message")
+
+            let itemLines =
+                couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
+
+            Assert.Equal(5, itemLines.Length)
+
+            let countSub (needle: string) =
+                itemLines |> Array.sumBy (fun l -> if l.Contains(needle) then 1 else 0)
+
+            // Expected: 1 fiver (min_check=25) + 4 non-fivers (min_check=50) in the shown top-5.
+            Assert.Equal(1, countSub "из 25€")
+            Assert.Equal(4, countSub "из 50€")
+        }
+
+    [<Fact>]
+    let ``/list shows all coupons when total < 5 (even with fivers)`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 246L, username = "list_less_than_5")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (@uid, @uname, 'ListLessThan5', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+"""
+                    , {| uid = user.Id; uname = "list_less_than_5" |}
+                )
+                :> Task
+
+            // All coupons are NOT expiring today: min_check 25, 50, 25 (values 5,10,5).
+            let seed (i: int) (value: decimal) (minCheck: decimal) =
+                let expiresIso =
+                    fixture.FixedToday.AddDays(20 + i).ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
+                conn.ExecuteAsync(
+                    """
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
+"""
+                    , {| owner_id = user.Id
+                         photo_file_id = $"seed-lt5-{i}"
+                         value = value
+                         min_check = minCheck
+                         expires_at = expiresIso |}
+                )
+                :> Task
+
+            do! seed 1 5.00m 25.00m
+            do! seed 2 10.00m 50.00m
+            do! seed 3 5.00m 25.00m
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let couponsText =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some user.Id -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            Assert.True(couponsText.IsSome, "Expected /list to send a DM message")
+
+            let itemLines =
+                couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
+
+            Assert.Equal(3, itemLines.Length)
+
+            let countSub (needle: string) =
+                itemLines |> Array.sumBy (fun l -> if l.Contains(needle) then 1 else 0)
+
+            Assert.Equal(2, countSub "из 25€")
+            Assert.Equal(1, countSub "из 50€")
+        }
+
+    [<Fact>]
     let ``My shows 0 taken when user has only used coupon`` () =
         task {
             do! fixture.ClearFakeCalls()
