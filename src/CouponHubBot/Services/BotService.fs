@@ -147,11 +147,23 @@ type BotService(
                     selected
                 else
                     let selectedIds = HashSet<int>(selected |> Array.map (fun c -> c.id))
-                    let fill =
+                    let remaining =
                         coupons
                         |> Array.filter (fun c -> not (selectedIds.Contains c.id))
-                        |> Array.truncate (target - selected.Length)
-                    Array.append selected fill
+
+                    // When filling up to 5, prefer non-"fivers" first (min_check <> 25),
+                    // and only then add remaining "fivers" (min_check = 25) if still needed.
+                    let needed = target - selected.Length
+                    let remainingNonFivers = remaining |> Array.filter (fun c -> c.min_check <> 25m)
+                    let remainingFivers = remaining |> Array.filter (fun c -> c.min_check = 25m)
+
+                    let fillNonFivers = remainingNonFivers |> Array.truncate needed
+                    let stillNeeded = needed - fillNonFivers.Length
+                    let fillFivers =
+                        if stillNeeded > 0 then remainingFivers |> Array.truncate stillNeeded
+                        else [||]
+
+                    Array.append selected (Array.append fillNonFivers fillFivers)
 
             filled |> Array.sortBy (fun c -> c.expires_at, c.id)
 
