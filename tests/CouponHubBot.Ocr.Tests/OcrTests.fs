@@ -263,6 +263,7 @@ type OcrTests(output: ITestOutputHelper) =
     // Low-quality images: assert only fields that are reliable for this file.
     // Pass null for fields we intentionally do not assert.
     [<InlineData("5_25_2026-01-11_2026-01-17_2706653336241.jpg", "5", "25", "2026-01-11", null, null)>]
+    [<InlineData("5_25_2026-01-20_2026-01-26_2706680353051.jpg", "5", "25", "2026-01-20", "2026-01-26", null)>]
     member _.``OCR engine recognizes coupon from low quality file``(
         fileName: string,
         expectedCouponValue: string,
@@ -314,4 +315,3 @@ type OcrTests(output: ITestOutputHelper) =
                     failwithf "Expected barcode from '%s'\n\nLogs:\n%s" fileName dump
                 Assert.Equal(expectedBarcode, res.barcode)
         }
-

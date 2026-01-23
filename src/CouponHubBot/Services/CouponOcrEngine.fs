@@ -212,13 +212,7 @@ type CouponOcrEngine(azureTextOcr: IAzureTextOcr, logger: ILogger<CouponOcrEngin
             use original = Image.Load<Rgba32>(ms)
             let opts = DecodingOptions()
             opts.TryHarder <- true
-            // Coupons may use CODE_128, but in practice we also see EAN-13-like numeric barcodes on photos.
-            opts.PossibleFormats <-
-                [| BarcodeFormat.CODE_128
-                   BarcodeFormat.EAN_13
-                   BarcodeFormat.EAN_8
-                   BarcodeFormat.ITF
-                   BarcodeFormat.CODE_39 |]
+            opts.PossibleFormats <- [| BarcodeFormat.EAN_13 |]
             opts.TryInverted <- true
             let reader = BarcodeReader<Rgba32>()
             reader.Options <- opts
