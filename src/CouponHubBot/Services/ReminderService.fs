@@ -72,14 +72,14 @@ type ReminderService(
                 do! botClient.SendMessage(ChatId botConfig.CommunityChatId, text) :> Task
                 anySent <- true
 
-            // DM reminder: user has taken coupons that expired more than 1 day ago and forgot to mark used/return.
+            // DM reminder: user has taken coupons older than 1 day and forgot to mark used/return.
             // One message per user even if multiple overdue coupons.
             let! overdueUsers = db.GetUsersWithOverdueTakenCoupons(nowUtc, TimeSpan.FromDays(1.0))
             for r in overdueUsers do
                 try
                     let suffix = if r.overdue_count = 1 then "" else "ов"
                     let text =
-                        $"Напоминание: у тебя есть {r.overdue_count} купон{suffix}, который истёк более 1 дня назад и всё ещё не отмеченный.\nОткрой /my и нажми «Использован» или «Вернуть»."
+                        $"Напоминание: у тебя есть {r.overdue_count} купон{suffix}, взятый более 1 дня назад и всё ещё не отмеченный.\nОткрой /my и нажми «Использован» или «Вернуть»."
                     do! botClient.SendMessage(ChatId r.user_id, text) :> Task
                     anySent <- true
                 with ex ->
