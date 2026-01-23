@@ -408,8 +408,10 @@ SELECT taken_by AS user_id, COUNT(*)::int AS overdue_count
 FROM coupon
 WHERE status = 'taken'
   AND taken_by IS NOT NULL
-  AND taken_at IS NOT NULL
-  AND taken_at <= (@now_utc - (@min_age_seconds * interval '1 second'))
+  -- Reminder is based on coupon expiration, not when it was taken:
+  -- coupon.expires_at is a DATE (valid through that day).
+  -- We remind when it has been expired for longer than minAge.
+  AND expires_at < (@now_utc - (@min_age_seconds * interval '1 second'))::date
 GROUP BY taken_by
 ORDER BY taken_by;
 """

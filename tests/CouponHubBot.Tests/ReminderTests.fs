@@ -136,7 +136,54 @@ ON CONFLICT (id) DO NOTHING;
                     | _ -> false)
 
             Assert.Equal(1, dmCallsToUser.Length)
-            Assert.True(dmCallsToUser[0].Body.Contains("\"text\""), "Expected DM call to include text")
+            
+            // Ensure overdue_count is based on expiration (expires_at), not taken_at.
+            // In the seed above, only coupon 8102 is expired by 2026-01-19; 8101 is not.
+            match parseCallBody dmCallsToUser[0].Body with
+            | Some p ->
+                Assert.True(p.Text.IsSome, "Expected DM call to include text")
+                Assert.Contains("у тебя есть 1 купон", p.Text.Value)
+            | None ->
+                failwith "Expected to parse DM body as JSON"
+        }
+
+    [<Fact>]
+    let ``Taken long ago but not expired does not trigger DM reminder`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (602,'u602','U602',NOW(),NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- Taken a long time ago, but expires in the future => no reminder should be sent.
+INSERT INTO coupon(id, owner_id, photo_file_id, value, min_check, expires_at, status, taken_by, taken_at)
+VALUES
+  (8201,602,'p-8201',10.00,50.00,'2026-02-01','taken',602,'2026-01-01T08:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+"""
+                )
+                :> Task
+
+            use body = new StringContent("", Encoding.UTF8, "application/json")
+            let! resp = fixture.Bot.PostAsync("/test/run-reminder?nowUtc=2026-01-19T08:00:00Z", body)
+            if not resp.IsSuccessStatusCode then
+                let! text = resp.Content.ReadAsStringAsync()
+                failwith $"Expected 2xx from /test/run-reminder, got {resp.StatusCode}. Body: {text}"
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            let dmCallsToUser =
+                calls
+                |> Array.filter (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p -> p.ChatId = Some 602L
+                    | _ -> false)
+
+            Assert.Empty(dmCallsToUser)
         }
 
     interface IAssemblyFixture<DefaultCouponHubTestContainers>
