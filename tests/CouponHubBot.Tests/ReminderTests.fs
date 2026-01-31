@@ -30,8 +30,8 @@ type ReminderTests(fixture: DefaultCouponHubTestContainers) =
             let! _ = fixture.Bot.PostAsync("/test/run-reminder", body)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls -42L "Сегодня истекают",
-                $"Expected reminder to group -42 with 'Сегодня истекают'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L "Сегодня истекает",
+                $"Expected reminder to group -42 with 'Сегодня истекает'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
