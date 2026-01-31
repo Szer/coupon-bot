@@ -24,11 +24,11 @@ type ReminderTests(fixture: DefaultCouponHubTestContainers) =
             do! conn.ExecuteAsync("INSERT INTO \"user\"(id, username, first_name, created_at, updated_at) VALUES (500,'owner','Owner',NOW(),NOW()) ON CONFLICT DO NOTHING;") :> Task
 
             let todayIso = fixture.FixedToday.ToString("yyyy-MM-dd")
-            // Insert the specified number of expiring coupons
+            // Insert the specified number of expiring coupons (include couponCount in ID for test isolation)
             for i in 1..couponCount do
                 do! conn.ExecuteAsync(
                     "INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status) VALUES (500,@photoId,10.00,50.00,@today::date,'available');",
-                    {| photoId = $"seed-photo-plural-{i}"; today = todayIso |}) :> Task
+                    {| photoId = $"seed-photo-plural-{couponCount}-{i}"; today = todayIso |}) :> Task
 
             use body = new StringContent("", Encoding.UTF8, "application/json")
             let! _ = fixture.Bot.PostAsync("/test/run-reminder", body)
