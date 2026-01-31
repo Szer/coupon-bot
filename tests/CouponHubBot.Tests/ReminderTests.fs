@@ -90,12 +90,8 @@ VALUES
                 |> Array.choose (fun c -> tryGetText c.Body)
                 |> Array.exists (fun t -> t.Contains(s))
 
-            Assert.True(has "Статистика за последние 7 дней",
+            Assert.True(has "Статистика за последние 7 дней (использовано/добавлено)",
                 "Expected weekly stats message in group on Monday")
-            Assert.True(has "Использовано купонов",
-                "Expected used section")
-            Assert.True(has "Добавлено купонов",
-                "Expected added section")
         }
 
     [<Fact>]

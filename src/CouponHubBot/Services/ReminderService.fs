@@ -26,20 +26,38 @@ type ReminderService(
         else
             string userId
 
-    let formatTopList (title: string) (rows: UserEventCount array) =
-        if rows.Length = 0 then
-            $"{title}\n—"
+    let formatCombinedStats (usedRows: UserEventCount array) (addedRows: UserEventCount array) =
+        let usedMap = usedRows |> Array.map (fun r -> r.user_id, r.count) |> Map.ofArray
+        let addedMap = addedRows |> Array.map (fun r -> r.user_id, r.count) |> Map.ofArray
+
+        // Collect all users from both arrays, prefer usedRows for user info (username, first_name)
+        let userInfoMap =
+            Array.append usedRows addedRows
+            |> Array.map (fun r -> r.user_id, (r.username, r.first_name))
+            |> Map.ofArray
+
+        let allUserIds =
+            Set.union
+                (usedRows |> Array.map _.user_id |> Set.ofArray)
+                (addedRows |> Array.map _.user_id |> Set.ofArray)
+
+        if Set.isEmpty allUserIds then
+            "—"
         else
-            let lines =
-                rows
-                |> Array.truncate 25
-                |> Array.indexed
-                |> Array.map (fun (i, r) ->
-                    let n = i + 1
-                    let who = formatUser r.user_id r.username r.first_name
-                    $"{n}. {who} — {r.count}")
-                |> String.concat "\n"
-            $"{title}\n{lines}"
+            allUserIds
+            |> Set.toArray
+            |> Array.map (fun uid ->
+                let usedCount = Map.tryFind uid usedMap |> Option.defaultValue 0L
+                let addedCount = Map.tryFind uid addedMap |> Option.defaultValue 0L
+                let (username, firstName) = Map.find uid userInfoMap
+                (uid, username, firstName, usedCount, addedCount))
+            |> Array.sortByDescending (fun (_, _, _, used, added) -> used + added)
+            |> Array.indexed
+            |> Array.map (fun (i, (uid, username, firstName, usedCount, addedCount)) ->
+                let n = i + 1
+                let who = formatUser uid username firstName
+                $"{n}. {who} — {usedCount}/{addedCount}")
+            |> String.concat "\n"
 
     let runOnce (nowUtc: DateTime) =
         task {
@@ -60,14 +78,8 @@ type ReminderService(
                 let! addedRows = db.GetUserEventCounts("added", since, until)
 
                 let text =
-                    [
-                        "Статистика за последние 7 дней:"
-                        ""
-                        formatTopList "Использовано купонов:" usedRows
-                        ""
-                        formatTopList "Добавлено купонов:" addedRows
-                    ]
-                    |> String.concat "\n"
+                    "Статистика за последние 7 дней (использовано/добавлено):\n"
+                    + formatCombinedStats usedRows addedRows
 
                 do! botClient.SendMessage(ChatId botConfig.CommunityChatId, text) :> Task
                 anySent <- true
