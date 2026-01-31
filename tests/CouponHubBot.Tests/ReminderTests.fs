@@ -12,26 +12,30 @@ open FakeCallHelpers
 
 type ReminderTests(fixture: DefaultCouponHubTestContainers) =
 
-    [<Fact>]
-    let ``Reminder sends message to group when coupons expire today`` () =
+    [<Theory>]
+    [<InlineData(1, "Сегодня истекает 1 купон на сумму")>]
+    [<InlineData(2, "Сегодня истекает 2 купона на сумму")>]
+    [<InlineData(7, "Сегодня истекает 7 купонов на сумму")>]
+    let ``Reminder uses correct Russian plural form for expiring coupons`` (couponCount: int, expectedText: string) =
         task {
             do! fixture.ClearFakeCalls()
 
-            // Seed an expiring coupon
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
-            //language=postgresql
             do! conn.ExecuteAsync("INSERT INTO \"user\"(id, username, first_name, created_at, updated_at) VALUES (500,'owner','Owner',NOW(),NOW()) ON CONFLICT DO NOTHING;") :> Task
-            //language=postgresql
-            let todayIso = fixture.FixedToday.ToString("yyyy-MM-dd")
-            do! conn.ExecuteAsync("INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status) VALUES (500,'seed-photo-500',10.00,50.00,@today::date,'available');", {| today = todayIso |}) :> Task
 
-            // Trigger reminder via test endpoint
+            let todayIso = fixture.FixedToday.ToString("yyyy-MM-dd")
+            // Insert the specified number of expiring coupons
+            for i in 1..couponCount do
+                do! conn.ExecuteAsync(
+                    "INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status) VALUES (500,@photoId,10.00,50.00,@today::date,'available');",
+                    {| photoId = $"seed-photo-plural-{i}"; today = todayIso |}) :> Task
+
             use body = new StringContent("", Encoding.UTF8, "application/json")
             let! _ = fixture.Bot.PostAsync("/test/run-reminder", body)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls -42L "Сегодня истекает",
-                $"Expected reminder to group -42 with 'Сегодня истекает'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls -42L expectedText,
+                $"Expected reminder to group -42 with '{expectedText}'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
