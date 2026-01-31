@@ -19,12 +19,12 @@ type ReminderTests(fixture: DefaultCouponHubTestContainers) =
     let ``Reminder uses correct Russian plural form for expiring coupons`` (couponCount: int, expectedText: string) =
         task {
             do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
 
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
             do! conn.ExecuteAsync("INSERT INTO \"user\"(id, username, first_name, created_at, updated_at) VALUES (500,'owner','Owner',NOW(),NOW()) ON CONFLICT DO NOTHING;") :> Task
 
             let todayIso = fixture.FixedToday.ToString("yyyy-MM-dd")
-            // Insert the specified number of expiring coupons (include couponCount in ID for test isolation)
             for i in 1..couponCount do
                 do! conn.ExecuteAsync(
                     "INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status) VALUES (500,@photoId,10.00,50.00,@today::date,'available');",
