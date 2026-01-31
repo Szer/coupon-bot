@@ -67,7 +67,8 @@ type ReminderService(
             if coupons.Length > 0 then
                 let total = coupons |> Array.sumBy (fun c -> c.value)
                 let totalStr = total.ToString("0.##")
-                let msg = $"Сегодня истекают {coupons.Length} купонов на общую сумму {totalStr}€!"
+                let couponWord = Utils.RussianPlural.choose coupons.Length "купон" "купона" "купонов"
+                let msg = $"Сегодня истекает {coupons.Length} {couponWord} на сумму {totalStr}€!"
                 do! botClient.SendMessage(ChatId botConfig.CommunityChatId, msg) :> Task
                 anySent <- true
 
@@ -89,9 +90,11 @@ type ReminderService(
             let! overdueUsers = db.GetUsersWithOverdueTakenCoupons(nowUtc, TimeSpan.FromDays(1.0))
             for r in overdueUsers do
                 try
-                    let suffix = if r.overdue_count = 1 then "" else "ов"
+                    let couponWord = Utils.RussianPlural.choose r.overdue_count "купон" "купона" "купонов"
+                    let participle = if r.overdue_count = 1 then "взятый" else "взятых"
+                    let notMarked = if r.overdue_count = 1 then "не отмеченный" else "не отмеченных"
                     let text =
-                        $"Напоминание: у тебя есть {r.overdue_count} купон{suffix}, взятый более 1 дня назад и всё ещё не отмеченный.\nОткрой /my и нажми «Использован» или «Вернуть»."
+                        $"Напоминание: у тебя есть {r.overdue_count} {couponWord}, {participle} более 1 дня назад и всё ещё {notMarked}.\nОткрой /my и нажми «Использован» или «Вернуть»."
                     do! botClient.SendMessage(ChatId r.user_id, text) :> Task
                     anySent <- true
                 with ex ->

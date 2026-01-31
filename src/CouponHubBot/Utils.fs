@@ -112,6 +112,17 @@ module Utils =
             let local = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, getDublinTimeZone ())
             DateOnly.FromDateTime(local)
 
+    module RussianPlural =
+        /// Returns appropriate Russian plural form based on the number.
+        /// form1 = 1, 21, 31... | form2 = 2-4, 22-24... | form5 = 0, 5-20, 25-30...
+        let choose (n: int) (form1: string) (form2: string) (form5: string) =
+            let n100 = abs n % 100
+            let n10 = abs n % 10
+            if n100 >= 11 && n100 <= 14 then form5
+            elif n10 = 1 then form1
+            elif n10 >= 2 && n10 <= 4 then form2
+            else form5
+
 /// Time helpers (testability via TimeProvider).
 module Time =
     /// Environment variable that, when set, freezes `TimeProvider` to a constant UTC time.
