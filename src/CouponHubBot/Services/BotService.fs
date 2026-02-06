@@ -488,6 +488,21 @@ type BotService(
                         let barcodeText =
                             if String.IsNullOrWhiteSpace ocr.barcode then null else ocr.barcode
 
+                        if isNull barcodeText then
+                            // Barcode not recognized — photo quality is insufficient.
+                            do! db.UpsertPendingAddFlow(
+                                    { user_id = user.id
+                                      stage = "awaiting_photo"
+                                      photo_file_id = null
+                                      value = Nullable()
+                                      min_check = Nullable()
+                                      expires_at = Nullable()
+                                      barcode_text = null
+                                      updated_at = time.GetUtcNow().UtcDateTime }
+                                )
+                            do! sendText chatId "Не удалось распознать штрихкод на фото. Пожалуйста, пришли фото в лучшем качестве или скадрируй картинку ближе к штрихкоду, дате и сумме."
+                        else
+
                         // Persist whatever we managed to recognize, and continue the wizard from the first missing step.
                         match valueOpt, minCheckOpt, validToOpt with
                         | Some value, Some minCheck, Some expiresAt ->
@@ -507,7 +522,7 @@ type BotService(
                             do!
                                 botClient.SendMessage(
                                     ChatId chatId,
-                                    $"Я распознал: {v}€ из {mc}€, до {d}. Всё верно?",
+                                    $"Я распознал: {v}€ из {mc}€, до {d}, штрихкод: {barcodeText}. Всё верно?",
                                     replyMarkup = addWizardOcrKeyboard()
                                 )
                                 |> taskIgnore
@@ -564,13 +579,16 @@ type BotService(
         botClient.SendMessage(ChatId chatId, "Выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):", replyMarkup = addWizardDateKeyboard())
         |> taskIgnore
 
-    let handleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) =
+    let handleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) =
         let v = value.ToString("0.##")
         let mc = minCheck.ToString("0.##")
         let d = formatUiDate expiresAt
+        let barcodeStr =
+            if String.IsNullOrWhiteSpace barcodeText then ""
+            else $", штрихкод: {barcodeText}"
         botClient.SendMessage(
             ChatId chatId,
-            $"Подтвердить добавление купона: {v}€ из {mc}€, до {d}?",
+            $"Подтвердить добавление купона: {v}€ из {mc}€, до {d}{barcodeStr}?",
             replyMarkup = addWizardConfirmKeyboard()
         )
         |> taskIgnore
@@ -640,7 +658,7 @@ type BotService(
                                                 min_check = Nullable(mc)
                                                 updated_at = time.GetUtcNow().UtcDateTime }
                                         do! db.UpsertPendingAddFlow next
-                                        do! handleAddWizardSendConfirm cq.Message.Chat.Id v mc flow.expires_at.Value
+                                        do! handleAddWizardSendConfirm cq.Message.Chat.Id v mc flow.expires_at.Value flow.barcode_text
                                     else
                                         let next =
                                             { flow with
@@ -663,7 +681,7 @@ type BotService(
                                         expires_at = Nullable(expiresAt)
                                         updated_at = time.GetUtcNow().UtcDateTime }
                                 do! db.UpsertPendingAddFlow next
-                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
                             else
                                 do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                         | "addflow:date:tomorrow" ->
@@ -675,7 +693,7 @@ type BotService(
                                         expires_at = Nullable(expiresAt)
                                         updated_at = time.GetUtcNow().UtcDateTime }
                                 do! db.UpsertPendingAddFlow next
-                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
                             else
                                 do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                         | "addflow:ocr:yes" ->
@@ -715,14 +733,13 @@ type BotService(
                             else
                                 do! sendText cq.Message.Chat.Id "Этот шаг уже неактуален. Начни заново: /add"
                         | "addflow:ocr:no" ->
-                            // Clear OCR suggestion and continue manually
+                            // Clear OCR suggestion and continue manually; keep barcode (already validated at photo upload).
                             let next =
                                 { flow with
                                     stage = "awaiting_discount_choice"
                                     value = Nullable()
                                     min_check = Nullable()
                                     expires_at = Nullable()
-                                    barcode_text = null
                                     updated_at = time.GetUtcNow().UtcDateTime }
                             do! db.UpsertPendingAddFlow next
                             do!
@@ -870,7 +887,7 @@ type BotService(
                                                 min_check = Nullable(mc)
                                                 updated_at = time.GetUtcNow().UtcDateTime }
                                         )
-                                    do! handleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value
+                                    do! handleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value flow.barcode_text
                                 else
                                     do! db.UpsertPendingAddFlow(
                                             { flow with
@@ -894,7 +911,7 @@ type BotService(
                                         do! sendText msg.Chat.Id "Эта дата уже в прошлом. Нельзя добавить истёкший купон. Пришли дату заново."
                                     else
                                         do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_confirm"; expires_at = Nullable(expiresAt); updated_at = time.GetUtcNow().UtcDateTime })
-                                        do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt
+                                        do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
                                 else
                                     handledAddFlow <- true
                                     do! sendText msg.Chat.Id "Сначала выбери скидку. Начни заново: /add"
