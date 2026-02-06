@@ -53,6 +53,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
 
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls user.Id "Я распознал:", "Expected OCR prefill message after implicit add")
+            Assert.True(findCallWithText calls user.Id "2706688198845", "Expected barcode number in OCR message")
             Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("addflow:ocr:yes") && c.Body.Contains("addflow:ocr:no")),
                 "Expected OCR yes/no buttons")
 
@@ -104,7 +105,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
         }
 
     [<Fact>]
-    let ``OCR add: if barcode is not recognized (NULL), barcode dedupe does not block`` () =
+    let ``OCR add: if barcode is not recognized (NULL), photo is rejected`` () =
         task {
             do! fixture.ClearFakeCalls()
             do! fixture.TruncateCoupons()
@@ -123,25 +124,14 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             do! fixture.SetTelegramFile(fileId1, bytes)
             do! fixture.SetAzureOcrResponse(200, azure)
             let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = fileId1))
-            do! fixture.ClearFakeCalls()
-            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
-
-            let! count1 = getCouponCount ()
-            Assert.Equal(1L, count1)
-
-            do! fixture.ClearFakeCalls()
-            let fileId2 = "ocr-no-barcode-2"
-            do! fixture.SetTelegramFile(fileId2, bytes)
-            do! fixture.SetAzureOcrResponse(200, azure)
-            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = fileId2))
-            do! fixture.ClearFakeCalls()
-            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls user.Id "Добавил купон", "Expected second coupon to be created when barcode is NULL")
+            Assert.True(findCallWithAnyText calls user.Id [| "штрихкод" |],
+                "Expected barcode rejection message when barcode is not recognized")
 
-            let! count2 = getCouponCount ()
-            Assert.Equal(2L, count2)
+            // No coupon should be created.
+            let! count = getCouponCount ()
+            Assert.Equal(0L, count)
         }
 
     [<Fact>]
@@ -237,6 +227,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
 
             let! calls2 = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls2 user.Id "Я распознал:", "Expected OCR prefill message")
+            Assert.True(findCallWithText calls2 user.Id "2706688198845", "Expected barcode number in OCR confirm message")
             Assert.True(calls2 |> Array.exists (fun c -> c.Body.Contains("addflow:ocr:yes") && c.Body.Contains("addflow:ocr:no")),
                 "Expected OCR yes/no buttons")
 
@@ -286,6 +277,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let! _ = fixture.SendUpdate(Tg.dmMessage("2026-02-01", user))
             let! callsConfirm = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText callsConfirm user.Id "Подтвердить добавление купона", "Expected confirm after manual date")
+            Assert.True(findCallWithText callsConfirm user.Id "2706688198845", "Expected barcode number preserved in manual confirm message")
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:confirm", user))
@@ -331,6 +323,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let! _ = fixture.SendUpdate(Tg.dmMessage("2026-02-03", user))
             let! callsConfirm = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText callsConfirm user.Id "Подтвердить добавление купона", "Expected confirm after providing date")
+            Assert.True(findCallWithText callsConfirm user.Id "2706688198845", "Expected barcode number in confirm message")
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:confirm", user))
@@ -343,6 +336,60 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             Assert.Equal(10m, v)
             Assert.Equal(50m, mc)
             Assert.Equal("2026-02-03", expiresIso)
+        }
+
+    [<Fact>]
+    let ``Bad barcode photo rejected, re-upload good photo succeeds, only one coupon in DB`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 660L, username = "barcode_retry", firstName = "Retry")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let goodFileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let goodAzure = readAzureCacheJson goodFileName
+            let goodBytes = readImageBytes goodFileName
+
+            // Step 1: Upload bad photo (invalid bytes → barcode not recognized).
+            let badFileId = "bad-barcode-photo"
+            let badBytes = [| byte 0x00; byte 0x01; byte 0x02; byte 0x03 |]
+            do! fixture.SetTelegramFile(badFileId, badBytes)
+            do! fixture.SetAzureOcrResponse(200, goodAzure)
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = badFileId))
+
+            let! calls1 = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithAnyText calls1 user.Id [| "штрихкод" |],
+                "Expected barcode rejection message")
+            Assert.True(findCallWithText calls1 user.Id "лучшем качестве",
+                "Expected re-upload suggestion")
+
+            let! count1 = getCouponCount ()
+            Assert.Equal(0L, count1)
+
+            // Step 2: Upload good photo (valid barcode).
+            do! fixture.ClearFakeCalls()
+            let goodFileId = "good-barcode-photo"
+            do! fixture.SetTelegramFile(goodFileId, goodBytes)
+            do! fixture.SetAzureOcrResponse(200, goodAzure)
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = goodFileId))
+
+            let! calls2 = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls2 user.Id "Я распознал:", "Expected OCR message after good photo")
+            Assert.True(findCallWithText calls2 user.Id "2706688198845", "Expected barcode in OCR message")
+
+            // Step 3: Confirm.
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
+
+            let! calls3 = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls3 user.Id "Добавил купон", "Expected coupon created")
+
+            // Only one coupon in DB (not two).
+            let! count2 = getCouponCount ()
+            Assert.Equal(1L, count2)
         }
 
     interface IAssemblyFixture<OcrCouponHubTestContainers>
