@@ -63,6 +63,12 @@ type CouponEvent =
       event_type: string
       created_at: DateTime }
 
+[<CLIMutable>]
+type CouponEventHistoryRow =
+    { date: string
+      user: string
+      event_type: string }
+
 /// Used by FakeTgApi test endpoints (serialize minimal info)
 [<CLIMutable>]
 type ApiCallLog =

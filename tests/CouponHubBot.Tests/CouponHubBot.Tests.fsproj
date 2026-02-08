@@ -16,6 +16,7 @@
     <Compile Include="OcrAddFlowTests.fs" />
     <Compile Include="CouponTests.fs" />
     <Compile Include="ReminderTests.fs" />
+    <Compile Include="AdminDebugTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

@@ -553,3 +553,20 @@ RETURNING user_id;
             let! _ = conn.ExecuteAsync(sql, {| user_id = userId |})
             return ()
         }
+
+    member _.GetCouponEventHistory(couponId: int) =
+        task {
+            use! conn = openConn()
+            //language=postgresql
+            let sql = """
+SELECT TO_CHAR(ce.created_at, 'YYYY-MM-DD HH24:MI:SS') AS date,
+       COALESCE(u.username, COALESCE(u.first_name, '') || COALESCE(u.last_name, '')) AS "user",
+       ce.event_type
+FROM coupon_event ce
+         JOIN public."user" u ON u.id = ce.user_id
+WHERE ce.coupon_id = @couponId
+ORDER BY ce.created_at;
+"""
+            let! rows = conn.QueryAsync<CouponEventHistoryRow>(sql, {| couponId = couponId |})
+            return rows |> Seq.toArray
+        }
