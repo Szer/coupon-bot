@@ -70,7 +70,8 @@ let globalBotConfDontUseOnlyRegister =
       AzureOcrEndpoint = Utils.getEnvOr "AZURE_OCR_ENDPOINT" ""
       AzureOcrKey = Utils.getEnvOr "AZURE_OCR_KEY" ""
       FeedbackAdminIds = Utils.getEnvOr "FEEDBACK_ADMINS" "" |> parseAdmins
-      TestMode = Utils.getEnvOrBool "TEST_MODE" false }
+      TestMode = Utils.getEnvOrBool "TEST_MODE" false
+      MaxTakenCoupons = Utils.getEnvOr "MAX_TAKEN_COUPONS" "6" |> int }
 
 let validateApiKey (ctx: HttpContext) =
     let botConf = ctx.RequestServices.GetRequiredService<BotConfiguration>()
@@ -115,7 +116,9 @@ let builder = WebApplication.CreateBuilder()
 %builder
     .Services
     .AddSingleton<BotService>()
-    .AddSingleton<DbService>(fun sp -> DbService(Utils.getEnv "DATABASE_URL", sp.GetRequiredService<TimeProvider>()))
+    .AddSingleton<DbService>(fun sp ->
+        let botConf = sp.GetRequiredService<BotConfiguration>()
+        DbService(Utils.getEnv "DATABASE_URL", sp.GetRequiredService<TimeProvider>(), botConf.MaxTakenCoupons))
     .AddSingleton<TelegramMembershipService>()
     .AddSingleton<TelegramNotificationService>()
     .AddHostedService<MembershipCacheInvalidationService>()

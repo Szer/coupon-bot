@@ -18,7 +18,8 @@ type BotConfiguration =
       AzureOcrEndpoint: string
       AzureOcrKey: string
       FeedbackAdminIds: int64 array
-      TestMode: bool }
+      TestMode: bool
+      MaxTakenCoupons: int }
 
 [<CLIMutable>]
 type DbUser =
