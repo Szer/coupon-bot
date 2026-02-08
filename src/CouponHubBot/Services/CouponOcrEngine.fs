@@ -240,37 +240,56 @@ type CouponOcrEngine(azureTextOcr: IAzureTextOcr, logger: ILogger<CouponOcrEngin
             let tryOnImage (labelPrefix: string) (img: Image<Rgba32>) =
                 // Strategy:
                 // - Full image (fast path)
-                // - Several bottom crops (barcodes are usually near the bottom)
-                // - A couple of bottom-center crops (avoid noise on sides)
+                // - Top crops (barcodes are often in the upper half on receipt photos)
+                // - Middle band crops (covers centre region)
+                // - Bottom crops (useful for app screenshots)
+                // - Center-narrowed variants of the above (avoid noise on sides)
                 match decode (labelPrefix + ":full") img with
                 | Some t -> Some t
                 | None ->
                     let w = img.Width
                     let h = img.Height
 
-                    let bottomStarts = [| 0.45; 0.55; 0.65 |]
+                    // Top crops: from y=0, covering the upper portion
+                    let topCrops =
+                        [| 0.50; 0.60 |]
+                        |> Array.map (fun endFrac ->
+                            let hh = int (Math.Round(float h * endFrac))
+                            Rectangle(0, 0, w, hh))
 
-                    let fullWidthBottomCrops =
-                        bottomStarts
+                    // Middle band crops: horizontal slices through the centre
+                    let middleBandCrops =
+                        [| (0.20, 0.70); (0.30, 0.80) |]
+                        |> Array.map (fun (startFrac, endFrac) ->
+                            let y = int (Math.Round(float h * startFrac))
+                            let hh = int (Math.Round(float h * endFrac)) - y
+                            Rectangle(0, y, w, hh))
+
+                    // Bottom crops: from a start fraction down to the bottom
+                    let bottomCrops =
+                        [| 0.45; 0.55; 0.65 |]
                         |> Array.map (fun startFrac ->
                             let y = int (Math.Round(float h * startFrac))
                             Rectangle(0, y, w, h - y))
 
-                    let centerBottomCrops =
-                        bottomStarts
-                        |> Array.collect (fun startFrac ->
-                            // 80% width
-                            let y = int (Math.Round(float h * startFrac))
-                            let x = int (Math.Round(float w * 0.10))
-                            let ww = w - 2 * x
-                            [| Rectangle(x, y, ww, h - y)
+                    let fullWidthCrops =
+                        Array.concat [| topCrops; middleBandCrops; bottomCrops |]
+
+                    // Center-narrowed variants (80% and 60% width) for each full-width crop
+                    let centerCrops =
+                        fullWidthCrops
+                        |> Array.collect (fun r ->
+                            [| // 80% width
+                               let x1 = int (Math.Round(float w * 0.10))
+                               let ww1 = w - 2 * x1
+                               Rectangle(x1, r.Y, ww1, r.Height)
                                // 60% width
                                let x2 = int (Math.Round(float w * 0.20))
                                let ww2 = w - 2 * x2
-                               Rectangle(x2, y, ww2, h - y) |])
+                               Rectangle(x2, r.Y, ww2, r.Height) |])
 
                     let allRects =
-                        Array.append fullWidthBottomCrops centerBottomCrops
+                        Array.append fullWidthCrops centerCrops
 
                     allRects
                     |> Array.mapi (fun i r -> (i, r))
@@ -280,20 +299,35 @@ type CouponOcrEngine(azureTextOcr: IAzureTextOcr, logger: ILogger<CouponOcrEngin
                 match tryOnImage "orig" original with
                 | Some t -> Some t
                 | None ->
-                    // If the photo is large, try a downscaled version first. ZXing often behaves better
-                    // when the barcode region occupies more of the image.
-                    let tryResize (targetWidth: int) =
-                        if original.Width <= targetWidth then
-                            None
-                        else
-                            let scale = float targetWidth / float original.Width
-                            let targetHeight = max 1 (int (Math.Round(float original.Height * scale)))
-                            use resized = original.Clone(fun ctx -> ctx.Resize(targetWidth, targetHeight) |> ignore)
-                            tryOnImage $"w{targetWidth}" resized
+                    // Preprocess: grayscale + contrast helps with noisy receipt photos
+                    // where ghost text bleeds through from the back of the paper.
+                    use preprocessed =
+                        original.Clone(fun ctx ->
+                            ctx.Grayscale() |> ignore
+                            ctx.Contrast(1.5f) |> ignore)
 
-                    match tryResize 1400 with
+                    match tryOnImage "gray" preprocessed with
                     | Some t -> Some t
-                    | None -> tryResize 1000
+                    | None ->
+                        // Resize to a different width and retry. ZXing often behaves better
+                        // when the barcode region occupies more of the image (downscale),
+                        // or when barcode bars are wider (upscale narrow photos).
+                        let tryResize (label: string) (source: Image<Rgba32>) (targetWidth: int) =
+                            if source.Width = targetWidth then
+                                None
+                            else
+                                let scale = float targetWidth / float source.Width
+                                let targetHeight = max 1 (int (Math.Round(float source.Height * scale)))
+                                use resized = source.Clone(fun ctx -> ctx.Resize(targetWidth, targetHeight) |> ignore)
+                                tryOnImage $"{label}{targetWidth}" resized
+
+                        let resizeTargets = [| 1000; 800; 1400 |]
+
+                        resizeTargets
+                        |> Array.tryPick (fun tw ->
+                            match tryResize "w" original tw with
+                            | Some t -> Some t
+                            | None -> tryResize "gw" preprocessed tw)
 
             match tryAll () with
             | Some text -> text
