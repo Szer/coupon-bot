@@ -48,7 +48,7 @@ type EventTypeCountRow =
     { event_type: string
       count: int64 }
 
-type DbService(connString: string, timeProvider: TimeProvider) =
+type DbService(connString: string, timeProvider: TimeProvider, maxTakenCoupons: int) =
     let utcNow () = timeProvider.GetUtcNow().UtcDateTime
     let todayUtc () = DateOnly.FromDateTime(utcNow ())
 
@@ -269,7 +269,7 @@ GROUP BY event_type;
             let today = todayUtc ()
             let takenAt = utcNow ()
 
-            // Serialize concurrent take attempts for the same user to avoid race conditions on the 4-coupons limit.
+            // Serialize concurrent take attempts for the same user to avoid race conditions on the coupons limit.
             //language=postgresql
             let lockUserSql =
                 """
@@ -285,7 +285,7 @@ FOR UPDATE;
                     tx
                 )
 
-            // Enforce max 4 simultaneously taken coupons per user.
+            // Enforce max simultaneously taken coupons per user.
             //language=postgresql
             let countSql =
                 """
@@ -301,7 +301,7 @@ WHERE taken_by = @taker_id
                     tx
                 )
 
-            if takenCount >= 4 then
+            if takenCount >= maxTakenCoupons then
                 do! tx.RollbackAsync()
                 return LimitReached
             else

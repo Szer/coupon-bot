@@ -161,6 +161,7 @@ type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
                 .WithEnvironment("REMINDER_RUN_ON_START", "false")
                 .WithEnvironment("REMINDER_HOUR_UTC", "8")
                 .WithEnvironment("TEST_MODE", "true")
+                .WithEnvironment("MAX_TAKEN_COUPONS", "4")
                 .WithEnvironment("BOT_FIXED_UTC_NOW", fixedUtcNow.ToString("o"))
                 .DependsOn(flywayContainer)
                 .DependsOn(fakeContainer)

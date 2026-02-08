@@ -185,7 +185,8 @@ type OcrTests(output: ITestOutputHelper) =
               AzureOcrEndpoint = effectiveEndpoint
               AzureOcrKey = effectiveKey
               FeedbackAdminIds = [||]
-              TestMode = true }
+              TestMode = true
+              MaxTakenCoupons = 4 }
 
         let cacheDir = AzureCache.getCacheDir ()
         let cachePath = AzureCache.cachePathForImageFileName cacheDir imageFileName

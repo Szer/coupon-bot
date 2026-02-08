@@ -213,7 +213,7 @@ type BotService(
     /// Keyboard for /my list (no :del). One row per coupon, with numbered actions.
     let myTakenKeyboard (taken: Coupon array) =
         taken
-        |> Array.truncate 4
+        |> Array.truncate botConfig.MaxTakenCoupons
         |> Array.indexed
         |> Array.map (fun (i, c) ->
             let humanIdx = i + 1
@@ -287,8 +287,10 @@ type BotService(
             match! db.TryTakeCoupon(couponId, taker.id) with
             | LimitReached ->
                 do!
+                    let n = botConfig.MaxTakenCoupons
+                    let couponWord = Utils.RussianPlural.choose n "купона" "купонов" "купонов"
                     sendText chatId
-                        "Нельзя взять больше 4 купонов одновременно. Сначала верни или отметь использованным один из купонов."
+                        $"Нельзя взять больше {n} {couponWord} одновременно. Сначала верни или отметь использованным один из купонов."
             | NotFoundOrNotAvailable ->
                 do! sendText chatId $"Купон ID:{couponId} уже взят или не существует."
             | Taken coupon ->
@@ -338,7 +340,7 @@ type BotService(
             if taken.Length = 0 then
                 do! sendText chatId $"{todayStr}\n\nМои купоны:\n—"
             else
-                let shown = taken |> Array.truncate 4
+                let shown = taken |> Array.truncate botConfig.MaxTakenCoupons
 
                 // 1) Album message with photos only (1..4)
                 let media =
