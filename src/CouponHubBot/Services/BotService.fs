@@ -28,6 +28,38 @@ type BotService(
     let sendText (chatId: int64) (text: string) =
         botClient.SendMessage(ChatId chatId, text) |> taskIgnore
 
+    let formatEventHistoryTable (rows: CouponEventHistoryRow array) =
+        let headers = [| "date"; "user"; "event_type" |]
+        let widths =
+            headers |> Array.mapi (fun i h ->
+                rows |> Array.fold (fun mx r ->
+                    let v = match i with | 0 -> r.date | 1 -> r.user | _ -> r.event_type
+                    max mx v.Length) h.Length)
+        let sep = "+" + (widths |> Array.map (fun w -> String('-', w)) |> String.concat "+") + "+"
+        let fmtRow vals =
+            "|" + (Array.zip widths vals |> Array.map (fun (w, v: string) -> v.PadRight(w)) |> String.concat "|") + "|"
+        let lines = [
+            sep
+            fmtRow headers
+            sep
+            yield! rows |> Array.map (fun r -> fmtRow [| r.date; r.user; r.event_type |])
+            sep
+        ]
+        String.concat "\n" lines
+
+    let handleDebug (userId: int64) (chatId: int64) (couponId: int) =
+        task {
+            if botConfig.FeedbackAdminIds |> Array.contains userId then
+                let! rows = db.GetCouponEventHistory(couponId)
+                if rows.Length = 0 then
+                    do! sendText chatId $"Нет событий для купона #{couponId}"
+                else
+                    let table = formatEventHistoryTable rows
+                    let html = $"<pre>{table}</pre>"
+                    do! botClient.SendMessage(ChatId chatId, html, parseMode = ParseMode.Html) |> taskIgnore
+            // else silently ignore for non-admins
+        }
+
     /// Short Russian ordinal form used in UI: 1ый, 2ой, 3ий, 4ый, ...
     let formatOrdinalShort (n: int) =
         let suffix =
@@ -966,6 +998,10 @@ type BotService(
                     | None -> do! sendText msg.Chat.Id "Формат: /return <id>"
                 | t when not (isNull t) && (t.StartsWith("/add ") || t.StartsWith("/a ")) ->
                     do! sendText msg.Chat.Id "Для ручного добавления пришли фото с подписью: /add <discount> <min_check> <date>"
+                | t when not (isNull t) && t.StartsWith("/debug ") ->
+                    match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
+                    | Some couponId -> do! handleDebug msg.From.Id msg.Chat.Id couponId
+                    | None -> ()
                 | _ ->
                     if msg.Photo <> null && msg.Photo.Length > 0 && not (isNull msg.Caption) && (msg.Caption.StartsWith("/add") || msg.Caption.StartsWith("/a")) then
                         do! handleAddManual user msg
