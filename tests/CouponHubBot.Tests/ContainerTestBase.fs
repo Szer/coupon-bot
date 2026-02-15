@@ -170,6 +170,25 @@ type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(80, fun s -> s.WithTimeout(TimeSpan.FromMinutes(2.0)) |> ignore))
             .Build()
 
+    let mutable testArtifactsDir: string = null
+
+    let dumpContainerLogs (containerName: string) (container: DotNet.Testcontainers.Containers.IContainer) =
+        task {
+            try
+                let! (stdout, stderr) = container.GetLogsAsync()
+                let dir = testArtifactsDir
+                if not (isNull dir) then
+                    Directory.CreateDirectory(dir) |> ignore
+                    let path = Path.Combine(dir, $"{containerName}.log")
+                    let content =
+                        $"=== STDOUT ===\n{stdout}\n=== STDERR ===\n{stderr}\n"
+                    File.WriteAllText(path, content)
+                return (stdout, stderr)
+            with ex ->
+                eprintfn $"Failed to get logs for {containerName}: {ex.Message}"
+                return ("", "")
+        }
+
     let seedDb () =
         task {
             use conn = new NpgsqlConnection(publicConnectionString)
@@ -199,60 +218,100 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
 
     interface IAsyncLifetime with
         member _.InitializeAsync() =
-            task {
-                do! dbContainer.StartAsync()
+            ValueTask(
+                task {
+                    // Set up test artifacts directory for container logs
+                    let fixtureName = if ocrEnabled then "OcrCouponHubTestContainers" else "DefaultCouponHubTestContainers"
+                    testArtifactsDir <- Path.Combine(solutionDirPath, "test-artifacts", fixtureName)
 
-                publicConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;"
-                adminConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=admin;Password=admin;Include Error Detail=true;"
-                
-                // init schema/user/db
-                let initSql = File.ReadAllText(Path.Combine(solutionDirPath, "init.sql"))
-                let! initResult = dbContainer.ExecScriptAsync(initSql)
-                if initResult.Stderr <> "" then failwith initResult.Stderr
+                    do! dbContainer.StartAsync()
 
-                // run migrations
-                do! flywayContainer.StartAsync()
+                    publicConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;"
+                    adminConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=admin;Password=admin;Include Error Detail=true;"
+                    
+                    // init schema/user/db
+                    let initSql = File.ReadAllText(Path.Combine(solutionDirPath, "init.sql"))
+                    let! initResult = dbContainer.ExecScriptAsync(initSql)
+                    if initResult.Stderr <> "" then failwith initResult.Stderr
 
-                // seed if needed (after migrations)
-                do! seedDb ()
+                    // run migrations
+                    do! flywayContainer.StartAsync()
 
-                // build images & start fake + bot
-                let fakeImageTask = fakeImage.CreateAsync()
-                let fakeAzureImageTask =
-                    if ocrEnabled then fakeAzureImage.CreateAsync() else Task.CompletedTask
-                let botImageTask = botImage.CreateAsync()
-                do! Task.WhenAll(fakeImageTask, fakeAzureImageTask, botImageTask)
-                
-                do! fakeContainer.StartAsync()
-                if ocrEnabled then
-                    do! fakeAzureContainer.StartAsync()
-                do! botContainer.StartAsync()
-                
-                // Important: mapped ports are accessible from host via 127.0.0.1, not via container network aliases.
-                botHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{botContainer.GetMappedPublicPort(80)}"))
-                // Give webhook enough time; Telegram API calls inside bot will timeout faster (2s).
-                botHttp.Timeout <- TimeSpan.FromSeconds(15.0)
-                botHttp.DefaultRequestHeaders.Add("X-Telegram-Bot-Api-Secret-Token", secret)
+                    // seed if needed (after migrations)
+                    do! seedDb ()
 
-                fakeHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{fakeContainer.GetMappedPublicPort(8080)}"))
-                fakeHttp.Timeout <- TimeSpan.FromSeconds(5.0)
-                if ocrEnabled then
-                    fakeAzureHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{fakeAzureContainer.GetMappedPublicPort(8081)}"))
-                    fakeAzureHttp.Timeout <- TimeSpan.FromSeconds(5.0)
-            }
+                    // build images & start fake + bot
+                    let fakeImageTask = fakeImage.CreateAsync()
+                    let fakeAzureImageTask =
+                        if ocrEnabled then fakeAzureImage.CreateAsync() else Task.CompletedTask
+                    let botImageTask = botImage.CreateAsync()
+                    do! Task.WhenAll(fakeImageTask, fakeAzureImageTask, botImageTask)
+                    
+                    do! fakeContainer.StartAsync()
+                    if ocrEnabled then
+                        do! fakeAzureContainer.StartAsync()
+                    do! botContainer.StartAsync()
+                    
+                    // Important: mapped ports are accessible from host via 127.0.0.1, not via container network aliases.
+                    botHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{botContainer.GetMappedPublicPort(80)}"))
+                    // Give webhook enough time; Telegram API calls inside bot will timeout faster (2s).
+                    botHttp.Timeout <- TimeSpan.FromSeconds(15.0)
+                    botHttp.DefaultRequestHeaders.Add("X-Telegram-Bot-Api-Secret-Token", secret)
+
+                    fakeHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{fakeContainer.GetMappedPublicPort(8080)}"))
+                    fakeHttp.Timeout <- TimeSpan.FromSeconds(5.0)
+                    if ocrEnabled then
+                        fakeAzureHttp <- new HttpClient(BaseAddress = Uri($"http://127.0.0.1:{fakeAzureContainer.GetMappedPublicPort(8081)}"))
+                        fakeAzureHttp.Timeout <- TimeSpan.FromSeconds(5.0)
+                } :> Task)
 
         member _.DisposeAsync() =
-            task {
-                if not (isNull botHttp) then botHttp.Dispose()
-                if not (isNull fakeHttp) then fakeHttp.Dispose()
-                if not (isNull fakeAzureHttp) then fakeAzureHttp.Dispose()
-                do! botContainer.DisposeAsync()
-                do! fakeContainer.DisposeAsync()
-                if ocrEnabled then
-                    do! fakeAzureContainer.DisposeAsync()
-                do! flywayContainer.DisposeAsync()
-                do! dbContainer.DisposeAsync()
-            }
+            ValueTask(
+                task {
+                    // Dump container logs BEFORE stopping -- logs vanish after disposal.
+                    let! _ = dumpContainerLogs "bot" botContainer
+                    let! _ = dumpContainerLogs "fake-tg-api" fakeContainer
+                    if ocrEnabled then
+                        let! _ = dumpContainerLogs "fake-azure-ocr" fakeAzureContainer
+                        ()
+                    let! _ = dumpContainerLogs "flyway" flywayContainer
+                    let! _ = dumpContainerLogs "postgres" dbContainer
+
+                    if not (isNull botHttp) then botHttp.Dispose()
+                    if not (isNull fakeHttp) then fakeHttp.Dispose()
+                    if not (isNull fakeAzureHttp) then fakeAzureHttp.Dispose()
+                    do! botContainer.DisposeAsync()
+                    do! fakeContainer.DisposeAsync()
+                    if ocrEnabled then
+                        do! fakeAzureContainer.DisposeAsync()
+                    do! flywayContainer.DisposeAsync()
+                    do! dbContainer.DisposeAsync()
+                } :> Task)
+
+    /// Get stdout+stderr logs from the bot container (useful for debugging test failures).
+    member _.GetBotLogs() =
+        task {
+            let! (stdout, stderr) = botContainer.GetLogsAsync()
+            return $"=== STDOUT ===\n{stdout}\n=== STDERR ===\n{stderr}"
+        }
+
+    /// Get logs from all containers as a single string (useful for debugging test failures).
+    member _.GetAllLogs() =
+        task {
+            let sb = System.Text.StringBuilder()
+            for (name, container) in
+                [ "bot", botContainer
+                  "fake-tg-api", fakeContainer
+                  "postgres", dbContainer ] do
+                let! (stdout, stderr) = container.GetLogsAsync()
+                sb.AppendLine($"=== {name} STDOUT ===").AppendLine(stdout) |> ignore
+                sb.AppendLine($"=== {name} STDERR ===").AppendLine(stderr) |> ignore
+            if ocrEnabled then
+                let! (stdout, stderr) = fakeAzureContainer.GetLogsAsync()
+                sb.AppendLine("=== fake-azure-ocr STDOUT ===").AppendLine(stdout) |> ignore
+                sb.AppendLine("=== fake-azure-ocr STDERR ===").AppendLine(stderr) |> ignore
+            return sb.ToString()
+        }
 
     member _.CommunityChatId = communityChatId
     member _.Bot = botHttp

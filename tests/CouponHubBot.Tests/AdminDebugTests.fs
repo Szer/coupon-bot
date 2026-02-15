@@ -4,7 +4,6 @@ open System.Net
 open Dapper
 open Npgsql
 open Xunit
-open Xunit.Extensions.AssemblyFixture
 open FakeCallHelpers
 
 type AdminDebugTests(fixture: DefaultCouponHubTestContainers) =
@@ -67,4 +66,3 @@ type AdminDebugTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Contains("admin_debug", text)
         }
 
-    interface IAssemblyFixture<DefaultCouponHubTestContainers>
