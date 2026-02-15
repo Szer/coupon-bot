@@ -226,8 +226,8 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
 
                     do! dbContainer.StartAsync()
 
-                    publicConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;"
-                    adminConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=admin;Password=admin;Include Error Detail=true;"
+                    publicConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=coupon_hub_bot_service;Password=coupon_hub_bot_service;Include Error Detail=true;Timeout=120;Command Timeout=120;Keepalive=30;"
+                    adminConnectionString <- $"Server=127.0.0.1;Database=coupon_hub_bot;Port={dbContainer.GetMappedPublicPort(5432)};User Id=admin;Password=admin;Include Error Detail=true;Timeout=120;Command Timeout=120;Keepalive=30;"
                     
                     // init schema/user/db
                     let initSql = File.ReadAllText(Path.Combine(solutionDirPath, "init.sql"))
