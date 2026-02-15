@@ -19,6 +19,14 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             return! conn.QuerySingleAsync<int>(sql)
         }
 
+    let getLatestCouponIdForOwner (ownerId: int64) =
+        task {
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            //language=postgresql
+            let sql = "SELECT id FROM coupon WHERE owner_id = @owner_id ORDER BY id DESC LIMIT 1"
+            return! conn.QuerySingleAsync<int>(sql, {| owner_id = ownerId |})
+        }
+
     let getCouponCount () =
         fixture.QuerySingle<int64>("SELECT COUNT(*)::bigint FROM coupon", null)
 
@@ -1274,7 +1282,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
             let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
-            let! couponId = getLatestCouponId ()
+            let! couponId = getLatestCouponIdForOwner owner.Id
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
             do! fixture.ClearFakeCalls()
@@ -1297,7 +1305,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
             do! fixture.SetChatMemberStatus(taker.Id, "member")
 
             let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
-            let! couponId = getLatestCouponId ()
+            let! couponId = getLatestCouponIdForOwner owner.Id
             let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId}", taker))
 
             do! fixture.ClearFakeCalls()
