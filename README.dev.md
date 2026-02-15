@@ -43,7 +43,7 @@ Update `.env` with your values:
 ### 4. Test with HTTP Client
 
 Open `coupon-hub-bot.http` in Rider and send requests:
-- `GET /health` - health check
+- `GET /health` or `GET /healthz` - health check endpoints
 - `POST /bot` - send Telegram update (webhook)
 - `POST /test/run-reminder` - test-only endpoint (requires `TEST_MODE=true`)
   - можно передать `nowUtc=2026-01-19T08:00:00Z` как query parameter

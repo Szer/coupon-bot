@@ -7,6 +7,9 @@
 ### Health Check
 GET {{baseUrl}}/health
 
+### Health Check (alternative endpoint)
+GET {{baseUrl}}/healthz
+
 ### Send /start command (webhook) - equivalent to MembershipTests
 POST {{baseUrl}}/bot
 X-Telegram-Bot-Api-Secret-Token: {{authToken}}
