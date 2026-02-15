@@ -123,27 +123,33 @@ jobs:
         CONTAINER_NAME: coupon-bot
         READINESS_GRACE_PERIOD: "180"
 
-    - name: Create debugging issue on failure
-      if: failure()
+    - name: Disconnect VPN
+      if: always()
+      run: sudo wg-quick down wg0 || true
+
+  notify-failure:
+    needs: [deploy, verify-deploy]
+    if: failure()
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Create debugging issue
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
         gh issue create \
-          --title "Deploy verification failed for ${GITHUB_SHA:0:7}" \
+          --repo "${{ github.repository }}" \
+          --title "Deploy pipeline failed for ${GITHUB_SHA:0:7}" \
           --label "deploy-failure" \
           --assignee "@copilot" \
-          --body "## Deployment verification failed
+          --body "## Deploy pipeline failed
 
         **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         **Commit:** \`${{ github.sha }}\`
-        **Expected image tag:** \`${{ github.sha }}\`
 
-        The \`verify-deploy\` step failed. Use the \`deployment-debugging\` skill to investigate.
+        A job in the deploy pipeline failed. Use the \`deployment-debugging\` skill to investigate.
 
-        1. Read the workflow logs from the link above to identify which phase failed
-        2. Query ArgoCD, Loki, and Prometheus to find the root cause
-        3. Create a fix PR"
-
-    - name: Disconnect VPN
-      if: always()
-      run: sudo wg-quick down wg0 || true
+        1. Read the workflow logs from the link above to identify which job and step failed
+        2. If it was a test failure, check the container-logs artifact and fix the flaky test
+        3. If it was a deploy verification failure, query ArgoCD, Loki, and Prometheus
+        4. Create a fix PR"
