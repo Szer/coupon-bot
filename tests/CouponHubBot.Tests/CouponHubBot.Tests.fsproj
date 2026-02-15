@@ -18,6 +18,7 @@
     <Compile Include="CouponTests.fs" />
     <Compile Include="ReminderTests.fs" />
     <Compile Include="AdminDebugTests.fs" />
+    <Compile Include="HealthCheckTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

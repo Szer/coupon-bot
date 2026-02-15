@@ -8,3 +8,4 @@ TestResults
 *.trx
 test-artifacts/
 tmp/
+test-output.txt

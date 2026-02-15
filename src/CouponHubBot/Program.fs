@@ -166,6 +166,7 @@ let app = builder.Build()
 
 // Health check
 %app.MapGet("/health", Func<string>(fun () -> "OK"))
+%app.MapGet("/healthz", Func<string>(fun () -> "OK"))
 
 // Test-only hook to trigger reminder immediately
 %app.MapPost("/test/run-reminder", Func<HttpContext, Task<IResult>>(fun ctx ->
