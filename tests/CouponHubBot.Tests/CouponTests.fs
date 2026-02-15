@@ -1279,6 +1279,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmCallback($"used:{couponId}:del", taker))
+            do! Task.Delay(100)
 
             let! msgCalls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText msgCalls 281L "Отметил",
@@ -1302,6 +1303,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmCallback($"return:{couponId}:del", taker))
+            do! Task.Delay(100)
 
             let! msgCalls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText msgCalls 283L "Вернул",
