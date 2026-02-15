@@ -7,7 +7,6 @@ open System.Text.Json
 open System.Threading.Tasks
 open DotNet.Testcontainers.Configurations
 open Xunit
-open Xunit.Extensions.AssemblyFixture
 open FakeCallHelpers
 open DotNet.Testcontainers.Builders
 
@@ -392,5 +391,4 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             Assert.Equal(1L, count2)
         }
 
-    interface IAssemblyFixture<OcrCouponHubTestContainers>
 

@@ -2,7 +2,6 @@ namespace CouponHubBot.Tests
 
 open System.Net
 open Xunit
-open Xunit.Extensions.AssemblyFixture
 open FakeCallHelpers
 
 type MembershipTests(fixture: DefaultCouponHubTestContainers) =
@@ -39,5 +38,5 @@ type MembershipTests(fixture: DefaultCouponHubTestContainers) =
                 $"Expected DM to user 112 with '/add'. Got %d{calls.Length} calls")
         }
 
-    interface IAssemblyFixture<DefaultCouponHubTestContainers>
+
 

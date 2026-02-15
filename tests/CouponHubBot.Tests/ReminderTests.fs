@@ -7,7 +7,6 @@ open System.Text.Json
 open Dapper
 open Npgsql
 open Xunit
-open Xunit.Extensions.AssemblyFixture
 open FakeCallHelpers
 
 type ReminderTests(fixture: DefaultCouponHubTestContainers) =
@@ -139,4 +138,3 @@ ON CONFLICT (id) DO NOTHING;
             Assert.True(dmCallsToUser[0].Body.Contains("\"text\""), "Expected DM call to include text")
         }
 
-    interface IAssemblyFixture<DefaultCouponHubTestContainers>

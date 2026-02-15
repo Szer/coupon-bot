@@ -1,11 +1,9 @@
+namespace CouponHubBot.Tests
+
 open Xunit
-open Xunit.Extensions.AssemblyFixture
 
 [<assembly: CollectionBehavior(DisableTestParallelization = true)>]
-[<assembly: TestFramework(AssemblyFixtureFramework.TypeName, AssemblyFixtureFramework.AssemblyName)>]
+[<assembly: AssemblyFixture(typeof<DefaultCouponHubTestContainers>)>]
+[<assembly: AssemblyFixture(typeof<OcrCouponHubTestContainers>)>]
 do ()
-
-module Program =
-    [<EntryPoint>]
-    let main _ = 0
 

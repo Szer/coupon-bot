@@ -8,7 +8,6 @@ open System.Net.Http
 open System.Text
 open Microsoft.Extensions.Logging
 open Xunit
-open Xunit.Abstractions
 
 open CouponHubBot
 open CouponHubBot.Services

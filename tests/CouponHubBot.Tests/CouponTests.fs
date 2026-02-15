@@ -7,7 +7,6 @@ open System.Threading.Tasks
 open Dapper
 open Npgsql
 open Xunit
-open Xunit.Extensions.AssemblyFixture
 open FakeCallHelpers
 
 type CouponTests(fixture: DefaultCouponHubTestContainers) =
@@ -1589,5 +1588,5 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 "Expected user confirmation after forwarding")
         }
 
-    interface IAssemblyFixture<DefaultCouponHubTestContainers>
+
 

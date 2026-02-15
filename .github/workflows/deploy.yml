@@ -38,6 +38,13 @@ jobs:
       # Use always() to always run this step to publish test results when there are test failures
       if: ${{ always() }}
 
+    - name: Upload container logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: container-logs
+        path: test-artifacts/
+      if: ${{ always() }}
+
     - name: Setup WireGuard VPN
       run: |
         sudo apt-get update && sudo apt-get install -y wireguard resolvconf
@@ -87,3 +94,56 @@ jobs:
         tags: ghcr.io/szer/coupon-bot:${{ github.sha }}, ghcr.io/szer/coupon-bot:latest
         file: ./Dockerfile
         platforms: linux/arm64
+
+  verify-deploy:
+    needs: deploy
+    runs-on: ubuntu-22.04-arm
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup WireGuard VPN
+      run: |
+        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
+        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
+        sudo chmod 600 /etc/wireguard/wg0.conf
+        sudo wg-quick up wg0
+        sudo wg show
+
+    - name: Verify deployment
+      run: ./scripts/verify-deploy.sh
+      env:
+        ARGOCD_URL: http://argo.internal
+        LOKI_URL: http://loki.internal
+        PROMETHEUS_URL: http://prometheus.internal:9090
+        EXPECTED_IMAGE_TAG: ${{ github.sha }}
+        ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        ARGOCD_APP_NAME: coupon-bot
+        CONTAINER_NAME: coupon-bot
+        READINESS_GRACE_PERIOD: "180"
+
+    - name: Create debugging issue on failure
+      if: failure()
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        gh issue create \
+          --title "Deploy verification failed for ${GITHUB_SHA:0:7}" \
+          --label "deploy-failure" \
+          --assignee "@copilot" \
+          --body "## Deployment verification failed
+
+        **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        **Commit:** \`${{ github.sha }}\`
+        **Expected image tag:** \`${{ github.sha }}\`
+
+        The \`verify-deploy\` step failed. Use the \`deployment-debugging\` skill to investigate.
+
+        1. Read the workflow logs from the link above to identify which phase failed
+        2. Query ArgoCD, Loki, and Prometheus to find the root cause
+        3. Create a fix PR"
+
+    - name: Disconnect VPN
+      if: always()
+      run: sudo wg-quick down wg0 || true
