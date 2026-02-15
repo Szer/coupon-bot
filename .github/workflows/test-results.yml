@@ -7,6 +7,10 @@ on:
     types:
       - completed
 
+permissions:
+  checks: write
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
