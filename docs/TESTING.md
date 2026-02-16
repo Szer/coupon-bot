@@ -1,5 +1,10 @@
 # Testing
 
+## ⚠️ Agent Environment
+
+**Copilot coding agent must NOT run `dotnet test`.**
+Docker-based E2E tests require significant resources and will hang/timeout on the agent's GitHub-hosted runner. Use `dotnet build -c Release` to verify compilation only. The PR CI workflow (`build.yml`) runs the full test suite on proper runners automatically.
+
 ## Docker Suite (Testcontainers)
 
 E2E tests live in `tests/CouponHubBot.Tests/`. They use Testcontainers to spin up:
