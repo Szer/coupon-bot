@@ -18,8 +18,8 @@ Read [AGENTS.md](../AGENTS.md) first — it is the table of contents for all pro
 
 1. Create a feature branch from `main`
 2. Make changes following the patterns in `docs/`
-3. Run `dotnet test -c Release` to verify (requires Docker)
-4. If tests fail, check `test-artifacts/` for container logs
+3. Run `dotnet build -c Release` to verify compilation
+4. **Do NOT run `dotnet test`** — Docker-based E2E tests will timeout in the agent environment. The PR CI workflow (`build.yml`) runs tests automatically on push.
 5. Create a PR referencing the issue number
 
 ## Debugging Deployment Failures

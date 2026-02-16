@@ -54,9 +54,10 @@ The agent has VPN access to `*.internal` hosts (established by `copilot-setup-st
 
 1. Read relevant `docs/` file for the domain you're changing
 2. Write/update E2E tests in `tests/CouponHubBot.Tests/`
-3. Run `dotnet test -c Release` locally (requires Docker)
-4. If adding a new table, add migration in `src/migrations/` with GRANT
-5. Update the relevant `docs/` file if behavior changed
+3. Run `dotnet build -c Release` to verify compilation
+4. **Do NOT run `dotnet test`** — Docker-based E2E tests will timeout in the agent environment. The PR CI workflow (`build.yml`) runs tests automatically on proper runners.
+5. If adding a new table, add migration in `src/migrations/` with GRANT
+6. Update the relevant `docs/` file if behavior changed
 
 ## When Debugging a Test Failure
 
