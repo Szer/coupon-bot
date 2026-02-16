@@ -29,6 +29,21 @@ AUTH_HEADER="Authorization: Bearer ${ARGOCD_AUTH_TOKEN}"
 
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
+# summary() appends markdown to GitHub Actions Job Summary
+# Falls back to /dev/null when GITHUB_STEP_SUMMARY is not set (local runs)
+summary() {
+    local summary_file="${GITHUB_STEP_SUMMARY:-/dev/null}"
+    echo "$@" >> "$summary_file"
+}
+
+# Initialize summary
+summary "## 🚀 Deployment Verification"
+summary ""
+summary "**App:** \`${APP_NAME}\`  "
+summary "**Expected Image Tag:** \`${EXPECTED_IMAGE_TAG:0:12}...\`  "
+summary "**Started:** $(date -u +%Y-%m-%d\ %H:%M:%S) UTC"
+summary ""
+
 # ─── Phase 1: Wait for ArgoCD to sync with expected image tag ────────────────
 
 log "Phase 1: Waiting for ArgoCD sync (app=${APP_NAME}, expected tag contains ${EXPECTED_IMAGE_TAG:0:12}...)"
@@ -49,6 +64,11 @@ while [ "$elapsed" -lt "$SYNC_TIMEOUT" ]; do
 
     if [ "$SYNC_STATUS" = "Synced" ] && [ "$IMAGE_MATCH" -gt 0 ]; then
         log "Phase 1 PASSED: Image tag found, sync status is Synced."
+        summary "### ✅ Phase 1: ArgoCD Sync"
+        summary "- **Status:** Synced"
+        summary "- **Image Tag Match:** Yes"
+        summary "- **Elapsed Time:** ${elapsed}s"
+        summary ""
         break
     fi
 
@@ -56,6 +76,13 @@ while [ "$elapsed" -lt "$SYNC_TIMEOUT" ]; do
         log "FAILED: Timed out waiting for ArgoCD sync after ${SYNC_TIMEOUT}s"
         log "  Last sync status: ${SYNC_STATUS}"
         log "  Running images: ${IMAGES}"
+        summary "### ❌ Phase 1: ArgoCD Sync FAILED"
+        summary "- **Reason:** Timeout after ${SYNC_TIMEOUT}s"
+        summary "- **Last Sync Status:** \`${SYNC_STATUS}\`"
+        summary "- **Running Images:**"
+        summary "\`\`\`"
+        summary "${IMAGES}"
+        summary "\`\`\`"
         exit 1
     fi
 
@@ -80,6 +107,10 @@ while [ "$grace_elapsed" -lt "$GRACE" ]; do
 
     if [ "$HEALTH" = "Healthy" ]; then
         log "Phase 2 PASSED: Pod is healthy (before grace period expired)."
+        summary "### ✅ Phase 2: Readiness Check"
+        summary "- **Health Status:** Healthy"
+        summary "- **Time to Healthy:** ${grace_elapsed}s (within ${GRACE}s grace period)"
+        summary ""
         healthy=true
         break
     fi
@@ -98,9 +129,20 @@ if [ "$healthy" = false ]; then
         log "FAILED: Pod is not healthy after ${GRACE}s grace period. Health: ${HEALTH}"
         CONDITIONS=$(echo "$RESPONSE" | jq '.status.conditions // []')
         log "  Conditions: ${CONDITIONS}"
+        summary "### ❌ Phase 2: Readiness Check FAILED"
+        summary "- **Health Status:** \`${HEALTH}\`"
+        summary "- **Grace Period:** ${GRACE}s (expired)"
+        summary "- **Conditions:**"
+        summary "\`\`\`json"
+        summary "${CONDITIONS}"
+        summary "\`\`\`"
         exit 1
     fi
     log "Phase 2 PASSED: Pod became healthy at the end of the grace period."
+    summary "### ✅ Phase 2: Readiness Check"
+    summary "- **Health Status:** Healthy"
+    summary "- **Time to Healthy:** ${GRACE}s (at end of grace period)"
+    summary ""
 fi
 
 # ─── Phase 3: Verify logs and metrics ────────────────────────────────────────
@@ -122,6 +164,14 @@ if [ "$ERROR_COUNT" -gt 0 ]; then
     log "WARNING: Found ${ERROR_COUNT} error-level log entries after deployment:"
     echo "$LOKI_RESPONSE" | jq -r '.data.result[].values[] | .[1]' | head -10
     log "FAILED: Error logs detected after deployment."
+    summary "### ❌ Phase 3: Log & Metrics Check FAILED"
+    summary "- **Loki Errors:** ${ERROR_COUNT} error-level entries found"
+    summary "- **Sample Errors:**"
+    summary "\`\`\`"
+    echo "$LOKI_RESPONSE" | jq -r '.data.result[].values[] | .[1]' | head -10 | while IFS= read -r line; do
+        summary "$line"
+    done
+    summary "\`\`\`"
     exit 1
 fi
 log "  Loki: no error-level logs found."
@@ -146,8 +196,17 @@ log "  Prometheus: restarts=${RESTART_COUNT}, 5xx_rate=${ERROR_5XX_RATE}"
 # For a fresh deployment, a single restart might be acceptable.
 if [ "$(echo "$ERROR_5XX_RATE > 0" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
     log "FAILED: 5xx error rate is non-zero: ${ERROR_5XX_RATE}"
+    summary "### ❌ Phase 3: Log & Metrics Check FAILED"
+    summary "- **5xx Error Rate:** ${ERROR_5XX_RATE} (expected: 0)"
+    summary "- **Container Restarts:** ${RESTART_COUNT}"
     exit 1
 fi
+
+summary "### ✅ Phase 3: Log & Metrics Check"
+summary "- **Loki Errors:** 0"
+summary "- **5xx Error Rate:** ${ERROR_5XX_RATE}"
+summary "- **Container Restarts:** ${RESTART_COUNT}"
+summary ""
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
@@ -156,4 +215,19 @@ log "  App: ${APP_NAME}"
 log "  Image tag: ${EXPECTED_IMAGE_TAG:0:12}..."
 log "  Sync: Synced, Health: Healthy"
 log "  Loki errors: 0, 5xx rate: ${ERROR_5XX_RATE}"
+
+summary "---"
+summary ""
+summary "## ✅ Deployment Verification Complete"
+summary ""
+summary "| Check | Status | Details |"
+summary "|-------|--------|---------|"
+summary "| ArgoCD Sync | ✅ Passed | Synced with tag \`${EXPECTED_IMAGE_TAG:0:12}...\` |"
+summary "| Pod Health | ✅ Passed | Healthy |"
+summary "| Loki Errors | ✅ Passed | 0 error-level logs |"
+summary "| 5xx Error Rate | ✅ Passed | ${ERROR_5XX_RATE} |"
+summary "| Container Restarts | ✅ Info | ${RESTART_COUNT} |"
+summary ""
+summary "**Completed:** $(date -u +%Y-%m-%d\ %H:%M:%S) UTC"
+
 exit 0
