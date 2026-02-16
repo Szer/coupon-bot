@@ -224,4 +224,54 @@ VALUES
             Assert.Equal(0, dmCallsToUser702.Length)
         }
 
+    [<Fact>]
+    let ``User who used late at night and added next day does not get reminder`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (703,'u703','U703',NOW(),NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- Coupons for seeding events
+INSERT INTO coupon(id, owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES
+  (9301,703,'p-9301',10.00,50.00,'2026-02-01','used'),
+  (9302,703,'p-9302',10.00,50.00,'2026-02-01','available')
+ON CONFLICT (id) DO NOTHING;
+
+-- User used a coupon at 23:30 yesterday, then added a coupon at 01:30 today
+INSERT INTO coupon_event(coupon_id, user_id, event_type, created_at)
+VALUES
+  (9301,703,'used','2026-01-18T23:30:00Z'),
+  (9302,703,'added','2026-01-19T01:30:00Z');
+"""
+                )
+                :> Task
+
+            // Run reminder for 2026-01-19 at 08:00 (yesterday = 2026-01-18)
+            use body = new StringContent("", Encoding.UTF8, "application/json")
+            let! resp = fixture.Bot.PostAsync("/test/run-reminder?nowUtc=2026-01-19T08:00:00Z", body)
+            if not resp.IsSuccessStatusCode then
+                let! text = resp.Content.ReadAsStringAsync()
+                failwith $"Expected 2xx from /test/run-reminder, got {resp.StatusCode}. Body: {text}"
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            
+            // User 703 should NOT receive the add-coupon reminder because they added after using
+            let dmCallsToUser703 =
+                calls
+                |> Array.filter (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p -> p.ChatId = Some 703L && p.Text = Some "Не забудь добавить купоны в бота"
+                    | _ -> false)
+
+            Assert.Equal(0, dmCallsToUser703.Length)
+        }
+
+
 

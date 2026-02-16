@@ -468,19 +468,23 @@ ORDER BY count DESC, e.user_id;
             //language=postgresql
             let sql =
                 """
-SELECT DISTINCT user_id
-FROM coupon_event
-WHERE event_type = 'used'
-  AND created_at >= @yesterday_start
-  AND created_at < @yesterday_end
-  AND user_id NOT IN (
-    SELECT user_id
+SELECT DISTINCT u.user_id
+FROM (
+    SELECT user_id, MAX(created_at) AS last_used_at
     FROM coupon_event
-    WHERE event_type = 'added'
+    WHERE event_type = 'used'
       AND created_at >= @yesterday_start
       AND created_at < @yesterday_end
-  )
-ORDER BY user_id;
+    GROUP BY user_id
+) u
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM coupon_event e
+    WHERE e.user_id = u.user_id
+      AND e.event_type = 'added'
+      AND e.created_at > u.last_used_at
+)
+ORDER BY u.user_id;
 """
             let! userIds =
                 conn.QueryAsync<int64>(
