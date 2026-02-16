@@ -457,6 +457,44 @@ ORDER BY count DESC, e.user_id;
             return rows |> Seq.toArray
         }
 
+    member _.GetUsersWhoUsedButDidNotAddYesterday(nowUtc: DateTime) =
+        task {
+            use! conn = openConn()
+            // Calculate yesterday's date range in UTC
+            let today = DateTime(nowUtc.Year, nowUtc.Month, nowUtc.Day, 0, 0, 0, DateTimeKind.Utc)
+            let yesterdayStart = today.AddDays(-1.0)
+            let yesterdayEnd = today
+            
+            //language=postgresql
+            let sql =
+                """
+SELECT DISTINCT u.user_id
+FROM (
+    SELECT user_id, MAX(created_at) AS last_used_at
+    FROM coupon_event
+    WHERE event_type = 'used'
+      AND created_at >= @yesterday_start
+      AND created_at < @yesterday_end
+    GROUP BY user_id
+) u
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM coupon_event e
+    WHERE e.user_id = u.user_id
+      AND e.event_type = 'added'
+      AND e.created_at > u.last_used_at
+)
+ORDER BY u.user_id;
+"""
+            let! userIds =
+                conn.QueryAsync<int64>(
+                    sql,
+                    {| yesterday_start = yesterdayStart
+                       yesterday_end = yesterdayEnd |}
+                )
+            return userIds |> Seq.toArray
+        }
+
     member _.GetPendingAddFlow(userId: int64) =
         task {
             use! conn = openConn()

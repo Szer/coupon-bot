@@ -100,6 +100,17 @@ type ReminderService(
                 with ex ->
                     logger.LogWarning(ex, "Failed to send overdue-taken reminder to {UserId}", r.user_id)
 
+            // DM reminder: user used coupon yesterday but did not add any coupon on the same day.
+            // One message per user.
+            let! usersWhoUsedButDidNotAdd = db.GetUsersWhoUsedButDidNotAddYesterday(nowUtc)
+            for userId in usersWhoUsedButDidNotAdd do
+                try
+                    let text = "Не забудь добавить купоны в бота"
+                    do! botClient.SendMessage(ChatId userId, text) :> Task
+                    anySent <- true
+                with ex ->
+                    logger.LogWarning(ex, "Failed to send add-coupon reminder to {UserId}", userId)
+
             return anySent
         }
 
