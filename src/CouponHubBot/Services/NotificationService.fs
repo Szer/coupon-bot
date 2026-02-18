@@ -40,42 +40,31 @@ type TelegramNotificationService(
         task {
             let! ownerOpt = db.GetUserById(coupon.owner_id)
             let owner = match ownerOpt with | Some o -> o | None -> { id = coupon.owner_id; username = null; first_name = null; last_name = null; created_at = time.GetUtcNow().UtcDateTime; updated_at = time.GetUtcNow().UtcDateTime }
-            let appIcon = if coupon.is_app_coupon then "📱 " else ""
             let v, mc, d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser owner} добавил(а) {appIcon}купон на {v}€ из {mc}€ сроком {d}"
+            do! sendToGroup $"{formatUser owner} добавил(а) купон на {v}€ из {mc}€ сроком {d}"
         }
 
     member _.CouponTaken(coupon, taker) =
         task {
             let! ownerOpt = db.GetUserById(coupon.owner_id)
-            let appIcon = if coupon.is_app_coupon then "📱 " else ""
             let v, mc, d = fmtCoupon coupon
             match ownerOpt with
             | Some owner ->
-                do! sendToGroup $"{formatUser taker} взял(а) {appIcon}купон на {v}€ из {mc}€ сроком {d} от {formatUser owner}"
+                do! sendToGroup $"{formatUser taker} взял(а) купон на {v}€ из {mc}€ сроком {d} от {formatUser owner}"
             | None ->
-                do! sendToGroup $"{formatUser taker} взял(а) {appIcon}купон на {v}€ из {mc}€ сроком {d}"
+                do! sendToGroup $"{formatUser taker} взял(а) купон на {v}€ из {mc}€ сроком {d}"
         }
 
     member _.CouponUsed(coupon, user) =
         task {
-            let appIcon = if coupon.is_app_coupon then "📱 " else ""
             let v, mc, _d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser user} использовал(а) {appIcon}купон на {v}€ из {mc}€"
+            do! sendToGroup $"{formatUser user} использовал(а) купон на {v}€ из {mc}€"
         }
 
     member _.CouponReturned(coupon, user) =
         task {
-            let appIcon = if coupon.is_app_coupon then "📱 " else ""
             let v, mc, d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser user} вернул(а) {appIcon}купон на {v}€ из {mc}€ (срок {d}) в общий доступ"
-        }
-
-    member _.CouponVoided(coupon: Coupon, voidedBy: DbUser) =
-        task {
-            let appIcon = if coupon.is_app_coupon then "📱 " else ""
-            let v, mc, d = fmtCoupon coupon
-            do! sendToGroup $"{formatUser voidedBy} аннулировал(а) {appIcon}купон на {v}€ из {mc}€ (срок {d})"
+            do! sendToGroup $"{formatUser user} вернул(а) купон на {v}€ из {mc}€ (срок {d}) в общий доступ"
         }
 
     member _.NotifyTakerCouponVoided(takerUserId: int64, coupon: Coupon) =

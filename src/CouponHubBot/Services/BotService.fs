@@ -469,7 +469,6 @@ type BotService(
             | VoidCouponResult.Voided (coupon, takenBy) ->
                 let appIcon = if coupon.is_app_coupon then "📱 " else ""
                 do! sendText chatId $"{appIcon}Купон ID:{couponId} аннулирован."
-                do! notifications.CouponVoided(coupon, user)
                 match takenBy with
                 | Some takerId ->
                     do! notifications.NotifyTakerCouponVoided(takerId, coupon)

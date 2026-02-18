@@ -250,3 +250,68 @@ type VoidFlowTests(fixture: DefaultCouponHubTestContainers) =
             Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("myAdded")),
                 "Expected myAdded callback button in /my response")
         }
+
+    [<Fact>]
+    let ``Admin can void any available coupon via /void`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let owner = Tg.user(id = 713L, username = "void_adm_owner", firstName = "Owner")
+            // Admin user ID 900 is configured in FEEDBACK_ADMINS
+            let admin = Tg.user(id = 900L, username = "admin_void", firstName = "Admin")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(admin.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+
+            do! fixture.ClearFakeCalls()
+            let! resp = fixture.SendUpdate(Tg.dmMessage($"/void {couponId}", admin))
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls admin.Id "аннулирован",
+                "Expected admin to see confirmation that coupon was voided")
+
+            let! status = getCouponStatus couponId
+            Assert.Equal("voided", status)
+        }
+
+    [<Fact>]
+    let ``/added shows only non-expired coupons`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let owner = Tg.user(id = 714L, username = "added_exp", firstName = "AddedExp")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+
+            // Add a future coupon (will be visible)
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
+            let! futureCouponId = getLatestCouponId ()
+
+            // Manually insert an expired coupon directly in DB
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do! conn.OpenAsync()
+            //language=postgresql
+            let insertExpired =
+                """
+INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, 5.00, 25.00, '2025-12-01'::date, 'available');
+"""
+            let! _ = conn.ExecuteAsync(insertExpired, {| owner_id = owner.Id; photo_file_id = "expired-photo-added" |})
+
+            do! fixture.ClearFakeCalls()
+            let! resp = fixture.SendUpdate(Tg.dmMessage("/added", owner))
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            // Should show the future coupon
+            Assert.True(findCallWithText calls owner.Id "Мои добавленные купоны",
+                "Expected /added listing message")
+            // Should contain the future coupon ID
+            Assert.True(findCallWithText calls owner.Id (string futureCouponId),
+                "Expected future coupon to be listed")
+            // Should NOT contain the expired coupon (5€/25€ dated Dec 2025)
+            Assert.False(findCallWithText calls owner.Id "5€",
+                "Expected expired coupon NOT to be listed in /added")
+        }
