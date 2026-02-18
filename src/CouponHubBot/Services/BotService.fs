@@ -701,17 +701,28 @@ type BotService(
         botClient.SendMessage(ChatId chatId, "Выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):", replyMarkup = addWizardDateKeyboard())
         |> taskIgnore
 
-    let handleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) =
+    let handleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) (isAppCoupon: bool) =
         let v = value.ToString("0.##")
         let mc = minCheck.ToString("0.##")
         let d = formatUiDate expiresAt
         let barcodeStr =
             if String.IsNullOrWhiteSpace barcodeText then ""
             else $", штрихкод: {barcodeText}"
+        let typeStr = if isAppCoupon then "📱 Купон из приложения" else "🧾 Физический купон"
+        let toggleLabel = if isAppCoupon then "🧾 Физический купон" else "📱 Купон из приложения"
+        let kb =
+            seq {
+                seq { InlineKeyboardButton.WithCallbackData(toggleLabel, "addflow:toggleapp") }
+                seq {
+                    InlineKeyboardButton.WithCallbackData("✅ Добавить", "addflow:confirm")
+                    InlineKeyboardButton.WithCallbackData("↩️ Отмена", "addflow:cancel")
+                }
+            }
+            |> InlineKeyboardMarkup
         botClient.SendMessage(
             ChatId chatId,
-            $"Подтвердить добавление купона: {v}€ из {mc}€, до {d}{barcodeStr}?",
-            replyMarkup = addWizardConfirmKeyboard()
+            $"Подтвердить добавление купона: {v}€ из {mc}€, до {d}{barcodeStr}?\n{typeStr}",
+            replyMarkup = kb
         )
         |> taskIgnore
 
@@ -780,7 +791,7 @@ type BotService(
                                                 min_check = Nullable(mc)
                                                 updated_at = time.GetUtcNow().UtcDateTime }
                                         do! db.UpsertPendingAddFlow next
-                                        do! handleAddWizardSendConfirm cq.Message.Chat.Id v mc flow.expires_at.Value flow.barcode_text
+                                        do! handleAddWizardSendConfirm cq.Message.Chat.Id v mc flow.expires_at.Value flow.barcode_text flow.is_app_coupon
                                     else
                                         let next =
                                             { flow with
@@ -803,7 +814,7 @@ type BotService(
                                         expires_at = Nullable(expiresAt)
                                         updated_at = time.GetUtcNow().UtcDateTime }
                                 do! db.UpsertPendingAddFlow next
-                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
+                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text flow.is_app_coupon
                             else
                                 do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                         | "addflow:date:tomorrow" ->
@@ -815,7 +826,7 @@ type BotService(
                                         expires_at = Nullable(expiresAt)
                                         updated_at = time.GetUtcNow().UtcDateTime }
                                 do! db.UpsertPendingAddFlow next
-                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
+                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text flow.is_app_coupon
                             else
                                 do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                         | "addflow:ocr:yes" ->
@@ -902,6 +913,13 @@ type BotService(
                                     do! sendText cq.Message.Chat.Id $"Купон с таким штрихкодом уже есть в базе и ещё не истёк. Уже есть купон ID:{existingId}. Начни заново: /add"
                             else
                                 do! sendText cq.Message.Chat.Id "Не хватает данных для добавления. Начни заново: /add"
+                        | "addflow:toggleapp" ->
+                            let toggled = { flow with is_app_coupon = not flow.is_app_coupon; updated_at = time.GetUtcNow().UtcDateTime }
+                            do! db.UpsertPendingAddFlow toggled
+                            if flow.value.HasValue && flow.min_check.HasValue && flow.expires_at.HasValue then
+                                do! handleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value flow.expires_at.Value flow.barcode_text toggled.is_app_coupon
+                            else
+                                do! sendText cq.Message.Chat.Id (if toggled.is_app_coupon then "📱 Установлен тип: купон из приложения." else "🧾 Установлен тип: физический купон.")
                         | "addflow:cancel" ->
                             do! db.ClearPendingAddFlow user.id
                             do! sendText cq.Message.Chat.Id "Ок, отменил добавление купона."
@@ -1022,7 +1040,7 @@ type BotService(
                                                 min_check = Nullable(mc)
                                                 updated_at = time.GetUtcNow().UtcDateTime }
                                         )
-                                    do! handleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value flow.barcode_text
+                                    do! handleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value flow.barcode_text flow.is_app_coupon
                                 else
                                     do! db.UpsertPendingAddFlow(
                                             { flow with
@@ -1046,7 +1064,7 @@ type BotService(
                                         do! sendText msg.Chat.Id "Эта дата уже в прошлом. Нельзя добавить истёкший купон. Пришли дату заново."
                                     else
                                         do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_confirm"; expires_at = Nullable(expiresAt); updated_at = time.GetUtcNow().UtcDateTime })
-                                        do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
+                                        do! handleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text flow.is_app_coupon
                                 else
                                     handledAddFlow <- true
                                     do! sendText msg.Chat.Id "Сначала выбери скидку. Начни заново: /add"
