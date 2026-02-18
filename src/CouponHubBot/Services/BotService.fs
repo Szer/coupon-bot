@@ -639,10 +639,11 @@ type BotService(
                             let v = value.ToString("0.##")
                             let mc = minCheck.ToString("0.##")
                             let d = formatUiDate expiresAt
+                            let typeStr = if ocr.isAppCoupon then "\n📱 Купон из приложения" else "\n🧾 Физический купон"
                             do!
                                 botClient.SendMessage(
                                     ChatId chatId,
-                                    $"Я распознал: {v}€ из {mc}€, до {d}, штрихкод: {barcodeText}. Всё верно?",
+                                    $"Я распознал: {v}€ из {mc}€, до {d}, штрихкод: {barcodeText}. Всё верно?{typeStr}",
                                     replyMarkup = addWizardOcrKeyboard()
                                 )
                                 |> taskIgnore
