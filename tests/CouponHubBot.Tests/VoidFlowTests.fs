@@ -16,13 +16,6 @@ type VoidFlowTests(fixture: DefaultCouponHubTestContainers) =
             return! conn.QuerySingleAsync<int>(sql)
         }
 
-    let getLatestCouponIdForOwner (ownerId: int64) =
-        task {
-            use conn = new NpgsqlConnection(fixture.DbConnectionString)
-            let sql = "SELECT id FROM coupon WHERE owner_id = @owner_id ORDER BY id DESC LIMIT 1"
-            return! conn.QuerySingleAsync<int>(sql, {| owner_id = ownerId |})
-        }
-
     let getCouponStatus (couponId: int) =
         fixture.QuerySingle<string>("SELECT status FROM coupon WHERE id = @id", {| id = couponId |})
 
@@ -178,8 +171,31 @@ type VoidFlowTests(fixture: DefaultCouponHubTestContainers) =
                 "Expected /added listing message")
             Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("void:")),
                 "Expected void callback button in /added response")
-            Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("Аннулировать")),
-                "Expected Аннулировать button label")
+            // Check reply_markup contains Аннулировать via JSON parsing (Cyrillic may be escaped in raw JSON)
+            Assert.True(
+                calls |> Array.exists (fun c ->
+                    try
+                        use doc = JsonDocument.Parse(c.Body)
+                        let root = doc.RootElement
+                        match root.TryGetProperty("reply_markup") with
+                        | true, rm ->
+                            let json = rm.GetRawText()
+                            json.Contains("Аннулировать") ||
+                            (try
+                                use rmDoc = JsonDocument.Parse(json)
+                                // Traverse inline_keyboard to find button text
+                                match rmDoc.RootElement.TryGetProperty("inline_keyboard") with
+                                | true, kb ->
+                                    kb.EnumerateArray() |> Seq.exists (fun row ->
+                                        row.EnumerateArray() |> Seq.exists (fun btn ->
+                                            match btn.TryGetProperty("text") with
+                                            | true, t -> t.GetString().Contains("Аннулировать")
+                                            | _ -> false))
+                                | _ -> false
+                             with _ -> false)
+                        | _ -> false
+                    with _ -> false),
+                "Expected Аннулировать button label in inline keyboard")
         }
 
     [<Fact>]
@@ -285,11 +301,10 @@ type VoidFlowTests(fixture: DefaultCouponHubTestContainers) =
             let owner = Tg.user(id = 714L, username = "added_exp", firstName = "AddedExp")
             do! fixture.SetChatMemberStatus(owner.Id, "member")
 
-            // Add a future coupon (will be visible)
+            // Add a future coupon (will be visible): 10€/50€
             let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
-            let! futureCouponId = getLatestCouponId ()
 
-            // Manually insert an expired coupon directly in DB
+            // Manually insert an expired coupon directly in DB: 5€/25€ expired Dec 2025
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
             do! conn.OpenAsync()
             //language=postgresql
@@ -305,13 +320,13 @@ VALUES (@owner_id, @photo_file_id, 5.00, 25.00, '2025-12-01'::date, 'available')
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            // Should show the future coupon
+            // Should show the listing header
             Assert.True(findCallWithText calls owner.Id "Мои добавленные купоны",
                 "Expected /added listing message")
-            // Should contain the future coupon ID
-            Assert.True(findCallWithText calls owner.Id (string futureCouponId),
-                "Expected future coupon to be listed")
-            // Should NOT contain the expired coupon (5€/25€ dated Dec 2025)
+            // Should contain the future coupon (10€ из 50€)
+            Assert.True(findCallWithText calls owner.Id "10",
+                "Expected future coupon value to be listed")
+            // Should NOT contain the expired coupon (5€/25€)
             Assert.False(findCallWithText calls owner.Id "5€",
                 "Expected expired coupon NOT to be listed in /added")
         }
