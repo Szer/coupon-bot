@@ -144,21 +144,23 @@ module private Parsing =
           MinCheck: decimal
           ValidFrom: DateTime
           ValidTo: DateTime
+          IsAppCoupon: bool
           Barcode: string }
 
     let parseExpectedFromFileName (fileNameNoExt: string) =
-        // Format: [couponValue]_[minCheck]_[validFrom]_[validTo]_[barcode]
+        // Format: [couponValue]_[minCheck]_[validFrom]_[validTo]_[app|physical]_[barcode]
         let parts = fileNameNoExt.Split([| '_' |], StringSplitOptions.RemoveEmptyEntries)
-        if parts.Length <> 5 then
+        if parts.Length <> 6 then
             failwithf
-                "Invalid OCR test filename '%s'. Expected 5 underscore-separated parts: value_minCheck_validFrom_validTo_barcode"
+                "Invalid OCR test filename '%s'. Expected 6 underscore-separated parts: value_minCheck_validFrom_validTo_app|physical_barcode"
                 fileNameNoExt
 
         { CouponValue = parseDecimalInvariant parts[0]
           MinCheck = parseDecimalInvariant parts[1]
           ValidFrom = parseDate parts[2]
           ValidTo = parseDate parts[3]
-          Barcode = parts[4] }
+          IsAppCoupon = parts[4] = "app"
+          Barcode = parts[5] }
 
 type OcrTests(output: ITestOutputHelper) =
 
@@ -203,21 +205,21 @@ type OcrTests(output: ITestOutputHelper) =
         engine, http, logs
 
     [<Theory>]
-    [<InlineData("10_50_01-04_01-13_2706602781191.jpg")>]
-    [<InlineData("10_50_01-06_01-15_2706643333717.jpg")>]
-    [<InlineData("10_50_01-12_01-21_2706513420233.jpg")>]
-    [<InlineData("10_50_01-12_01-21_2706530490622.jpg")>]
-    [<InlineData("10_50_01-14_01-23_2706658654210.jpg")>]
-    [<InlineData("10_50_01-19_01-28_2706613152454.jpg")>]
-    [<InlineData("10_50_01-21_01-30_2706616470579.jpg")>]
-    [<InlineData("5_25_01-15_01-21_2706528422291.jpg")>]
-    [<InlineData("5_25_01-15_01-21_2706666377231.jpg")>]
-    [<InlineData("5_25_01-15_01-21_2706684806638.jpg")>]
-    [<InlineData("5_25_2026-02-08_2026-02-14_2706726228947.jpg")>]
-    [<InlineData("10_50_2026-01-11_2026-01-20_2706678568818.jpg")>]
-    [<InlineData("10_50_2026-01-17_2026-01-26_2706688198838.jpg")>]
-    [<InlineData("10_50_2026-01-17_2026-01-26_2706688198845.jpg")>]
-    [<InlineData("10_50_2026-01-17_2026-01-26_2706688198821.jpg")>]
+    [<InlineData("10_50_01-04_01-13_app_2706602781191.jpg")>]
+    [<InlineData("10_50_01-06_01-15_app_2706643333717.jpg")>]
+    [<InlineData("10_50_01-12_01-21_app_2706513420233.jpg")>]
+    [<InlineData("10_50_01-12_01-21_app_2706530490622.jpg")>]
+    [<InlineData("10_50_01-14_01-23_app_2706658654210.jpg")>]
+    [<InlineData("10_50_01-19_01-28_app_2706613152454.jpg")>]
+    [<InlineData("10_50_01-21_01-30_app_2706616470579.jpg")>]
+    [<InlineData("5_25_01-15_01-21_app_2706528422291.jpg")>]
+    [<InlineData("5_25_01-15_01-21_app_2706666377231.jpg")>]
+    [<InlineData("5_25_01-15_01-21_app_2706684806638.jpg")>]
+    [<InlineData("5_25_2026-02-08_2026-02-14_physical_2706726228947.jpg")>]
+    [<InlineData("10_50_2026-01-11_2026-01-20_physical_2706678568818.jpg")>]
+    [<InlineData("10_50_2026-01-17_2026-01-26_physical_2706688198838.jpg")>]
+    [<InlineData("10_50_2026-01-17_2026-01-26_physical_2706688198845.jpg")>]
+    [<InlineData("10_50_2026-01-17_2026-01-26_physical_2706688198821.jpg")>]
     member _.``OCR engine recognizes coupon from file``(fileName: string) =
         task {
             let imagesDir = Path.Combine(AppContext.BaseDirectory, "Images")
@@ -258,13 +260,16 @@ type OcrTests(output: ITestOutputHelper) =
                 let dump = String.concat "\n" (Seq.toList logs)
                 failwithf "Expected barcode from '%s'\n\nLogs:\n%s" nameNoExt dump
             Assert.Equal(expected.Barcode, res.barcode)
+
+            // isAppCoupon
+            Assert.Equal(expected.IsAppCoupon, res.isAppCoupon)
         }
 
     [<Theory>]
     // Low-quality images: assert only fields that are reliable for this file.
     // Pass null for fields we intentionally do not assert.
-    [<InlineData("5_25_2026-01-11_2026-01-17_2706653336241.jpg", "5", "25", "2026-01-11", null, null)>]
-    [<InlineData("5_25_2026-01-20_2026-01-26_2706680353051.jpg", "5", "25", "2026-01-20", "2026-01-26", null)>]
+    [<InlineData("5_25_2026-01-11_2026-01-17_physical_2706653336241.jpg", "5", "25", "2026-01-11", null, null)>]
+    [<InlineData("5_25_2026-01-20_2026-01-26_physical_2706680353051.jpg", "5", "25", "2026-01-20", "2026-01-26", null)>]
     member _.``OCR engine recognizes coupon from low quality file``(
         fileName: string,
         expectedCouponValue: string,
@@ -315,4 +320,8 @@ type OcrTests(output: ITestOutputHelper) =
                     let dump = String.concat "\n" (Seq.toList logs)
                     failwithf "Expected barcode from '%s'\n\nLogs:\n%s" fileName dump
                 Assert.Equal(expectedBarcode, res.barcode)
+
+            // isAppCoupon — parsed from filename
+            let expectedIsApp = fileName.Contains("_app_")
+            Assert.Equal(expectedIsApp, res.isAppCoupon)
         }

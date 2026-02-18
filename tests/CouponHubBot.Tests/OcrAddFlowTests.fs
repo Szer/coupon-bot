@@ -41,7 +41,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let user = Tg.user(id = 603L, username = "ocr_implicit", firstName = "OCR")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let fileName = "10_50_2026-01-17_2026-01-26_physical_2706688198845.jpg"
             let fileId = "ocr-photo-implicit"
 
             do! fixture.SetTelegramFile(fileId, readImageBytes fileName)
@@ -71,7 +71,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let user = Tg.user(id = 650L, username = "ocr_dup_barcode", firstName = "OCR")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let fileName = "10_50_2026-01-17_2026-01-26_physical_2706688198845.jpg"
             let azure = readAzureCacheJson fileName
             let bytes = readImageBytes fileName
 
@@ -112,7 +112,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let user = Tg.user(id = 651L, username = "ocr_no_barcode", firstName = "OCR")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let fileName = "10_50_2026-01-17_2026-01-26_physical_2706688198845.jpg"
             let azure = readAzureCacheJson fileName
 
             // Provide invalid bytes so ZXing/ImageSharp fails -> barcode = null,
@@ -208,7 +208,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let user = Tg.user(id = 600L, username = "ocr_ok", firstName = "OCR")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let fileName = "10_50_2026-01-17_2026-01-26_physical_2706688198845.jpg"
             let fileId = "ocr-photo-ok"
 
             do! fixture.SetTelegramFile(fileId, readImageBytes fileName)
@@ -252,7 +252,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let user = Tg.user(id = 601L, username = "ocr_override", firstName = "OCR")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let fileName = "10_50_2026-01-17_2026-01-26_physical_2706688198845.jpg"
             let fileId = "ocr-photo-override"
 
             do! fixture.SetTelegramFile(fileId, readImageBytes fileName)
@@ -300,7 +300,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let user = Tg.user(id = 602L, username = "ocr_partial", firstName = "OCR")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let fileName = "10_50_2026-01-17_2026-01-26_physical_2706688198845.jpg"
             let fileId = "ocr-photo-partial"
 
             do! fixture.SetTelegramFile(fileId, readImageBytes fileName)
@@ -346,7 +346,7 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let user = Tg.user(id = 660L, username = "barcode_retry", firstName = "Retry")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            let goodFileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let goodFileName = "10_50_2026-01-17_2026-01-26_physical_2706688198845.jpg"
             let goodAzure = readAzureCacheJson goodFileName
             let goodBytes = readImageBytes goodFileName
 
