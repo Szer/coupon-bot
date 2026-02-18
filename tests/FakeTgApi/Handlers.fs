@@ -149,6 +149,25 @@ module Handlers =
                     do! respondJson ctx 200 (okResult resultJson)
                 | "deleteMessage" ->
                     do! respondJson ctx 200 (okResult "true")
+                | "editMessageText" ->
+                    let chatId =
+                        try
+                            use doc = JsonDocument.Parse(body)
+                            match doc.RootElement.TryGetProperty("chat_id") with
+                            | true, v -> v.GetInt64()
+                            | _ -> 1L
+                        with _ -> 1L
+                    let messageId =
+                        try
+                            use doc = JsonDocument.Parse(body)
+                            match doc.RootElement.TryGetProperty("message_id") with
+                            | true, v -> v.GetInt32()
+                            | _ -> 1
+                        with _ -> 1
+                    let now = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    let resultJson =
+                        $"""{{"message_id":{messageId},"date":{now},"chat":{{"id":{chatId},"type":"private"}},"text":"ok"}}"""
+                    do! respondJson ctx 200 (okResult resultJson)
                 | _ ->
                     // generic OK (true)
                     do! respondJson ctx 200 (okResult "true")

@@ -67,13 +67,22 @@ type TelegramNotificationService(
             do! sendToGroup $"{formatUser user} вернул(а) купон на {v}€ из {mc}€ (срок {d}) в общий доступ"
         }
 
-    member _.NotifyTakerCouponVoided(takerUserId: int64, coupon: Coupon) =
+    member _.NotifyTakerCouponVoided(takerUserId: int64, coupon: Coupon) : Task<bool> =
         task {
+            let appIcon = if coupon.is_app_coupon then "📱 " else ""
+            let v = coupon.value.ToString("0.##")
+            let mc = coupon.min_check.ToString("0.##")
+            let msg = $"{appIcon}Купон ID:{coupon.id} ({v}€/{mc}€) был аннулирован владельцем. Он больше недоступен."
             try
-                let appIcon = if coupon.is_app_coupon then "📱 " else ""
-                let v = coupon.value.ToString("0.##")
-                let mc = coupon.min_check.ToString("0.##")
-                do! botClient.SendMessage(ChatId takerUserId, $"{appIcon}Купон ID:{coupon.id} ({v}€/{mc}€) был аннулирован владельцем. Он больше недоступен.") :> Task
-            with ex ->
-                logger.LogWarning(ex, "Failed to notify taker {TakerId} about voided coupon {CouponId}", takerUserId, coupon.id)
+                do! botClient.SendMessage(ChatId takerUserId, msg) :> Task
+                return true
+            with ex1 ->
+                logger.LogWarning(ex1, "First attempt to notify taker {TakerId} about voided coupon {CouponId} failed, retrying", takerUserId, coupon.id)
+                try
+                    do! Task.Delay(500)
+                    do! botClient.SendMessage(ChatId takerUserId, msg) :> Task
+                    return true
+                with ex2 ->
+                    logger.LogError(ex2, "Failed to notify taker {TakerId} about voided coupon {CouponId} after retry", takerUserId, coupon.id)
+                    return false
         }
