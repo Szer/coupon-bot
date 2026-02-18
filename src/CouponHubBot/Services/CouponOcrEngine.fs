@@ -127,10 +127,7 @@ module private CouponOcrParsing =
             let t = text.ToLowerInvariant()
             t.Contains("terms and conditions apply")
             || t.Contains("valueclub")
-            || t.Contains("shop & save")
-            || t.Contains("shop &save")
-            || t.Contains("shop&save")
-            || t.Contains("shop& save")
+            || Regex.IsMatch(t, @"shop\s*&\s*save")
 
     let findEuroAmounts (text: string) =
         if String.IsNullOrWhiteSpace text then
