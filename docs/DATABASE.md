@@ -10,14 +10,12 @@ PostgreSQL 15.6. Migrations managed by Flyway.
 
 Key columns:
 - `status TEXT NOT NULL DEFAULT 'available'` — valid values: `available`, `taken`, `used`, `voided`
-- `is_app_coupon BOOLEAN NOT NULL DEFAULT FALSE` — true for app-sourced coupons (detected via OCR markers)
 - `taken_by BIGINT NULL` — user who took the coupon (NULL when available/voided)
 - `barcode_text TEXT NULL` — barcode decoded from coupon photo
 
 ### pending_add table
 
 Wizard state for `/add` flow:
-- `is_app_coupon BOOLEAN NOT NULL DEFAULT FALSE` — auto-detected from OCR, toggleable by user
 
 ### coupon_event table
 
