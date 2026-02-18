@@ -66,3 +66,21 @@ type TelegramNotificationService(
             let v, mc, d = fmtCoupon coupon
             do! sendToGroup $"{formatUser user} вернул(а) купон на {v}€ из {mc}€ (срок {d}) в общий доступ"
         }
+
+    member _.CouponVoided(coupon: Coupon, voidedBy: DbUser) =
+        task {
+            let appIcon = if coupon.is_app_coupon then "📱 " else ""
+            let v, mc, d = fmtCoupon coupon
+            do! sendToGroup $"{formatUser voidedBy} аннулировал(а) {appIcon}купон на {v}€ из {mc}€ (срок {d})"
+        }
+
+    member _.NotifyTakerCouponVoided(takerUserId: int64, coupon: Coupon) =
+        task {
+            try
+                let appIcon = if coupon.is_app_coupon then "📱 " else ""
+                let v = coupon.value.ToString("0.##")
+                let mc = coupon.min_check.ToString("0.##")
+                do! botClient.SendMessage(ChatId takerUserId, $"{appIcon}Купон ID:{coupon.id} ({v}€/{mc}€) был аннулирован владельцем. Он больше недоступен.") :> Task
+            with ex ->
+                logger.LogWarning(ex, "Failed to notify taker {TakerId} about voided coupon {CouponId}", takerUserId, coupon.id)
+        }

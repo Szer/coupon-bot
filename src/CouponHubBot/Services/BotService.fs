@@ -142,7 +142,8 @@ type BotService(
 
     let formatAvailableCouponLine (idx: int) (c: Coupon) =
         let d = formatUiDate c.expires_at
-        $"{idx}. {formatCouponValue c}, до {d}"
+        let appIcon = if c.is_app_coupon then "📱 " else ""
+        $"{idx}. {appIcon}{formatCouponValue c}, до {d}"
 
     /// Picks coupons for /list:
     /// 1) all expiring today (Dublin),
@@ -283,11 +284,11 @@ type BotService(
 
     let handleStart (chatId: int64) =
         sendText chatId
-            "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add (или /a) — добавить купон\n/list (или /l) — доступные купоны\n/my (или /m) — мои купоны\n/stats (или /s) — моя статистика\n/feedback (или /f) — фидбэк авторам\n\nДополнительно (не в меню):\n/take <id>\n/used <id>\n/return <id>\n/help"
+            "Привет! Я бот для совместного управления купонами Dunnes.\n\nКоманды:\n/add (или /a) — добавить купон\n/list (или /l) — доступные купоны\n/my (или /m) — мои купоны\n/added (или /ad) — мои добавленные\n/stats (или /s) — моя статистика\n/feedback (или /f) — фидбэк авторам\n\nДополнительно (не в меню):\n/take <id>\n/used <id>\n/return <id>\n/void <id>\n/help"
 
     let handleHelp (chatId: int64) =
         sendText chatId
-            "Команды (все в личке):\n/add (/a)\n/list (/l)\n/my (/m)\n/stats (/s)\n/feedback (/f)\n\nДополнительно:\n/take <id> (или /take для списка)\n/used <id>\n/return <id>\n/help"
+            "Команды (все в личке):\n/add (/a)\n/list (/l)\n/my (/m)\n/added (/ad)\n/stats (/s)\n/feedback (/f)\n\nДополнительно:\n/take <id> (или /take для списка)\n/used <id>\n/return <id>\n/void <id>\n/help"
 
     let handleCoupons (chatId: int64) =
         task {
@@ -327,10 +328,11 @@ type BotService(
                 do! sendText chatId $"Купон ID:{couponId} уже взят или не существует."
             | Taken coupon ->
                 let d = formatUiDate coupon.expires_at
+                let appIcon = if coupon.is_app_coupon then "📱 " else ""
                 do! botClient.SendPhoto(
                         ChatId chatId,
                         InputFileId coupon.photo_file_id,
-                        caption = $"Ты взял(а) купон ID:{couponId}: {formatCouponValue coupon}, истекает {d}",
+                        caption = $"Ты взял(а) {appIcon}купон ID:{couponId}: {formatCouponValue coupon}, истекает {d}",
                         replyMarkup = singleTakenKeyboard coupon)
                     |> taskIgnore
         }
@@ -357,10 +359,10 @@ type BotService(
 
     let handleStats (user: DbUser) (chatId: int64) =
         task {
-            let! added, taken, returned, used = db.GetUserStats(user.id)
+            let! added, taken, returned, used, voided = db.GetUserStats(user.id)
             do!
                 sendText chatId
-                    $"Статистика:\nДобавлено: {added}\nВзято: {taken}\nВозвращено: {returned}\nИспользовано: {used}"
+                    $"Статистика:\nДобавлено: {added}\nВзято: {taken}\nВозвращено: {returned}\nИспользовано: {used}\nАннулировано: {voided}"
         }
 
     let handleMy (user: DbUser) (chatId: int64) =
@@ -370,7 +372,13 @@ type BotService(
                 Utils.TimeZones.dublinToday time
                 |> formatUiDate
             if taken.Length = 0 then
-                do! sendText chatId $"{todayStr}\n\nМои купоны:\n—"
+                do!
+                    botClient.SendMessage(
+                        ChatId chatId,
+                        $"{todayStr}\n\nМои купоны:\n—",
+                        replyMarkup = InlineKeyboardMarkup(seq { seq { InlineKeyboardButton.WithCallbackData("Мои добавленные", "myAdded") } })
+                    )
+                    |> taskIgnore
             else
                 let shown = taken |> Array.truncate botConfig.MaxTakenCoupons
 
@@ -389,16 +397,90 @@ type BotService(
                     |> Array.map (fun (i, c) ->
                         let n = i + 1
                         let d = formatUiDate c.expires_at
-                        $"{n}. Купон ID:{c.id} на {formatCouponValue c}, до {d}")
+                        let appIcon = if c.is_app_coupon then "📱 " else ""
+                        $"{n}. {appIcon}Купон ID:{c.id} на {formatCouponValue c}, до {d}")
                     |> String.concat "\n"
+
+                let kb =
+                    let rows = ResizeArray<seq<InlineKeyboardButton>>()
+                    for (i, c) in (shown |> Array.indexed) do
+                        let humanIdx = i + 1
+                        let ord = formatOrdinalShort humanIdx
+                        rows.Add(seq {
+                            InlineKeyboardButton.WithCallbackData($"Вернуть {ord}", $"return:{c.id}")
+                            InlineKeyboardButton.WithCallbackData($"Использован {ord}", $"used:{c.id}")
+                        })
+                    rows.Add(seq { InlineKeyboardButton.WithCallbackData("Мои добавленные", "myAdded") })
+                    InlineKeyboardMarkup(rows :> seq<seq<InlineKeyboardButton>>)
 
                 do!
                     botClient.SendMessage(
                         ChatId chatId,
                         $"{todayStr}\n\nМои купоны:\n{text}",
-                        replyMarkup = myTakenKeyboard shown
+                        replyMarkup = kb
                     )
                     |> taskIgnore
+        }
+
+    let handleAdded (user: DbUser) (chatId: int64) =
+        task {
+            let! coupons = db.GetVoidableCouponsByOwner(user.id)
+            if coupons.Length = 0 then
+                do! sendText chatId "У тебя нет активных добавленных купонов."
+            else
+                let text =
+                    coupons
+                    |> Array.indexed
+                    |> Array.map (fun (i, c) ->
+                        let n = i + 1
+                        let d = formatUiDate c.expires_at
+                        let appIcon = if c.is_app_coupon then "📱 " else ""
+                        let statusText =
+                            match c.status with
+                            | "taken" -> " (взят)"
+                            | _ -> ""
+                        $"{n}. {appIcon}{formatCouponValue c}, до {d}{statusText}")
+                    |> String.concat "\n"
+
+                let kb =
+                    coupons
+                    |> Array.indexed
+                    |> Array.map (fun (i, c) ->
+                        let humanIdx = i + 1
+                        let ord = formatOrdinalShort humanIdx
+                        seq { InlineKeyboardButton.WithCallbackData($"Аннулировать {ord}", $"void:{c.id}") })
+                    |> Seq.ofArray
+                    |> InlineKeyboardMarkup
+
+                do!
+                    botClient.SendMessage(
+                        ChatId chatId,
+                        $"Мои добавленные купоны:\n{text}",
+                        replyMarkup = kb
+                    )
+                    |> taskIgnore
+        }
+
+    let handleVoid (user: DbUser) (chatId: int64) (couponId: int) (isAdmin: bool) (deleteMsg: bool) (msgToDelete: Message option) =
+        task {
+            match! db.VoidCoupon(couponId, user.id, isAdmin) with
+            | VoidCouponResult.NotFoundOrNotAllowed ->
+                do! sendText chatId $"Не удалось аннулировать купон ID:{couponId}. Убедись, что он не истёк и не использован."
+            | VoidCouponResult.Voided (coupon, takenBy) ->
+                let appIcon = if coupon.is_app_coupon then "📱 " else ""
+                do! sendText chatId $"{appIcon}Купон ID:{couponId} аннулирован."
+                do! notifications.CouponVoided(coupon, user)
+                match takenBy with
+                | Some takerId ->
+                    do! notifications.NotifyTakerCouponVoided(takerId, coupon)
+                | None -> ()
+                if deleteMsg then
+                    match msgToDelete with
+                    | Some msg ->
+                        try
+                            do! botClient.DeleteMessage(ChatId chatId, msg.MessageId)
+                        with _ -> ()
+                    | None -> ()
         }
 
     let handleAddWizardStart (user: DbUser) (chatId: int64) =
@@ -411,6 +493,7 @@ type BotService(
                       min_check = Nullable()
                       expires_at = Nullable()
                       barcode_text = null
+                      is_app_coupon = false
                       updated_at = time.GetUtcNow().UtcDateTime }
                 )
             do! sendText chatId "Пришли фото купона (просто картинку)."
@@ -441,7 +524,7 @@ type BotService(
                     let largestPhoto =
                         msg.Photo
                         |> Array.maxBy (fun p -> if p.FileSize.HasValue then p.FileSize.Value else 0)
-                    match! db.TryAddCoupon(user.id, largestPhoto.FileId, value, minCheck, expiresAt, null) with
+                    match! db.TryAddCoupon(user.id, largestPhoto.FileId, value, minCheck, expiresAt, null, false) with
                     | AddCouponResult.Added coupon ->
                         let v = coupon.value.ToString("0.##")
                         let mc = coupon.min_check.ToString("0.##")
@@ -469,6 +552,7 @@ type BotService(
                       min_check = Nullable()
                       expires_at = Nullable()
                       barcode_text = null
+                      is_app_coupon = false
                       updated_at = time.GetUtcNow().UtcDateTime }
                 )
 
@@ -532,6 +616,7 @@ type BotService(
                                       min_check = Nullable()
                                       expires_at = Nullable()
                                       barcode_text = null
+                                      is_app_coupon = false
                                       updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             do! sendText chatId "Не удалось распознать штрихкод на фото. Пожалуйста, пришли фото в лучшем качестве или скадрируй картинку ближе к штрихкоду, дате и сумме."
@@ -548,6 +633,7 @@ type BotService(
                                       min_check = Nullable(minCheck)
                                       expires_at = Nullable(expiresAt)
                                       barcode_text = barcodeText
+                                      is_app_coupon = ocr.isAppCoupon
                                       updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let v = value.ToString("0.##")
@@ -569,6 +655,7 @@ type BotService(
                                       min_check = Nullable(minCheck)
                                       expires_at = Nullable()
                                       barcode_text = barcodeText
+                                      is_app_coupon = ocr.isAppCoupon
                                       updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let v = value.ToString("0.##")
@@ -592,6 +679,7 @@ type BotService(
                                         | Some d -> Nullable(d)
                                         | None -> Nullable()
                                       barcode_text = barcodeText
+                                      is_app_coupon = ocr.isAppCoupon
                                       updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let text =
@@ -746,7 +834,8 @@ type BotService(
                                         flow.value.Value,
                                         flow.min_check.Value,
                                         flow.expires_at.Value,
-                                        flow.barcode_text
+                                        flow.barcode_text,
+                                        flow.is_app_coupon
                                     )
                                 with
                                 | AddCouponResult.Added coupon ->
@@ -792,7 +881,8 @@ type BotService(
                                         flow.value.Value,
                                         flow.min_check.Value,
                                         flow.expires_at.Value,
-                                        flow.barcode_text
+                                        flow.barcode_text,
+                                        flow.is_app_coupon
                                     )
                                 with
                                 | AddCouponResult.Added coupon ->
@@ -841,6 +931,17 @@ type BotService(
                                 do! botClient.DeleteMessage(ChatId cq.Message.Chat.Id, cq.Message.MessageId)
                             with _ -> ()
                     | None -> ()
+                elif isPrivateChat && hasData && cq.Data.StartsWith("void:") then
+                    let deleteOnSuccess = cq.Data.EndsWith(":del")
+                    let baseData = if deleteOnSuccess then cq.Data.Substring(0, cq.Data.Length - 4) else cq.Data
+                    let idStr = baseData.Substring("void:".Length)
+                    match parseInt idStr with
+                    | Some couponId ->
+                        let isAdmin = botConfig.FeedbackAdminIds |> Array.contains user.id
+                        do! handleVoid user cq.Message.Chat.Id couponId isAdmin deleteOnSuccess (Some cq.Message)
+                    | None -> ()
+                elif isPrivateChat && hasData && cq.Data = "myAdded" then
+                    do! handleAdded user cq.Message.Chat.Id
 
             do! botClient.AnswerCallbackQuery(cq.Id)
         }
@@ -974,6 +1075,8 @@ type BotService(
                 | "/take" -> do! handleCoupons msg.Chat.Id // legacy alias (list)
                 | "/my" -> do! handleMy user msg.Chat.Id
                 | "/m" -> do! handleMy user msg.Chat.Id
+                | "/added" -> do! handleAdded user msg.Chat.Id
+                | "/ad" -> do! handleAdded user msg.Chat.Id
                 | "/stats" -> do! handleStats user msg.Chat.Id
                 | "/s" -> do! handleStats user msg.Chat.Id
                 | "/feedback" -> do! handleFeedback user msg.Chat.Id
@@ -998,6 +1101,12 @@ type BotService(
                     | None -> do! sendText msg.Chat.Id "Формат: /return <id>"
                 | t when not (isNull t) && (t.StartsWith("/add ") || t.StartsWith("/a ")) ->
                     do! sendText msg.Chat.Id "Для ручного добавления пришли фото с подписью: /add <discount> <min_check> <date>"
+                | t when not (isNull t) && t.StartsWith("/void ") ->
+                    match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
+                    | Some couponId ->
+                        let isAdmin = botConfig.FeedbackAdminIds |> Array.contains msg.From.Id
+                        do! handleVoid user msg.Chat.Id couponId isAdmin false None
+                    | None -> do! sendText msg.Chat.Id "Формат: /void <id>"
                 | t when not (isNull t) && t.StartsWith("/debug ") ->
                     match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind parseInt with
                     | Some couponId -> do! handleDebug msg.From.Id msg.Chat.Id couponId

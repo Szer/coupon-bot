@@ -202,6 +202,20 @@ type OcrTests(output: ITestOutputHelper) =
             CouponOcrEngine(azure, XUnitLogging.XUnitLogger<CouponOcrEngine>(output, logs), timeProvider)
         engine, http, logs
 
+    /// App coupon filenames (dates without year = MM-dd format in filename).
+    static let appCouponFiles = Set.ofList [
+        "10_50_01-04_01-13_2706602781191.jpg"
+        "10_50_01-06_01-15_2706643333717.jpg"
+        "10_50_01-12_01-21_2706513420233.jpg"
+        "10_50_01-12_01-21_2706530490622.jpg"
+        "10_50_01-14_01-23_2706658654210.jpg"
+        "10_50_01-19_01-28_2706613152454.jpg"
+        "10_50_01-21_01-30_2706616470579.jpg"
+        "5_25_01-15_01-21_2706528422291.jpg"
+        "5_25_01-15_01-21_2706666377231.jpg"
+        "5_25_01-15_01-21_2706684806638.jpg"
+    ]
+
     [<Theory>]
     [<InlineData("10_50_01-04_01-13_2706602781191.jpg")>]
     [<InlineData("10_50_01-06_01-15_2706643333717.jpg")>]
@@ -258,6 +272,10 @@ type OcrTests(output: ITestOutputHelper) =
                 let dump = String.concat "\n" (Seq.toList logs)
                 failwithf "Expected barcode from '%s'\n\nLogs:\n%s" nameNoExt dump
             Assert.Equal(expected.Barcode, res.barcode)
+
+            // isAppCoupon
+            let expectedIsApp = appCouponFiles.Contains(fileName)
+            Assert.Equal(expectedIsApp, res.isAppCoupon)
         }
 
     [<Theory>]
@@ -315,4 +333,8 @@ type OcrTests(output: ITestOutputHelper) =
                     let dump = String.concat "\n" (Seq.toList logs)
                     failwithf "Expected barcode from '%s'\n\nLogs:\n%s" fileName dump
                 Assert.Equal(expectedBarcode, res.barcode)
+
+            // isAppCoupon — low quality files are all physical coupons
+            let expectedIsApp = appCouponFiles.Contains(fileName)
+            Assert.Equal(expectedIsApp, res.isAppCoupon)
         }

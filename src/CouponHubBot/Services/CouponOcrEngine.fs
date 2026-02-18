@@ -116,6 +116,22 @@ module private CouponOcrParsing =
                 else
                     None
 
+    /// Detect app coupon from OCR text using markers:
+    /// - "Terms and conditions apply" (case-insensitive)
+    /// - "VALUEclub" (case-insensitive)
+    /// - "Shop & save voucher" (case-insensitive, allowing variations like "Shop&save")
+    let detectAppCoupon (text: string) =
+        if String.IsNullOrWhiteSpace text then
+            false
+        else
+            let t = text.ToLowerInvariant()
+            t.Contains("terms and conditions apply")
+            || t.Contains("valueclub")
+            || t.Contains("shop & save")
+            || t.Contains("shop &save")
+            || t.Contains("shop&save")
+            || t.Contains("shop& save")
+
     let findEuroAmounts (text: string) =
         if String.IsNullOrWhiteSpace text then
             [||]
@@ -386,11 +402,18 @@ type CouponOcrEngine(azureTextOcr: IAzureTextOcr, logger: ILogger<CouponOcrEngin
                 else
                     parseFromText nowUtc ocrText
 
+            let isAppCoupon =
+                if String.IsNullOrWhiteSpace ocrText then
+                    false
+                else
+                    CouponOcrParsing.detectAppCoupon ocrText
+
             return
                 { couponValue = couponValue
                   minCheck = minCheck
                   validFrom = validFrom
                   validTo = validTo
-                  barcode = barcode }
+                  barcode = barcode
+                  isAppCoupon = isAppCoupon }
         }
 

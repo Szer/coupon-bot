@@ -20,6 +20,11 @@ type AddCouponResult =
     | DuplicatePhoto of existingCouponId: int
     | DuplicateBarcode of existingCouponId: int
 
+[<RequireQualifiedAccess>]
+type VoidCouponResult =
+    | Voided of coupon: Coupon * takenByUserId: int64 option
+    | NotFoundOrNotAllowed
+
 [<CLIMutable>]
 type PendingAddFlow =
     { user_id: int64
@@ -29,6 +34,7 @@ type PendingAddFlow =
       min_check: Nullable<decimal>
       expires_at: Nullable<DateOnly>
       barcode_text: string | null
+      is_app_coupon: bool
       updated_at: DateTime }
 
 [<CLIMutable>]
@@ -86,7 +92,7 @@ RETURNING *;
             return inserted
         }
 
-    member _.TryAddCoupon(ownerId, photoFileId, value, minCheck: decimal, expiresAt: DateOnly, barcodeText: string | null) =
+    member _.TryAddCoupon(ownerId, photoFileId, value, minCheck: decimal, expiresAt: DateOnly, barcodeText: string | null, isAppCoupon: bool) =
         task {
             let todayUtc = todayUtc ()
             if expiresAt < todayUtc then
@@ -150,8 +156,8 @@ LIMIT 1;
                         //language=postgresql
                         let insertSql =
                             """
-INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, barcode_text, status)
-VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, 'available')
+INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, barcode_text, is_app_coupon, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, @is_app_coupon, 'available')
 RETURNING *;
 """
 
@@ -163,7 +169,8 @@ RETURNING *;
                                    value = value
                                    min_check = minCheck
                                    expires_at = expiresAt
-                                   barcode_text = barcodeText |},
+                                   barcode_text = barcodeText
+                                   is_app_coupon = isAppCoupon |},
                                 tx
                             )
                         do! insertEvent conn tx coupon.id ownerId "added"
@@ -259,7 +266,7 @@ GROUP BY event_type;
                 |> Map.tryFind eventType
                 |> Option.defaultValue 0L
 
-            return get "added", get "taken", get "returned", get "used"
+            return get "added", get "taken", get "returned", get "used", get "voided"
         }
 
     member _.TryTakeCoupon(couponId, takerId) =
@@ -529,8 +536,8 @@ WHERE user_id = @user_id;
             //language=postgresql
             let sql =
                 """
-INSERT INTO pending_add (user_id, stage, photo_file_id, value, min_check, expires_at, barcode_text, updated_at)
-VALUES (@user_id, @stage, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, @updated_at)
+INSERT INTO pending_add (user_id, stage, photo_file_id, value, min_check, expires_at, barcode_text, is_app_coupon, updated_at)
+VALUES (@user_id, @stage, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, @is_app_coupon, @updated_at)
 ON CONFLICT (user_id) DO UPDATE
 SET stage = EXCLUDED.stage,
     photo_file_id = EXCLUDED.photo_file_id,
@@ -538,6 +545,7 @@ SET stage = EXCLUDED.stage,
     min_check = EXCLUDED.min_check,
     expires_at = EXCLUDED.expires_at,
     barcode_text = EXCLUDED.barcode_text,
+    is_app_coupon = EXCLUDED.is_app_coupon,
     updated_at = EXCLUDED.updated_at;
 """
             let! _ = conn.ExecuteAsync(sql, flow)
@@ -590,6 +598,79 @@ RETURNING user_id;
             let sql = "DELETE FROM pending_feedback WHERE user_id = @user_id;"
             let! _ = conn.ExecuteAsync(sql, {| user_id = userId |})
             return ()
+        }
+
+    member _.VoidCoupon(couponId: int, userId: int64, isAdmin: bool) =
+        task {
+            use! conn = openConn()
+            use tx = conn.BeginTransaction(IsolationLevel.ReadCommitted)
+            let today = todayUtc ()
+
+            // First, read the coupon to capture taken_by before we clear it.
+            //language=postgresql
+            let selectSql =
+                """
+SELECT *
+FROM coupon
+WHERE id = @coupon_id
+  AND status IN ('available', 'taken')
+  AND expires_at >= @today
+  AND (@is_admin OR owner_id = @user_id)
+FOR UPDATE;
+"""
+            let! selectRows =
+                conn.QueryAsync<Coupon>(
+                    selectSql,
+                    {| coupon_id = couponId
+                       today = today
+                       user_id = userId
+                       is_admin = isAdmin |},
+                    tx
+                )
+
+            match selectRows |> Seq.tryHead with
+            | None ->
+                do! tx.RollbackAsync()
+                return VoidCouponResult.NotFoundOrNotAllowed
+            | Some original ->
+                let takenBy =
+                    if original.status = "taken" && original.taken_by.HasValue then
+                        Some original.taken_by.Value
+                    else
+                        None
+
+                //language=postgresql
+                let updateSql =
+                    """
+UPDATE coupon
+SET status = 'voided',
+    taken_by = NULL,
+    taken_at = NULL
+WHERE id = @coupon_id;
+"""
+                let! _ = conn.ExecuteAsync(updateSql, {| coupon_id = couponId |}, tx)
+
+                do! insertEvent conn tx couponId userId "voided"
+                do! tx.CommitAsync()
+                return VoidCouponResult.Voided ({ original with status = "voided"; taken_by = Nullable(); taken_at = Nullable() }, takenBy)
+        }
+
+    member _.GetVoidableCouponsByOwner(ownerId: int64) =
+        task {
+            use! conn = openConn()
+            let today = todayUtc ()
+            //language=postgresql
+            let sql =
+                """
+SELECT *
+FROM coupon
+WHERE owner_id = @owner_id
+  AND status IN ('available', 'taken')
+  AND expires_at >= @today
+ORDER BY expires_at, id;
+"""
+            let! coupons = conn.QueryAsync<Coupon>(sql, {| owner_id = ownerId; today = today |})
+            return coupons |> Seq.toArray
         }
 
     member _.GetCouponEventHistory(couponId: int) =

@@ -17,6 +17,7 @@ type BotCommandsSetupService(botClient: ITelegramBotClient, logger: ILogger<BotC
                         [| BotCommand(Command = "add", Description = "Добавить купон")
                            BotCommand(Command = "list", Description = "Доступные купоны")
                            BotCommand(Command = "my", Description = "Мои купоны")
+                           BotCommand(Command = "added", Description = "Мои добавленные")
                            BotCommand(Command = "stats", Description = "Моя статистика")
                            BotCommand(Command = "feedback", Description = "Фидбэк авторам бота") |]
                     do! botClient.SetMyCommands(commands, scope = BotCommandScope.AllPrivateChats())

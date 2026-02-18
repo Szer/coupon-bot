@@ -39,6 +39,7 @@ type Coupon =
       min_check: decimal
       expires_at: DateOnly
       barcode_text: string | null
+      is_app_coupon: bool
       status: string
       taken_by: Nullable<int64>
       taken_at: Nullable<DateTime>
@@ -53,7 +54,8 @@ type CouponOCR =
       minCheck: Nullable<decimal>
       validFrom: Nullable<DateTime>
       validTo: Nullable<DateTime>
-      barcode: string | null }
+      barcode: string | null
+      isAppCoupon: bool }
 
 [<CLIMutable>]
 type CouponEvent =
