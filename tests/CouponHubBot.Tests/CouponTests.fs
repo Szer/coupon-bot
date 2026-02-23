@@ -871,7 +871,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
             do! fixture.ClearFakeCalls()
             do! fixture.TruncateCoupons()
 
-            let user = Tg.user(id = 244L, username = "list_fill_to_5")
+            let user = Tg.user(id = 244L, username = "list_fill_to_6")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
@@ -880,10 +880,10 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 conn.ExecuteAsync(
                     """
 INSERT INTO "user"(id, username, first_name, created_at, updated_at)
-VALUES (@uid, @uname, 'ListFillTo5', NOW(), NOW())
+VALUES (@uid, @uname, 'ListFillTo6', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 """
-                    , {| uid = user.Id; uname = "list_fill_to_5" |}
+                    , {| uid = user.Id; uname = "list_fill_to_6" |}
                 )
                 :> Task
 
@@ -1008,7 +1008,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
             do! fixture.ClearFakeCalls()
             do! fixture.TruncateCoupons()
 
-            let user = Tg.user(id = 246L, username = "list_less_than_5")
+            let user = Tg.user(id = 246L, username = "list_less_than_6")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
@@ -1016,10 +1016,10 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 conn.ExecuteAsync(
                     """
 INSERT INTO "user"(id, username, first_name, created_at, updated_at)
-VALUES (@uid, @uname, 'ListLessThan5', NOW(), NOW())
+VALUES (@uid, @uname, 'ListLessThan6', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 """
-                    , {| uid = user.Id; uname = "list_less_than_5" |}
+                    , {| uid = user.Id; uname = "list_less_than_6" |}
                 )
                 :> Task
 
@@ -1033,7 +1033,7 @@ INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status
 VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
 """
                     , {| owner_id = user.Id
-                         photo_file_id = $"seed-lt5-{i}"
+                         photo_file_id = $"seed-lt6-{i}"
                          value = value
                          min_check = minCheck
                          expires_at = expiresIso |}
