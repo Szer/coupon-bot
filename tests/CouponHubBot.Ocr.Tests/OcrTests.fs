@@ -176,7 +176,7 @@ type OcrTests(output: ITestOutputHelper) =
               SecretToken = "test"
               CommunityChatId = 0L
               TelegramApiBaseUrl = null
-              ReminderHourUtc = 8
+              ReminderHourDublin = 10
               ReminderRunOnStart = false
               // Keep OCR enabled so we always go through HttpClient (cache handler may short-circuit).
               OcrEnabled = true

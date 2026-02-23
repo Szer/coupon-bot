@@ -11,7 +11,7 @@ type BotConfiguration =
       SecretToken: string
       CommunityChatId: int64
       TelegramApiBaseUrl: string | null
-      ReminderHourUtc: int
+      ReminderHourDublin: int
       ReminderRunOnStart: bool
       OcrEnabled: bool
       OcrMaxFileSizeBytes: int64

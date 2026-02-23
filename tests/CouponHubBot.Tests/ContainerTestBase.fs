@@ -159,7 +159,7 @@ type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
                 .WithEnvironment("AZURE_OCR_ENDPOINT", if ocrEnabled then $"http://{fakeAzureAlias}:8081" else "")
                 .WithEnvironment("AZURE_OCR_KEY", if ocrEnabled then "fake-key" else "")
                 .WithEnvironment("REMINDER_RUN_ON_START", "false")
-                .WithEnvironment("REMINDER_HOUR_UTC", "8")
+                .WithEnvironment("REMINDER_HOUR_DUBLIN", "10")
                 .WithEnvironment("TEST_MODE", "true")
                 .WithEnvironment("MAX_TAKEN_COUPONS", "4")
                 .WithEnvironment("BOT_FIXED_UTC_NOW", fixedUtcNow.ToString("o"))

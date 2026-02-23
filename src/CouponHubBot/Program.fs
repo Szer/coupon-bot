@@ -63,7 +63,7 @@ let globalBotConfDontUseOnlyRegister =
         match Utils.getEnvOr "TELEGRAM_API_URL" "" with
         | "" -> null
         | v -> v
-      ReminderHourUtc = Utils.getEnvOr "REMINDER_HOUR_UTC" "8" |> int
+      ReminderHourDublin = Utils.getEnvOr "REMINDER_HOUR_DUBLIN" "10" |> int
       ReminderRunOnStart = Utils.getEnvOrBool "REMINDER_RUN_ON_START" false
       OcrEnabled = Utils.getEnvOrBool "OCR_ENABLED" false
       OcrMaxFileSizeBytes = Utils.getEnvOrInt64 "OCR_MAX_FILE_SIZE_BYTES" (20L * 1024L * 1024L)
