@@ -1,21 +1,13 @@
 ---
-name: code-review
-description: Review code changes in coupon-hub-bot for correctness, consistency with project conventions, and F#/Telegram best practices. Use when reviewing PRs or code changes.
+applyTo: "**"
+excludeAgent: ["coding-agent"]
 ---
 
-# coupon-hub-bot Code Review
+# Code Review Instructions for coupon-hub-bot
 
 Review code changes against conventions and patterns established in this F# / .NET 10 Telegram bot codebase. These rules are derived from the project's documentation, existing code patterns, and domain-specific requirements.
 
 **Reviewer mindset:** Be polite but skeptical. Your job is to help speed the review process for maintainers, which includes finding problems the PR author may have missed and questioning whether the approach is correct. Treat the PR description and linked issues as claims to verify, not facts to accept.
-
-## When to Use This Skill
-
-Use this skill when:
-- Reviewing a PR or code change in coupon-hub-bot
-- Checking code for correctness, style, or consistency before submitting a PR
-- Asked to review, critique, or provide feedback on code changes
-- Validating that a change follows project conventions
 
 ## Review Process
 
@@ -56,9 +48,11 @@ Now read the PR description, labels, linked issues, and existing review comments
    - ❌ **error** — Must fix before merge. Bugs, security issues, convention violations.
    - ⚠️ **warning** — Should fix. Missing validation, inconsistency with patterns.
    - 💡 **suggestion** — Consider changing. Minor improvements.
-4. **Don't pile on.** If the same issue appears many times, flag it once with a note listing all affected files.
+   - ✅ **verified** — Confirmed correct. Use to show important aspects were checked.
+4. **Don't pile on.** If the same issue appears many times, flag it once with a note listing all affected files. Do NOT leave separate comments for each occurrence.
 5. **Don't flag what CI catches.** Assume the build (`dotnet build -c Release` with `TreatWarningsAsErrors`) and tests will run separately.
-6. **Avoid false positives.** Verify concerns against the full context, not just the diff.
+6. **Avoid false positives.** Verify concerns against the full context, not just the diff. If unsure, say so explicitly rather than asserting.
+7. **Verdict must match findings.** If you have ⚠️ findings, don't say LGTM. If uncertain, use "Needs Human Review."
 
 ---
 
@@ -277,3 +271,4 @@ Assert.Contains("\"text\":\"Добавил купон\"", responseBody)
   - Use "Needs Human Review" when uncertain
   - Use "Needs Changes" when there are blocking issues
 - Keep the review concise but thorough. Every claim should be backed by evidence from the code.
+
