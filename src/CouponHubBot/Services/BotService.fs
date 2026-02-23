@@ -146,9 +146,10 @@ type BotService(
 
     /// Picks coupons for /list:
     /// 1) all expiring today (Dublin),
-    /// 2) at least 1 coupon for each min_check in [25; 40; 50; 100] when available,
-    /// 3) the result of (1)+(2) may exceed 5 and must not be truncated,
-    /// 4) if the result is still < 5, fill with the nearest-by-expiry coupons up to 5.
+    /// 2) at least 2 coupons of min_check=25 (fivers) when available,
+    ///    plus at least 1 of each [40; 50; 100] when available,
+    /// 3) the result of (1)+(2) may exceed 6 and must not be truncated,
+    /// 4) if the result is still < 6, fill with the nearest-by-expiry coupons up to 6.
     /// Input is expected to be sorted by expires_at, id.
     let pickCouponsForList (today: DateOnly) (coupons: Coupon array) =
         if coupons.Length = 0 then
@@ -162,17 +163,21 @@ type BotService(
                 coupons
                 |> Array.filter (fun c -> c.expires_at = today)
 
-            let requiredMinChecks = [| 25m; 40m; 50m; 100m |]
+            let requiredMinCheckSlots = [| 25m; 25m; 40m; 50m; 100m |]
 
-            let onePerMinCheck =
-                requiredMinChecks
-                |> Array.choose (fun mc -> coupons |> Array.tryFind (fun c -> c.min_check = mc))
+            let slotPicks =
+                let usedIds = HashSet<int>()
+                requiredMinCheckSlots
+                |> Array.choose (fun mc ->
+                    match coupons |> Array.tryFind (fun c -> c.min_check = mc && not (usedIds.Contains c.id)) with
+                    | Some c -> usedIds.Add c.id |> ignore; Some c
+                    | None -> None)
 
             let selected =
-                Array.append expiringToday onePerMinCheck
+                Array.append expiringToday slotPicks
                 |> distinctById
 
-            let target = min 5 coupons.Length
+            let target = min 6 coupons.Length
 
             let filled =
                 if selected.Length >= target then
@@ -183,7 +188,7 @@ type BotService(
                         coupons
                         |> Array.filter (fun c -> not (selectedIds.Contains c.id))
 
-                    // When filling up to 5, prefer non-"fivers" first (min_check <> 25),
+                    // When filling up to 6, prefer non-"fivers" first (min_check <> 25),
                     // and only then add remaining "fivers" (min_check = 25) if still needed.
                     let needed = target - selected.Length
                     let remainingNonFivers = remaining |> Array.filter (fun c -> c.min_check <> 25m)
