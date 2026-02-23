@@ -38,13 +38,13 @@ type ReminderTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
-    let ``Weekly stats are posted on Monday`` () =
+    let ``Monthly all-time stats are posted on first Monday of month`` () =
         task {
             do! fixture.ClearFakeCalls()
 
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
 
-            // Seed users + coupons + events within last 7 days window.
+            // Seed users + coupons + events (older than 7 days — all-time stats must include them).
             do!
                 conn.ExecuteAsync(
                     """
@@ -69,17 +69,15 @@ VALUES
                 )
                 :> Task
 
-            // Trigger reminder via test endpoint on Monday morning.
+            // 2026-02-02 is the first Monday of February 2026; 10:00 UTC = 10:00 Dublin (winter/GMT).
             use body = new StringContent("", Encoding.UTF8, "application/json")
-            let! resp = fixture.Bot.PostAsync("/test/run-reminder?nowUtc=2026-01-19T08:00:00Z", body)
+            let! resp = fixture.Bot.PostAsync("/test/run-reminder?nowUtc=2026-02-02T10:00:00Z", body)
             if not resp.IsSuccessStatusCode then
                 let! text = resp.Content.ReadAsStringAsync()
                 failwith $"Expected 2xx from /test/run-reminder, got {resp.StatusCode}. Body: {text}"
 
             let! calls = fixture.GetFakeCalls("sendMessage")
 
-            // FakeTgApi stores request bodies as JSON, where Cyrillic may be escaped as \\uXXXX.
-            // Parse JSON to get human-readable text.
             let tryGetText (body: string) =
                 try
                     use doc = JsonDocument.Parse(body)
@@ -93,8 +91,68 @@ VALUES
                 |> Array.choose (fun c -> tryGetText c.Body)
                 |> Array.exists (fun t -> t.Contains(s))
 
-            Assert.True(has "Статистика за последние 7 дней (использовано/добавлено)",
-                "Expected weekly stats message in group on Monday")
+            Assert.True(has "Статистика за всё время (использовано/добавлено)",
+                "Expected all-time stats message in group on first Monday of month")
+        }
+
+    [<Fact>]
+    let ``Monthly stats are NOT posted on second Monday`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+
+            // 2026-01-12 is the second Monday of January 2026 (day 12 > 7).
+            use body = new StringContent("", Encoding.UTF8, "application/json")
+            let! resp = fixture.Bot.PostAsync("/test/run-reminder?nowUtc=2026-01-12T10:00:00Z", body)
+            if not resp.IsSuccessStatusCode then
+                let! text = resp.Content.ReadAsStringAsync()
+                failwith $"Expected 2xx from /test/run-reminder, got {resp.StatusCode}. Body: {text}"
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let tryGetText (body: string) =
+                try
+                    use doc = JsonDocument.Parse(body)
+                    match doc.RootElement.TryGetProperty("text") with
+                    | true, v when v.ValueKind = JsonValueKind.String -> Some(v.GetString())
+                    | _ -> None
+                with _ -> None
+
+            let hasStats =
+                calls
+                |> Array.choose (fun c -> tryGetText c.Body)
+                |> Array.exists (fun t -> t.Contains("Статистика за всё время"))
+
+            Assert.False(hasStats, "Expected NO stats message on the second Monday of month")
+        }
+
+    [<Fact>]
+    let ``Monthly stats are NOT posted on non-Monday first week`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+
+            // 2026-01-07 is a Wednesday (day = 7, first week, but not Monday).
+            use body = new StringContent("", Encoding.UTF8, "application/json")
+            let! resp = fixture.Bot.PostAsync("/test/run-reminder?nowUtc=2026-01-07T10:00:00Z", body)
+            if not resp.IsSuccessStatusCode then
+                let! text = resp.Content.ReadAsStringAsync()
+                failwith $"Expected 2xx from /test/run-reminder, got {resp.StatusCode}. Body: {text}"
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let tryGetText (body: string) =
+                try
+                    use doc = JsonDocument.Parse(body)
+                    match doc.RootElement.TryGetProperty("text") with
+                    | true, v when v.ValueKind = JsonValueKind.String -> Some(v.GetString())
+                    | _ -> None
+                with _ -> None
+
+            let hasStats =
+                calls
+                |> Array.choose (fun c -> tryGetText c.Body)
+                |> Array.exists (fun t -> t.Contains("Статистика за всё время"))
+
+            Assert.False(hasStats, "Expected NO stats message on a non-Monday first-week day")
         }
 
     [<Fact>]

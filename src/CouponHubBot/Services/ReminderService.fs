@@ -72,14 +72,12 @@ type ReminderService(
                 do! botClient.SendMessage(ChatId botConfig.CommunityChatId, msg) :> Task
                 anySent <- true
 
-            if nowUtc.DayOfWeek = DayOfWeek.Monday then
-                let since = nowUtc.AddDays(-7.0)
-                let until = nowUtc
-                let! usedRows = db.GetUserEventCounts("used", since, until)
-                let! addedRows = db.GetUserEventCounts("added", since, until)
+            if nowUtc.DayOfWeek = DayOfWeek.Monday && nowUtc.Day <= 7 then
+                let! usedRows = db.GetUserEventCounts("used", DateTime.MinValue, nowUtc)
+                let! addedRows = db.GetUserEventCounts("added", DateTime.MinValue, nowUtc)
 
                 let text =
-                    "Статистика за последние 7 дней (использовано/добавлено):\n"
+                    "Статистика за всё время (использовано/добавлено):\n"
                     + formatCombinedStats usedRows addedRows
 
                 do! botClient.SendMessage(ChatId botConfig.CommunityChatId, text) :> Task
@@ -114,10 +112,15 @@ type ReminderService(
             return anySent
         }
 
-    let nextRunUtc (hourUtc: int) =
+    let nextRunUtc (hourDublin: int) =
         let now = time.GetUtcNow().UtcDateTime
-        let today = DateTime(now.Year, now.Month, now.Day, hourUtc, 0, 0, DateTimeKind.Utc)
-        if now <= today then today else today.AddDays(1.0)
+        let dublinTz = Utils.TimeZones.getDublinTimeZone()
+        let nowDublin = TimeZoneInfo.ConvertTimeFromUtc(now, dublinTz)
+        let todayAtHourDublin = DateTime(nowDublin.Year, nowDublin.Month, nowDublin.Day, hourDublin, 0, 0)
+        let targetDublin =
+            if nowDublin <= todayAtHourDublin then todayAtHourDublin
+            else todayAtHourDublin.AddDays(1.0)
+        TimeZoneInfo.ConvertTimeToUtc(targetDublin, dublinTz)
 
     override _.ExecuteAsync(stoppingToken: CancellationToken) =
         task {
@@ -129,7 +132,7 @@ type ReminderService(
                     logger.LogError(ex, "Failed to run reminder on startup")
 
             while not stoppingToken.IsCancellationRequested do
-                let next = nextRunUtc botConfig.ReminderHourUtc
+                let next = nextRunUtc botConfig.ReminderHourDublin
                 let delay = next - time.GetUtcNow().UtcDateTime
                 if delay > TimeSpan.Zero then
                     logger.LogInformation("Next reminder run at {NextRunUtc}", next)
