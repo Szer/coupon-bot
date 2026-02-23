@@ -73,8 +73,8 @@ type ReminderService(
                 anySent <- true
 
             if nowUtc.DayOfWeek = DayOfWeek.Monday && nowUtc.Day <= 7 then
-                let! usedRows = db.GetUserEventCounts("used", DateTime.MinValue, nowUtc)
-                let! addedRows = db.GetUserEventCounts("added", DateTime.MinValue, nowUtc)
+                let! usedRows = db.GetUserEventCounts("used", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc), nowUtc)
+                let! addedRows = db.GetUserEventCounts("added", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc), nowUtc)
 
                 let text =
                     "Статистика за всё время (использовано/добавлено):\n"
