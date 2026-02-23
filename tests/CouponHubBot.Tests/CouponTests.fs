@@ -948,8 +948,8 @@ ON CONFLICT (id) DO NOTHING;
                 )
                 :> Task
 
-            // All coupons are NOT expiring today, ordered by increasing expires_at:
-            // min_check: 50, 25, 50, 25, 50, 50 (values for readability: 10,5,10,5,10,10)
+            // All coupons are NOT expiring today, ordered by increasing expires_at.
+            // (min_check, value): (50,10), (25,5), (50,10), (25,5), (50,10), (50,10), (50,10)
             let seed (i: int) (value: decimal) (minCheck: decimal) =
                 let expiresIso =
                     fixture.FixedToday.AddDays(10 + i).ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
@@ -972,6 +972,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
             do! seed 4 5.00m 25.00m
             do! seed 5 10.00m 50.00m
             do! seed 6 10.00m 50.00m
+            do! seed 7 10.00m 50.00m
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
@@ -991,18 +992,18 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
 
-            Assert.Equal(5, itemLines.Length)
+            Assert.Equal(6, itemLines.Length)
 
             let countSub (needle: string) =
                 itemLines |> Array.sumBy (fun l -> if l.Contains(needle) then 1 else 0)
 
-            // Expected: 1 fiver (min_check=25) + 4 non-fivers (min_check=50) in the shown top-5.
-            Assert.Equal(1, countSub "из 25€")
+            // Expected: 2 fivers (min_check=25) + 4 non-fivers (min_check=50) in the shown top-6.
+            Assert.Equal(2, countSub "из 25€")
             Assert.Equal(4, countSub "из 50€")
         }
 
     [<Fact>]
-    let ``/list shows all coupons when total < 5 (even with fivers)`` () =
+    let ``/list shows all coupons when total < 6 (even with fivers)`` () =
         task {
             do! fixture.ClearFakeCalls()
             do! fixture.TruncateCoupons()
