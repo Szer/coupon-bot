@@ -664,7 +664,7 @@ VALUES (240, 'seed-expired', 10.00, 50.00, @yesterday::date, 'available');
             // Seed 6 available coupons:
             // - 5 earliest by expires_at have larger min_check (50)
             // - 1 later-expiring has minimal min_check (25)
-            // Expected: /list (top 5) still contains at least one "из 25€".
+            // Expected: /list (top 6) still contains at least one "из 25€".
             use conn = new NpgsqlConnection(fixture.DbConnectionString)
 
             do!
@@ -681,7 +681,7 @@ ON CONFLICT (id) DO NOTHING;
             let mkIso (d: DateOnly) =
                 d.ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
 
-            // 5 "big min_check" coupons that would normally fill the top-5 list.
+            // 5 "big min_check" coupons that would normally fill the top-6 list.
             for i in 1..5 do
                 let expiresIso = mkIso (fixture.FixedToday.AddDays(i))
                 do!
@@ -735,7 +735,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
 
-            Assert.Equal(5, itemLines.Length)
+            Assert.Equal(6, itemLines.Length)
         }
 
     [<Fact>]
@@ -842,7 +842,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
             do! seed "seed-mc-40" 40.00m expiresIso
             do! seed "seed-mc-50" 50.00m expiresIso
             do! seed "seed-mc-100" 100.00m expiresIso
-            // 5th coupon so the list can be filled up to 5.
+            // 5th coupon so the list can show all min_check buckets.
             do! seed "seed-mc-extra" 50.00m extraIso
 
             do! fixture.ClearFakeCalls()
@@ -866,7 +866,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
         }
 
     [<Fact>]
-    let ``/list fills to 5 coupons when today+min_check selection is shorter`` () =
+    let ``/list fills to 6 coupons when today+min_check selection is shorter`` () =
         task {
             do! fixture.ClearFakeCalls()
             do! fixture.TruncateCoupons()
@@ -888,7 +888,7 @@ ON CONFLICT (id) DO NOTHING;
                 :> Task
 
             // Seed 10 coupons, none expiring today, and only min_check=50 is present.
-            // Selection will include 1 coupon from min_check=50 bucket, then fill up to 5 by expiry.
+            // Selection will include 1 coupon from min_check=50 bucket, then fill up to 6 by expiry.
             for i in 1..10 do
                 let expiresIso = fixture.FixedToday.AddDays(10 + i).ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
                 do!
@@ -924,7 +924,7 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
 
-            Assert.Equal(5, itemLines.Length)
+            Assert.Equal(6, itemLines.Length)
         }
 
     [<Fact>]
@@ -1069,6 +1069,280 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
 
             Assert.Equal(2, countSub "из 25€")
             Assert.Equal(1, countSub "из 50€")
+        }
+
+    [<Fact>]
+    let ``/list shows 2 fivers when 3 fivers and 4 non-fivers available`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 247L, username = "list_2fivers_happy")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (@uid, @uname, 'List2FiversHappy', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+"""
+                    , {| uid = user.Id; uname = "list_2fivers_happy" |}
+                )
+                :> Task
+
+            let seed (i: int) (value: decimal) (minCheck: decimal) =
+                let expiresIso =
+                    fixture.FixedToday.AddDays(10 + i).ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
+                conn.ExecuteAsync(
+                    """
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
+"""
+                    , {| owner_id = user.Id
+                         photo_file_id = $"seed-2fh-{i}"
+                         value = value
+                         min_check = minCheck
+                         expires_at = expiresIso |}
+                )
+                :> Task
+
+            // 3 fivers + 4 non-fivers = 7 coupons total
+            do! seed 1 5.00m 25.00m
+            do! seed 2 5.00m 25.00m
+            do! seed 3 5.00m 25.00m
+            do! seed 4 10.00m 50.00m
+            do! seed 5 10.00m 50.00m
+            do! seed 6 10.00m 50.00m
+            do! seed 7 10.00m 50.00m
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let couponsText =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some user.Id -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            Assert.True(couponsText.IsSome, "Expected /list to send a DM message")
+
+            let itemLines =
+                couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
+
+            Assert.Equal(6, itemLines.Length)
+
+            let countSub (needle: string) =
+                itemLines |> Array.sumBy (fun l -> if l.Contains(needle) then 1 else 0)
+
+            Assert.Equal(2, countSub "из 25€")
+            Assert.Equal(4, countSub "из 50€")
+        }
+
+    [<Fact>]
+    let ``/list shows all 6 fivers when only fivers available`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 248L, username = "list_all_fivers")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (@uid, @uname, 'ListAllFivers', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+"""
+                    , {| uid = user.Id; uname = "list_all_fivers" |}
+                )
+                :> Task
+
+            for i in 1..6 do
+                let expiresIso =
+                    fixture.FixedToday.AddDays(10 + i).ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
+                do!
+                    conn.ExecuteAsync(
+                        """
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
+"""
+                        , {| owner_id = user.Id
+                             photo_file_id = $"seed-af-{i}"
+                             value = 5.00m
+                             min_check = 25.00m
+                             expires_at = expiresIso |}
+                    )
+                    :> Task
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let couponsText =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some user.Id -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            Assert.True(couponsText.IsSome, "Expected /list to send a DM message")
+
+            let itemLines =
+                couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
+
+            Assert.Equal(6, itemLines.Length)
+
+            let countSub (needle: string) =
+                itemLines |> Array.sumBy (fun l -> if l.Contains(needle) then 1 else 0)
+
+            Assert.Equal(6, countSub "из 25€")
+        }
+
+    [<Fact>]
+    let ``/list shows 1 fiver when only 1 fiver exists`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 249L, username = "list_1fiver")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (@uid, @uname, 'List1Fiver', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+"""
+                    , {| uid = user.Id; uname = "list_1fiver" |}
+                )
+                :> Task
+
+            let seed (i: int) (value: decimal) (minCheck: decimal) =
+                let expiresIso =
+                    fixture.FixedToday.AddDays(10 + i).ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
+                conn.ExecuteAsync(
+                    """
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
+"""
+                    , {| owner_id = user.Id
+                         photo_file_id = $"seed-1f-{i}"
+                         value = value
+                         min_check = minCheck
+                         expires_at = expiresIso |}
+                )
+                :> Task
+
+            // 1 fiver + 5 non-fivers
+            do! seed 1 5.00m 25.00m
+            do! seed 2 10.00m 50.00m
+            do! seed 3 10.00m 50.00m
+            do! seed 4 10.00m 50.00m
+            do! seed 5 10.00m 50.00m
+            do! seed 6 10.00m 50.00m
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let couponsText =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some user.Id -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            Assert.True(couponsText.IsSome, "Expected /list to send a DM message")
+
+            let itemLines =
+                couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
+
+            Assert.Equal(6, itemLines.Length)
+
+            let countSub (needle: string) =
+                itemLines |> Array.sumBy (fun l -> if l.Contains(needle) then 1 else 0)
+
+            Assert.Equal(1, countSub "из 25€")
+            Assert.Equal(5, countSub "из 50€")
+        }
+
+    [<Fact>]
+    let ``/list shows 6 non-fivers when 0 fivers available`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 250L, username = "list_0fivers")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (@uid, @uname, 'List0Fivers', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+"""
+                    , {| uid = user.Id; uname = "list_0fivers" |}
+                )
+                :> Task
+
+            for i in 1..7 do
+                let expiresIso =
+                    fixture.FixedToday.AddDays(10 + i).ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture)
+                do!
+                    conn.ExecuteAsync(
+                        """
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'available');
+"""
+                        , {| owner_id = user.Id
+                             photo_file_id = $"seed-0f-{i}"
+                             value = 10.00m
+                             min_check = 50.00m
+                             expires_at = expiresIso |}
+                    )
+                    :> Task
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let couponsText =
+                calls
+                |> Array.choose (fun c ->
+                    match parseCallBody c.Body with
+                    | Some p when p.ChatId = Some user.Id -> p.Text
+                    | _ -> None)
+                |> Array.tryHead
+
+            Assert.True(couponsText.IsSome, "Expected /list to send a DM message")
+
+            let itemLines =
+                couponsText.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                |> Array.filter (fun l -> System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\.\s"))
+
+            Assert.Equal(6, itemLines.Length)
+
+            let countSub (needle: string) =
+                itemLines |> Array.sumBy (fun l -> if l.Contains(needle) then 1 else 0)
+
+            Assert.Equal(0, countSub "из 25€")
+            Assert.Equal(6, countSub "из 50€")
         }
 
     [<Fact>]
