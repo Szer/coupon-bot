@@ -1,3 +1,7 @@
+---
+excludeAgent: code-review-agent
+---
+
 # Copilot Coding Agent Instructions
 
 You are working on **Coupon Hub Bot**, a Telegram bot written in F# / .NET 10.
