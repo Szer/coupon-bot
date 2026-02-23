@@ -1,5 +1,5 @@
 ---
-excludeAgent: coding-agent
+excludeAgent: "coding-agent"
 ---
 
 # Code Review Instructions for coupon-hub-bot

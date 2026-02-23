@@ -1,5 +1,5 @@
 ---
-excludeAgent: code-review-agent
+excludeAgent: "code-review"
 ---
 
 # Copilot Coding Agent Instructions
