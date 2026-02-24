@@ -1,40 +1,31 @@
-# Copilot Coding Agent Instructions
+# Coupon Hub Bot
 
-You are working on **Coupon Hub Bot**, a Telegram bot written in F# / .NET 10.
+Telegram bot for collaborative coupon management in a private community. Written in **F# / .NET 10**.
 
-## Getting Started
+## Tech Stack
 
-Read [AGENTS.md](../AGENTS.md) first — it is the table of contents for all project documentation.
+- **F# / .NET 10**, ASP.NET Core (webhook), PostgreSQL, Dapper
+- **Telegram.Bot 22.8.1** — bot framework
+- Flyway — database migrations
+- Docker — containerization, Testcontainers for E2E tests
+- OpenTelemetry — traces and metrics, Serilog — structured logging
 
-## Key Documentation
+## Documentation Map
 
-- **Architecture**: `docs/ARCHITECTURE.md` — system overview, module structure
-- **Bot Logic**: `docs/TELEGRAM-BOT-LOGIC.md` — commands, wizard flows, callbacks
-- **Testing**: `docs/TESTING.md` — how to run tests, container logs, FakeTgApi patterns
-- **Database**: `docs/DATABASE.md` — schema, migrations, GRANT conventions
-- **Deployment**: `docs/DEPLOYMENT.md` — CI/CD pipeline, ArgoCD, verification
+| Topic | File |
+|-------|------|
+| Architecture | [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) |
+| Bot Logic | [docs/TELEGRAM-BOT-LOGIC.md](../docs/TELEGRAM-BOT-LOGIC.md) |
+| Testing | [docs/TESTING.md](../docs/TESTING.md) |
+| Database | [docs/DATABASE.md](../docs/DATABASE.md) |
+| OCR | [docs/OCR.md](../docs/OCR.md) |
+| Deployment | [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) |
+| Observability | [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) |
 
-## Development Workflow
+## Key Conventions
 
-1. Create a feature branch from `main`
-2. Make changes following the patterns in `docs/`
-3. Run `dotnet build -c Release` to verify compilation
-4. **Do NOT run `dotnet test`** — Docker-based E2E tests will timeout in the agent environment. The PR CI workflow (`build.yml`) runs tests automatically on push.
-5. Create a PR referencing the issue number
-
-## Debugging Deployment Failures
-
-When assigned a `deploy-failure` issue:
-
-1. The `deployment-debugging` skill will guide you through the full investigation
-2. You have VPN access to internal services (established by `copilot-setup-steps.yml`)
-3. Use the `argocd-status`, `loki-logs`, and `prometheus-metrics` skills to query observability tools
-4. Create a fix PR referencing the deploy-failure issue
-
-## Important Rules
-
-- UI text is in **Russian**
-- Always parse JSON before comparing Cyrillic strings (see `docs/TESTING.md`)
-- New database tables need GRANT for `coupon_hub_bot_service` role
-- F# compilation order matters — new files must be added to `.fsproj` in the correct position
-- Test fixtures use xUnit v3 assembly fixtures (see `tests/CouponHubBot.Tests/Program.fs`)
+- UI text is in **Russian** (кириллица). Never compare raw JSON for Cyrillic — always parse with `JsonDocument`.
+- F# idioms: `task { }` CE for async, records with `[<CLIMutable>]` for Dapper, `option` types.
+- Database role: `coupon_hub_bot_service`. Always add `GRANT` in migrations for new tables.
+- F# compilation order matters — new `.fs` files must be added to `.fsproj` in the correct position.
+- `TreatWarningsAsErrors` is enabled — all warnings are errors.
