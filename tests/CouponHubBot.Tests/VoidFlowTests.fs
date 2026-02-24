@@ -179,16 +179,9 @@ type VoidFlowTests(fixture: DefaultCouponHubTestContainers) =
                 "Expected /added listing message")
             Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("void:")),
                 "Expected void callback button in /added response")
-            // Check barcode suffix (last 4 digits) appears in the message text
-            Assert.True(
-                calls |> Array.exists (fun c ->
-                    match FakeCallHelpers.parseCallBody c.Body with
-                    | Some parsed when parsed.ChatId = Some owner.Id ->
-                        match parsed.Text with
-                        | Some text -> text.Contains("1191")
-                        | _ -> false
-                    | _ -> false),
-                "Expected last 4 barcode digits '1191' in /added output")
+            // Check full barcode suffix format (···XXXX) appears in the message text
+            Assert.True(findCallWithText calls owner.Id "···1191",
+                "Expected barcode suffix '···1191' in /added output")
             // Check reply_markup contains Аннулировать via JSON parsing (Cyrillic may be escaped in raw JSON)
             Assert.True(
                 calls |> Array.exists (fun c ->
