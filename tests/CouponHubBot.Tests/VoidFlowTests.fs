@@ -162,6 +162,14 @@ type VoidFlowTests(fixture: DefaultCouponHubTestContainers) =
 
             let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
 
+            // Set a known barcode so we can assert the last 4 digits appear in /added output
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do! conn.OpenAsync()
+            let testBarcode = "1234567891191" // last 4 digits: 1191
+            let! _ = conn.ExecuteAsync(
+                "UPDATE coupon SET barcode_text = @barcode WHERE owner_id = @owner_id",
+                {| barcode = testBarcode; owner_id = owner.Id |})
+
             do! fixture.ClearFakeCalls()
             let! resp = fixture.SendUpdate(Tg.dmMessage("/added", owner))
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
@@ -171,6 +179,9 @@ type VoidFlowTests(fixture: DefaultCouponHubTestContainers) =
                 "Expected /added listing message")
             Assert.True(calls |> Array.exists (fun c -> c.Body.Contains("void:")),
                 "Expected void callback button in /added response")
+            // Check full barcode suffix format (···XXXX) appears in the message text
+            Assert.True(findCallWithText calls owner.Id "···1191",
+                "Expected barcode suffix '···1191' in /added output")
             // Check reply_markup contains Аннулировать via JSON parsing (Cyrillic may be escaped in raw JSON)
             Assert.True(
                 calls |> Array.exists (fun c ->

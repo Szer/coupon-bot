@@ -427,11 +427,14 @@ type BotService(
                         |> Array.map (fun (i, c) ->
                             let n = i + 1
                             let d = formatUiDate c.expires_at
+                            let barcodeSuffix =
+                                if String.IsNullOrEmpty(c.barcode_text) || c.barcode_text.Length < 4 then ""
+                                else $" ···{c.barcode_text[c.barcode_text.Length - 4 ..]}"
                             let statusText =
                                 match c.status with
                                 | "taken" -> " (взят)"
                                 | _ -> ""
-                            $"{n}. {formatCouponValue c}, до {d}{statusText}")
+                            $"{n}. {formatCouponValue c}, до {d}{barcodeSuffix}{statusText}")
                         |> String.concat "\n"
                     if remaining > 0 then
                         lines + $"\n...и ещё {remaining} купонов"
