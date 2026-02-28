@@ -125,6 +125,7 @@ curl -s -G http://loki.internal/loki/api/v1/query_range \
 ```
 
 - **CPU throttling**: Non-zero throttling may indicate resource limits need adjusting
+- **Log volume**: Total log volume above **10,000 lines/day** is suspicious and indicates excessive logging. Investigate which log levels and messages contribute the most and create an issue to reduce noise. High log volume has cost implications for Loki storage.
 
 If metrics are nominal, note this — it's still valuable information.
 
