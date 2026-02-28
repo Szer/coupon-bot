@@ -143,7 +143,7 @@ WARN_LOG_COUNT_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
     2>/dev/null || echo '{"data":{"result":[]}}')
 WARN_LOG_COUNT=$(echo "$WARN_LOG_COUNT_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
 
-# Total log volume (last 5m rate extrapolated)
+# Total log volume (last 24h)
 LOG_VOLUME_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
     --data-urlencode "query=count_over_time({container=\"${CONTAINER}\"}[24h])" \
     2>/dev/null || echo '{"data":{"result":[]}}')
