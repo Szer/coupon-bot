@@ -51,7 +51,7 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 ### Loki
 - Error/Fatal log count (last 24h)
 - Warning log count (last 24h)
-- Top 10 unique error messages (deduplicated)
+- Top error patterns (counts only, messages redacted)
 - Total log volume
 
 ### ArgoCD

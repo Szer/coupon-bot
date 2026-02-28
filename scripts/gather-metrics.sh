@@ -6,6 +6,7 @@
 #   LOKI_URL              e.g. http://loki.internal
 #   ARGOCD_URL            e.g. http://argo.internal
 #   ARGOCD_AUTH_TOKEN     bearer token for ArgoCD API
+#   ARGOCD_APP_NAME       ArgoCD application name (default: coupon-bot)
 #   CONTAINER_NAME        container label (default: coupon-bot)
 #
 # Output: structured markdown report to stdout
@@ -112,12 +113,17 @@ log "Querying Loki logs (last 24h)..."
 
 START_24H=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)
 
-# Error/Fatal count
+# Error/Fatal total count (accurate, uncapped)
+ERROR_LOG_COUNT_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
+    --data-urlencode "query=sum(count_over_time({container=\"${CONTAINER}\"} | json | level=~\"Error|Fatal\"[24h]))" \
+    2>/dev/null || echo '{"data":{"result":[]}}')
+ERROR_LOG_COUNT=$(echo "$ERROR_LOG_COUNT_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
+
+# Sample of Error/Fatal logs for pattern extraction (capped at 200)
 ERROR_LOGS_RESPONSE=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query_range" \
     --data-urlencode "query={container=\"${CONTAINER}\"} | json | level=~\"Error|Fatal\"" \
     --data-urlencode "start=${START_24H}" \
     --data-urlencode "limit=200" 2>/dev/null || echo '{"data":{"result":[]}}')
-ERROR_LOG_COUNT=$(echo "$ERROR_LOGS_RESPONSE" | jq '[.data.result[].values[]] | length')
 
 # Top unique error messages (deduplicated, counts only — messages redacted for public issues)
 TOP_ERRORS_COUNT=$(echo "$ERROR_LOGS_RESPONSE" | jq -r '
@@ -131,12 +137,11 @@ TOP_ERRORS_COUNT=$(echo "$ERROR_LOGS_RESPONSE" | jq -r '
     "  - \(.count) occurrence(s)"
 ' 2>/dev/null || echo "  - (parse error)")
 
-# Warning count
-WARN_LOGS_RESPONSE=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query_range" \
-    --data-urlencode "query={container=\"${CONTAINER}\"} | json | level=\"Warning\"" \
-    --data-urlencode "start=${START_24H}" \
-    --data-urlencode "limit=200" 2>/dev/null || echo '{"data":{"result":[]}}')
-WARN_LOG_COUNT=$(echo "$WARN_LOGS_RESPONSE" | jq '[.data.result[].values[]] | length')
+# Warning total count (accurate, uncapped)
+WARN_LOG_COUNT_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
+    --data-urlencode "query=sum(count_over_time({container=\"${CONTAINER}\"} | json | level=\"Warning\"[24h]))" \
+    2>/dev/null || echo '{"data":{"result":[]}}')
+WARN_LOG_COUNT=$(echo "$WARN_LOG_COUNT_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
 
 # Total log volume (last 5m rate extrapolated)
 LOG_VOLUME_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \

@@ -23,10 +23,8 @@ jobs:
         echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
         sudo chmod 600 /etc/wireguard/wg0.conf
         sudo wg-quick up wg0
-        sudo wg show
 
     - name: Gather metrics snapshot
-      id: metrics
       run: |
         chmod +x scripts/gather-metrics.sh
         REPORT=$(./scripts/gather-metrics.sh)
