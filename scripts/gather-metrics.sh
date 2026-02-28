@@ -48,8 +48,13 @@ log "Prometheus: ${PROM_OK}, Loki: ${LOKI_OK}, ArgoCD: ${ARGO_OK}"
 
 log "Querying Prometheus metrics..."
 
-RESTARTS_JSON=$(prom_query "sum(kube_pod_container_status_restarts_total{container=\"${CONTAINER}\"})")
-RESTART_COUNT=$(prom_value "$RESTARTS_JSON")
+# ── Current status (instant gauges) ──
+
+PROCESS_UP_JSON=$(prom_query "up{job=\"${CONTAINER}\"}")
+PROCESS_UP=$(prom_value "$PROCESS_UP_JSON")
+
+POD_READY_JSON=$(prom_query "min(kube_pod_status_ready{pod=~\"${CONTAINER}.*\",condition=\"true\"})")
+POD_READY=$(prom_value "$POD_READY_JSON")
 
 MEMORY_JSON=$(prom_query "sum(container_memory_working_set_bytes{container=\"${CONTAINER}\"})")
 MEMORY_BYTES=$(prom_value "$MEMORY_JSON")
@@ -59,32 +64,47 @@ else
     MEMORY_MB="N/A"
 fi
 
-CPU_JSON=$(prom_query "rate(container_cpu_usage_seconds_total{container=\"${CONTAINER}\"}[5m])")
-CPU_RATE=$(echo "$CPU_JSON" | jq -r '[.data.result[].value[1] | tonumber] | add // 0' 2>/dev/null || echo "N/A")
-if [ "$CPU_RATE" != "N/A" ] && [ "$CPU_RATE" != "0" ]; then
-    CPU_PERCENT=$(echo "$CPU_RATE" | awk '{printf "%.2f%%", $1*100}')
-else
-    CPU_PERCENT="${CPU_RATE}"
-fi
-
-ERROR_5XX_JSON=$(prom_query "sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\",job=\"${CONTAINER}\"}[5m]))")
-ERROR_5XX_RATE=$(prom_value "$ERROR_5XX_JSON")
-
-REQUEST_RATE_JSON=$(prom_query "sum(rate(http_server_request_duration_seconds_count{job=\"${CONTAINER}\"}[5m]))")
-REQUEST_RATE=$(prom_value "$REQUEST_RATE_JSON")
-
-POD_READY_JSON=$(prom_query "min(kube_pod_status_ready{pod=~\"${CONTAINER}.*\",condition=\"true\"})")
-POD_READY=$(prom_value "$POD_READY_JSON")
+RESTARTS_JSON=$(prom_query "sum(kube_pod_container_status_restarts_total{container=\"${CONTAINER}\"})")
+RESTART_COUNT=$(prom_value "$RESTARTS_JSON")
 
 WAITING_JSON=$(prom_query "kube_pod_container_status_waiting_reason{container=\"${CONTAINER}\"}")
 WAITING_REASONS=$(echo "$WAITING_JSON" | jq -r '[.data.result[] | select((.value[1] | tonumber) > 0) | .metric.reason + "=" + .value[1]] | join(", ")' 2>/dev/null)
 [ -z "$WAITING_REASONS" ] && WAITING_REASONS="none"
 
-THROTTLE_JSON=$(prom_query "rate(container_cpu_cfs_throttled_periods_total{container=\"${CONTAINER}\"}[5m])")
-THROTTLE_RATE=$(prom_value "$THROTTLE_JSON")
+# ── 24h trends ──
 
-PROCESS_UP_JSON=$(prom_query "up{job=\"${CONTAINER}\"}")
-PROCESS_UP=$(prom_value "$PROCESS_UP_JSON")
+MEMORY_MAX_JSON=$(prom_query "max_over_time(sum(container_memory_working_set_bytes{container=\"${CONTAINER}\"})[24h:5m])")
+MEMORY_MAX_BYTES=$(prom_value "$MEMORY_MAX_JSON")
+if [ "$MEMORY_MAX_BYTES" != "N/A" ]; then
+    MEMORY_MAX_MB=$(echo "$MEMORY_MAX_BYTES" | awk '{printf "%.1f", $1/1048576}')
+else
+    MEMORY_MAX_MB="N/A"
+fi
+
+CPU_AVG_JSON=$(prom_query "avg_over_time(sum(rate(container_cpu_usage_seconds_total{container=\"${CONTAINER}\"}[5m]))[24h:5m])")
+CPU_AVG=$(echo "$CPU_AVG_JSON" | jq -r '[.data.result[].value[1] | tonumber] | add // 0' 2>/dev/null || echo "N/A")
+if [ "$CPU_AVG" != "N/A" ] && [ "$CPU_AVG" != "0" ]; then
+    CPU_AVG_PERCENT=$(echo "$CPU_AVG" | awk '{printf "%.2f%%", $1*100}')
+else
+    CPU_AVG_PERCENT="${CPU_AVG}"
+fi
+
+CPU_MAX_JSON=$(prom_query "max_over_time(sum(rate(container_cpu_usage_seconds_total{container=\"${CONTAINER}\"}[5m]))[24h:5m])")
+CPU_MAX=$(echo "$CPU_MAX_JSON" | jq -r '[.data.result[].value[1] | tonumber] | add // 0' 2>/dev/null || echo "N/A")
+if [ "$CPU_MAX" != "N/A" ] && [ "$CPU_MAX" != "0" ]; then
+    CPU_MAX_PERCENT=$(echo "$CPU_MAX" | awk '{printf "%.2f%%", $1*100}')
+else
+    CPU_MAX_PERCENT="${CPU_MAX}"
+fi
+
+TOTAL_REQUESTS_JSON=$(prom_query "sum(increase(http_server_request_duration_seconds_count{job=\"${CONTAINER}\"}[24h]))")
+TOTAL_REQUESTS=$(echo "$TOTAL_REQUESTS_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
+
+TOTAL_5XX_JSON=$(prom_query "sum(increase(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\",job=\"${CONTAINER}\"}[24h]))")
+TOTAL_5XX=$(echo "$TOTAL_5XX_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
+
+THROTTLE_JSON=$(prom_query "sum(increase(container_cpu_cfs_throttled_periods_total{container=\"${CONTAINER}\"}[24h]))")
+THROTTLE_TOTAL=$(echo "$THROTTLE_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
 
 # ─── Loki logs ────────────────────────────────────────────────────────────────
 
@@ -144,17 +164,26 @@ log "Generating report..."
 cat <<EOF
 ## Infrastructure Health (Prometheus)
 
+### Current Status
+
 | Metric | Value |
 |--------|-------|
 | Process Up | ${PROCESS_UP} |
 | Pod Ready | ${POD_READY} |
 | Memory Usage | ${MEMORY_MB} MB |
-| CPU Usage (5m avg) | ${CPU_PERCENT} |
-| CPU Throttling (5m rate) | ${THROTTLE_RATE} |
 | Container Restarts (total) | ${RESTART_COUNT} |
-| Request Rate (5m) | ${REQUEST_RATE} req/s |
-| 5xx Error Rate (5m) | ${ERROR_5XX_RATE} req/s |
 | Waiting Reasons | ${WAITING_REASONS} |
+
+### 24h Trends
+
+| Metric | Value |
+|--------|-------|
+| Peak Memory | ${MEMORY_MAX_MB} MB |
+| Avg CPU | ${CPU_AVG_PERCENT} |
+| Peak CPU | ${CPU_MAX_PERCENT} |
+| Total Requests | ${TOTAL_REQUESTS} |
+| Total 5xx Errors | ${TOTAL_5XX} |
+| CPU Throttled Periods | ${THROTTLE_TOTAL} |
 
 ### Connectivity
 
