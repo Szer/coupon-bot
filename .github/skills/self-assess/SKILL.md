@@ -20,7 +20,7 @@ You are acting as an **automated product manager**. Your job is to analyze the s
 - VPN is pre-established via `copilot-setup-steps.yml` (WireGuard to `*.internal` hosts)
 - `$ARGOCD_AUTH_TOKEN` is available from the `copilot` environment
 - The orchestration issue body contains a metrics snapshot from `gather-metrics.sh`
-- `api.github.com` must be in the Copilot agent firewall allowlist (repo settings) for `gh` CLI to work. If `gh` commands fail with network errors, do NOT fall back to code changes — instead close the orchestration issue with a comment asking the repo admin to fix the allowlist.
+- `api.github.com` must be in the Copilot agent firewall allowlist (repo settings) for `gh` CLI to work. If `gh` commands fail with network errors, do NOT fall back to code changes and do NOT attempt to close or comment on issues via `gh` — instead stop execution and emit a clear failure summary in the run output so a репозиторий администратор can fix the allowlist.
 
 ## Phase 1: Read the Metrics Snapshot
 
