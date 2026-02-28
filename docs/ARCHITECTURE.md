@@ -8,18 +8,19 @@ Coupon Hub Bot is a Telegram bot running as an ASP.NET Core webhook server. User
 
 ```
 src/CouponHubBot/
-├── Program.fs            # Entry point, DI, webhook setup
-├── Types.fs              # Domain types (Coupon, User, PendingAddFlow, etc.)
-├── Utils.fs              # Shared utilities (date parsing, pluralization)
-├── Telemetry.fs          # OpenTelemetry configuration
+├── Program.fs               # Entry point, DI, webhook setup
+├── Types.fs                 # Domain types (Coupon, User, PendingAddFlow, etc.)
+├── Utils.fs                 # Shared utilities (date parsing, pluralization)
+├── Telemetry.fs             # OpenTelemetry configuration
 └── Services/
-    ├── DbService.fs      # PostgreSQL access via Dapper
-    ├── TelegramService.fs # Telegram API wrapper
-    ├── CouponService.fs  # Coupon CRUD operations
-    ├── AddFlowService.fs # /add wizard state machine
-    ├── ReminderService.fs # Scheduled reminders (expiring coupons, weekly stats)
-    ├── AzureOcrService.fs # Azure Computer Vision OCR client
-    └── CouponOcrEngine.fs # Barcode + text OCR processing
+    ├── BotService.fs          # All bot command/callback handlers + /add wizard
+    ├── BotCommandsSetup.fs    # IHostedService: registers bot commands on startup
+    ├── DbService.fs           # PostgreSQL access via Dapper
+    ├── MembershipService.fs   # Community membership cache + background refresh
+    ├── NotificationService.fs # Group chat notification helpers
+    ├── OcrService.fs          # Azure Computer Vision OCR HTTP client
+    ├── CouponOcrEngine.fs     # Barcode + text OCR processing pipeline
+    └── ReminderService.fs     # Scheduled reminders (expiring coupons, weekly stats)
 ```
 
 ## Data Flow
