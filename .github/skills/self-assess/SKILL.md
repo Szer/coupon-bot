@@ -124,13 +124,13 @@ If metrics are nominal, note this — it's still valuable information.
 List all open issues, paying special attention to `self-assess` labeled ones:
 
 ```bash
-gh issue list --repo Szer/coupon-bot --state open --json number,title,labels,body,comments --limit 100
+gh issue list --state open --json number,title,labels,body,comments --limit 100
 ```
 
 Also list recently closed issues to understand what was fixed:
 
 ```bash
-gh issue list --repo Szer/coupon-bot --state closed --json number,title,labels,closedAt --limit 20
+gh issue list --state closed --json number,title,labels,closedAt --limit 20
 ```
 
 Build a mental map of what's already tracked.
@@ -151,7 +151,6 @@ For each finding from Phases 2-3, decide: **create**, **bump**, or **skip**.
 3. **Create if new**: Use this template for new issues:
    ```
    gh issue create \
-     --repo Szer/coupon-bot \
      --title "Brief descriptive title" \
      --label "self-assess" \
      --body "## Problem
@@ -172,7 +171,7 @@ For each finding from Phases 2-3, decide: **create**, **bump**, or **skip**.
    ```
 4. **Close if resolved**: For each open `self-assess` issue, check if the underlying problem is still present. If it's fixed, close it:
    ```
-   gh issue close NUMBER --repo Szer/coupon-bot \
+   gh issue close NUMBER \
      --comment "✅ **Resolved** (YYYY-MM-DD self-assessment)
 
    [Explanation of how/when this was fixed]"
@@ -197,7 +196,7 @@ For each finding from Phases 2-3, decide: **create**, **bump**, or **skip**.
 After completing all phases, close the orchestration issue (the one you were assigned to) with a summary:
 
 ```
-gh issue close ISSUE_NUMBER --repo Szer/coupon-bot \
+gh issue close ISSUE_NUMBER \
   --comment "## Self-Assessment Summary (YYYY-MM-DD)
 
 ### Metrics Overview

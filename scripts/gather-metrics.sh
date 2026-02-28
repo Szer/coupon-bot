@@ -18,6 +18,7 @@ set -euo pipefail
 : "${ARGOCD_AUTH_TOKEN:?ARGOCD_AUTH_TOKEN is required}"
 
 CONTAINER="${CONTAINER_NAME:-coupon-bot}"
+APP_NAME="${ARGOCD_APP_NAME:-coupon-bot}"
 AUTH_HEADER="Authorization: Bearer ${ARGOCD_AUTH_TOKEN}"
 
 log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
@@ -47,10 +48,10 @@ log "Prometheus: ${PROM_OK}, Loki: ${LOKI_OK}, ArgoCD: ${ARGO_OK}"
 
 log "Querying Prometheus metrics..."
 
-RESTARTS_JSON=$(prom_query "kube_pod_container_status_restarts_total{container=\"${CONTAINER}\"}")
+RESTARTS_JSON=$(prom_query "sum(kube_pod_container_status_restarts_total{container=\"${CONTAINER}\"})")
 RESTART_COUNT=$(prom_value "$RESTARTS_JSON")
 
-MEMORY_JSON=$(prom_query "container_memory_working_set_bytes{container=\"${CONTAINER}\"}")
+MEMORY_JSON=$(prom_query "sum(container_memory_working_set_bytes{container=\"${CONTAINER}\"})")
 MEMORY_BYTES=$(prom_value "$MEMORY_JSON")
 if [ "$MEMORY_BYTES" != "N/A" ]; then
     MEMORY_MB=$(echo "$MEMORY_BYTES" | awk '{printf "%.1f", $1/1048576}')
@@ -72,11 +73,11 @@ ERROR_5XX_RATE=$(prom_value "$ERROR_5XX_JSON")
 REQUEST_RATE_JSON=$(prom_query "sum(rate(http_server_request_duration_seconds_count{job=\"${CONTAINER}\"}[5m]))")
 REQUEST_RATE=$(prom_value "$REQUEST_RATE_JSON")
 
-POD_READY_JSON=$(prom_query "kube_pod_status_ready{pod=~\"${CONTAINER}.*\"}")
+POD_READY_JSON=$(prom_query "min(kube_pod_status_ready{pod=~\"${CONTAINER}.*\",condition=\"true\"})")
 POD_READY=$(prom_value "$POD_READY_JSON")
 
 WAITING_JSON=$(prom_query "kube_pod_container_status_waiting_reason{container=\"${CONTAINER}\"}")
-WAITING_REASONS=$(echo "$WAITING_JSON" | jq -r '[.data.result[] | .metric.reason + "=" + .value[1]] | join(", ")' 2>/dev/null)
+WAITING_REASONS=$(echo "$WAITING_JSON" | jq -r '[.data.result[] | select((.value[1] | tonumber) > 0) | .metric.reason + "=" + .value[1]] | join(", ")' 2>/dev/null)
 [ -z "$WAITING_REASONS" ] && WAITING_REASONS="none"
 
 THROTTLE_JSON=$(prom_query "rate(container_cpu_cfs_throttled_periods_total{container=\"${CONTAINER}\"}[5m])")
@@ -98,16 +99,16 @@ ERROR_LOGS_RESPONSE=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query_range" \
     --data-urlencode "limit=200" 2>/dev/null || echo '{"data":{"result":[]}}')
 ERROR_LOG_COUNT=$(echo "$ERROR_LOGS_RESPONSE" | jq '[.data.result[].values[]] | length')
 
-# Top unique error messages (deduplicated, up to 10)
-TOP_ERRORS=$(echo "$ERROR_LOGS_RESPONSE" | jq -r '
+# Top unique error messages (deduplicated, counts only — messages redacted for public issues)
+TOP_ERRORS_COUNT=$(echo "$ERROR_LOGS_RESPONSE" | jq -r '
     [.data.result[].values[] | .[1]] |
     map(. as $line | try (fromjson | .RenderedMessage // .message // .msg // $line) catch $line) |
     group_by(.) |
-    map({message: .[0], count: length}) |
+    map({count: length}) |
     sort_by(-.count) |
     .[:10] |
     .[] |
-    "  - (\(.count)x) \(.message[:120])"
+    "  - \(.count) occurrence(s)"
 ' 2>/dev/null || echo "  - (parse error)")
 
 # Warning count
@@ -127,7 +128,7 @@ LOG_VOLUME=$(echo "$LOG_VOLUME_JSON" | jq -r '[.data.result[].value[1] | tonumbe
 
 log "Querying ArgoCD status..."
 
-ARGO_RESPONSE=$(curl -sf "${ARGOCD_URL}/api/v1/applications/${CONTAINER}" \
+ARGO_RESPONSE=$(curl -sf "${ARGOCD_URL}/api/v1/applications/${APP_NAME}" \
     -H "${AUTH_HEADER}" 2>/dev/null || echo "{}")
 
 SYNC_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.sync.status // "Unknown"')
@@ -169,8 +170,8 @@ cat <<EOF
 - **Warning entries**: ${WARN_LOG_COUNT}
 - **Total log volume (24h)**: ${LOG_VOLUME} lines
 
-### Top Error Messages
-${TOP_ERRORS:-  - (none)}
+### Top Error Patterns (counts only — query Loki for details)
+${TOP_ERRORS_COUNT:-  - (none)}
 
 ## Deployment Status (ArgoCD)
 

@@ -38,6 +38,7 @@ jobs:
         LOKI_URL: http://loki.internal
         ARGOCD_URL: http://argo.internal
         ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        ARGOCD_APP_NAME: coupon-bot
         CONTAINER_NAME: coupon-bot
 
     - name: Disconnect VPN
@@ -65,7 +66,7 @@ jobs:
           --repo "${{ github.repository }}" \
           --title "Daily self-assessment ${DATE}" \
           --label "self-assess" \
-          --assignee "copilot" \
+          --assignee "@copilot" \
           --body "## Daily Self-Assessment — ${DATE}
 
         This is an automated self-assessment. Use the \`self-assess\` skill to analyze the metrics below, review the codebase, and manage the backlog.
