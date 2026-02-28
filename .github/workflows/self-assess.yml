@@ -1,0 +1,86 @@
+name: Daily Self-Assessment
+
+on:
+  schedule:
+    - cron: '37 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-assess:
+    runs-on: ubuntu-latest
+    environment: copilot
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup WireGuard VPN
+      run: |
+        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
+        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
+        sudo chmod 600 /etc/wireguard/wg0.conf
+        sudo wg-quick up wg0
+
+    - name: Gather metrics snapshot
+      run: |
+        chmod +x scripts/gather-metrics.sh
+        REPORT=$(./scripts/gather-metrics.sh)
+        
+        # Save to file for the next step (avoids shell escaping issues)
+        echo "$REPORT" > /tmp/metrics-report.md
+      env:
+        PROMETHEUS_URL: http://prometheus.internal:9090
+        LOKI_URL: http://loki.internal
+        ARGOCD_URL: http://argo.internal
+        ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        ARGOCD_APP_NAME: coupon-bot
+        CONTAINER_NAME: coupon-bot
+
+    - name: Disconnect VPN
+      if: always()
+      run: sudo wg-quick down wg0 || true
+
+    - name: Ensure self-assess label exists
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        gh label create self-assess \
+          --repo "${{ github.repository }}" \
+          --description "Auto-discovered by daily self-assessment workflow" \
+          --color "7057ff" \
+          --force
+
+    - name: Create orchestration issue
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        DATE=$(date -u +%Y-%m-%d)
+        REPORT=$(cat /tmp/metrics-report.md)
+
+        gh issue create \
+          --repo "${{ github.repository }}" \
+          --title "Daily self-assessment ${DATE}" \
+          --label "self-assess" \
+          --assignee "@copilot" \
+          --body "## Daily Self-Assessment — ${DATE}
+
+        This is an automated self-assessment. Use the \`self-assess\` skill to analyze the metrics below, review the codebase, and manage the backlog.
+
+        **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+        ---
+
+        ${REPORT}
+
+        ---
+
+        ## Instructions
+
+        1. Read the metrics snapshot above
+        2. Analyze the codebase for quality issues
+        3. Review existing open issues (especially \`self-assess\` labeled)
+        4. Create new issues, bump existing ones, or close resolved ones
+        5. Close this orchestration issue with a summary"

@@ -21,6 +21,7 @@ excludeAgent: "code-review"
 - **PR builds**: `.github/workflows/build.yml` — runs tests, uploads results + container logs
 - **Deploy**: `.github/workflows/deploy.yml` — tests → Flyway migrations → GHCR push → deployment verification
 - **Test results**: `.github/workflows/test-results.yml` — publishes test report after CI
+- **Self-assess**: `.github/workflows/self-assess.yml` — daily self-assessment, gathers metrics, creates orchestration issue for Copilot
 - **Agent env**: `.github/workflows/copilot-setup-steps.yml` — sets up .NET SDK, VPN, dependencies
 
 ## Agent Skills (`.github/skills/`)
@@ -31,6 +32,7 @@ excludeAgent: "code-review"
 | `argocd-status` | Checking ArgoCD sync/health status, deployed image tags |
 | `loki-logs` | Querying application logs via Loki for errors or patterns |
 | `prometheus-metrics` | Checking pod restarts, 5xx rates, health metrics |
+| `self-assess` | Daily self-assessment of codebase and infrastructure, backlog management |
 
 The agent has VPN access to `*.internal` hosts (established by `copilot-setup-steps.yml`).
 
