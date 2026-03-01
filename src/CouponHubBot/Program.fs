@@ -86,6 +86,8 @@ let builder = WebApplication.CreateBuilder()
     %configuration
         .ReadFrom.Configuration(context.Configuration)
         .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore.Routing.EndpointMiddleware", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("System.Net.Http.HttpClient", Serilog.Events.LogEventLevel.Warning)
         .Enrich.FromLogContext()
         .Enrich.WithSpan()

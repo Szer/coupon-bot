@@ -1137,7 +1137,7 @@ type BotService(
                     .SetTag("updateBodyJson", updateBodyJson)
                     .SetTag("updateId", update.Id)
             try
-                logger.LogInformation("BotService.OnUpdate: UpdateId={UpdateId}, Message={HasMessage}, CallbackQuery={HasCallback}",
+                logger.LogDebug("BotService.OnUpdate: UpdateId={UpdateId}, Message={HasMessage}, CallbackQuery={HasCallback}",
                     update.Id, not (isNull update.Message), not (isNull update.CallbackQuery))
                 if isNull update then
                     ()
