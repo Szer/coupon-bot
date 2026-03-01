@@ -51,9 +51,6 @@ log "Querying Prometheus metrics..."
 
 # ── Current status (instant gauges) ──
 
-PROCESS_UP_JSON=$(prom_query "up{job=\"${CONTAINER}\"}")
-PROCESS_UP=$(prom_value "$PROCESS_UP_JSON")
-
 POD_READY_JSON=$(prom_query "min(kube_pod_status_ready{pod=~\"${CONTAINER}.*\",condition=\"true\"})")
 POD_READY=$(prom_value "$POD_READY_JSON")
 
@@ -168,7 +165,9 @@ ARGO_RESPONSE=$(curl -sf "${ARGOCD_URL}/api/v1/applications/${APP_NAME}" \
 
 SYNC_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.sync.status // "Unknown"')
 HEALTH_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.health.status // "Unknown"')
-DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | .[] | sub(":[a-f0-9]{40}$"; ":" + (split(":") | last | .[:12]) + "…")' 2>/dev/null || echo "Unknown")
+DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | .[]' 2>/dev/null \
+    | sed 's/:\([a-f0-9]\{12\}\)[a-f0-9]\{28,\}$/:\1…/')
+[ -z "$DEPLOYED_IMAGES" ] && DEPLOYED_IMAGES="Unknown"
 ARGO_CONDITIONS=$(echo "$ARGO_RESPONSE" | jq -r '[.status.conditions[]? | "\(.type): \(.message)"] | join("\n")' 2>/dev/null)
 [ -z "$ARGO_CONDITIONS" ] && ARGO_CONDITIONS="none"
 
@@ -183,7 +182,6 @@ cat <<EOF
 
 | Metric | Value |
 |--------|-------|
-| Process Up | ${PROCESS_UP} |
 | Pod Ready | ${POD_READY} |
 | Memory Usage | ${MEMORY_MB} MB |
 | Container Restarts (total) | ${RESTART_COUNT} |
