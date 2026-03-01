@@ -117,6 +117,9 @@ let builder = WebApplication.CreateBuilder()
 
 %builder
     .Services
+    .AddSingleton<CouponFlowHandler>()
+    .AddSingleton<CommandHandler>()
+    .AddSingleton<CallbackHandler>()
     .AddSingleton<BotService>()
     .AddSingleton<DbService>(fun sp ->
         let botConf = sp.GetRequiredService<BotConfiguration>()
