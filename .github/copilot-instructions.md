@@ -30,6 +30,7 @@ Telegram bot for collaborative coupon management in a private community. Written
 - Database role: `coupon_hub_bot_service`. Always add `GRANT` in migrations for new tables.
 - F# compilation order matters — new `.fs` files must be added to `.fsproj` in the correct position.
 - `TreatWarningsAsErrors` is enabled — all warnings are errors.
+- **Always `git fetch origin main && git checkout -b <branch> origin/main`** before creating a feature branch. Never branch from a stale local main.
 
 ---
 
