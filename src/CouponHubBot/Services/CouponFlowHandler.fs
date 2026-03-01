@@ -30,15 +30,6 @@ type CouponFlowHandler(
         let text, kb = buildConfirmTextAndKeyboard value minCheck expiresAt barcodeText
         botClient.SendMessage(ChatId chatId, text, replyMarkup = kb) |> taskIgnore
 
-    let wizardEditConfirm (chatId: int64) (messageId: int) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) =
-        let text, kb = buildConfirmTextAndKeyboard value minCheck expiresAt barcodeText
-        task {
-            try
-                do! botClient.EditMessageText(ChatId chatId, messageId, text, replyMarkup = kb) |> taskIgnore
-            with _ ->
-                do! botClient.SendMessage(ChatId chatId, text, replyMarkup = kb) |> taskIgnore
-        }
-
     member _.HandleWizardStart(user: DbUser, chatId: int64) =
         task {
             do! db.UpsertPendingAddFlow(
@@ -66,7 +57,7 @@ type CouponFlowHandler(
                 else caption.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
 
             if not hasPhoto then
-                do! sendText chatId "Для ручного добавления пришли фото купона с подписью:\n/add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026 (или просто день: /add 10 50 25)"
+                do! sendText chatId "Для ручного добавления пришли фото купона с подписью:\n/add <скидка> <мин. чек> <дата>\nНапример: /add 10 50 25.01.2026 (или просто день: /add 10 50 25)"
             elif parts.Length >= 4 && (parts[0] = "/add" || parts[0] = "/a") then
                 let valueOpt = parseDecimalInvariant parts[1]
                 let minCheckOpt = parseDecimalInvariant parts[2]
@@ -89,9 +80,9 @@ type CouponFlowHandler(
                     | AddCouponResult.DuplicateBarcode existingId ->
                         do! sendText chatId $"Купон с таким штрихкодом уже есть в базе и ещё не истёк. Уже есть купон ID:{existingId}."
                 | _ ->
-                    do! sendText chatId "Не понял discount/min_check/date. Примеры: /add 10 50 2026-01-25 (или /add 10 50 25.01.2026, или /add 10 50 25)"
+                    do! sendText chatId "Не понял скидку/мин.чек/дату. Примеры: /add 10 50 2026-01-25 (или /add 10 50 25.01.2026, или /add 10 50 25)"
             else
-                do! sendText chatId "Нужна подпись вида: /add <discount> <min_check> <date>\nНапример: /add 10 50 25.01.2026"
+                do! sendText chatId "Нужна подпись вида: /add <скидка> <мин. чек> <дата>\nНапример: /add 10 50 25.01.2026"
         }
 
     member _.HandleWizardPhoto(user: DbUser, chatId: int64, photoFileId: string) =
@@ -129,9 +120,8 @@ type CouponFlowHandler(
                 else
                     use ms = new System.IO.MemoryStream()
                     do! botClient.DownloadFile(file.FilePath, ms)
-                    let bytes = ms.ToArray()
 
-                    if int64 bytes.Length > botConfig.OcrMaxFileSizeBytes then
+                    if int64 ms.Length > botConfig.OcrMaxFileSizeBytes then
                         do!
                             botClient.SendMessage(
                                 ChatId chatId,
@@ -140,6 +130,7 @@ type CouponFlowHandler(
                             )
                             |> taskIgnore
                     else
+                        let bytes = ms.ToArray()
                         let! ocr = couponOcr.Recognize(ReadOnlyMemory<byte>(bytes))
 
                         let valueOpt =
@@ -248,7 +239,7 @@ type CouponFlowHandler(
                 let parts = d.Split(':', StringSplitOptions.RemoveEmptyEntries)
                 if parts.Length >= 4 then
                     match parseDecimalInvariant parts[2], parseDecimalInvariant parts[3] with
-                    | Some v, Some mc ->
+                    | Some v, Some mc when v > 0M && mc > 0M ->
                         if flow.expires_at.HasValue then
                             let next =
                                 { flow with

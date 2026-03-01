@@ -62,7 +62,15 @@ type CallbackHandler(
                     | None ->
                         ()
                 elif isPrivateChat && hasData && cq.Data.StartsWith("addflow:") then
-                    Metrics.buttonClickTotal.Add(1L, KeyValuePair("button", box cq.Data))
+                    let addflowData = cq.Data.Substring("addflow:".Length)
+                    let stepEndIndex = addflowData.IndexOf(':')
+                    let step =
+                        if stepEndIndex >= 0 then addflowData.Substring(0, stepEndIndex)
+                        else addflowData
+                    let buttonLabel =
+                        if String.IsNullOrEmpty(step) then "addflow"
+                        else $"addflow:{step}"
+                    Metrics.buttonClickTotal.Add(1L, KeyValuePair("button", box buttonLabel))
                     match! db.GetPendingAddFlow user.id with
                     | None ->
                         do! sendText cq.Message.Chat.Id "Этот шаг добавления уже устарел. Начни заново: /add"
