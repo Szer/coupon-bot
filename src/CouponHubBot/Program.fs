@@ -85,6 +85,8 @@ let builder = WebApplication.CreateBuilder()
 %builder.Host.UseSerilog(fun context _ configuration ->
     %configuration
         .ReadFrom.Configuration(context.Configuration)
+        .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("System.Net.Http.HttpClient", Serilog.Events.LogEventLevel.Warning)
         .Enrich.FromLogContext()
         .Enrich.WithSpan()
         .WriteTo.Console(CompactJsonFormatter())
