@@ -148,12 +148,14 @@ if [ "$LOKI_OK" = "yes" ]; then
     LOG_VOLUME_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
         --data-urlencode "query=count_over_time({container=\"${CONTAINER}\"}[24h])" \
         2>/dev/null || echo '{"data":{"result":[]}}')
-    LOG_VOLUME=$(echo "$LOG_VOLUME_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
+    LOG_VOLUME_RAW=$(echo "$LOG_VOLUME_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
+    LOG_VOLUME="${LOG_VOLUME_RAW} lines"
 else
     log "Skipping Loki queries (unreachable)..."
     ERROR_LOG_COUNT="N/A (Loki unreachable)"
     WARN_LOG_COUNT="N/A (Loki unreachable)"
     LOG_VOLUME="N/A (Loki unreachable)"
+
     TOP_ERRORS_COUNT="  - N/A (Loki unreachable)"
 fi
 
@@ -210,7 +212,7 @@ cat <<EOF
 
 - **Error/Fatal entries**: ${ERROR_LOG_COUNT}
 - **Warning entries**: ${WARN_LOG_COUNT}
-- **Total log volume (24h)**: ${LOG_VOLUME} lines
+- **Total log volume (24h)**: ${LOG_VOLUME}
 
 ### Top Error Patterns (counts only — query Loki for details)
 ${TOP_ERRORS_COUNT:-  - (none)}
