@@ -169,8 +169,8 @@ ARGO_RESPONSE=$(curl -sf "${ARGOCD_URL}/api/v1/applications/${APP_NAME}" \
 
 SYNC_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.sync.status // "Unknown"')
 HEALTH_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.health.status // "Unknown"')
-DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | .[]' 2>/dev/null \
-    | sed 's/:\([a-f0-9]\{12\}\)[a-f0-9]\{28,\}$/:\1…/' || true)
+DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | join(", ")' 2>/dev/null \
+    | sed 's/:\([a-f0-9]\{12\}\)[a-f0-9]\{28,\}/:\1…/g' || true)
 [ -z "$DEPLOYED_IMAGES" ] && DEPLOYED_IMAGES="Unknown"
 ARGO_CONDITIONS=$(echo "$ARGO_RESPONSE" | jq -r '[.status.conditions[]? | "\(.type): \(.message)"] | join("\n")' 2>/dev/null || true)
 [ -z "$ARGO_CONDITIONS" ] && ARGO_CONDITIONS="none"
