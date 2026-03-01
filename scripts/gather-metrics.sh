@@ -146,7 +146,11 @@ if [ "$LOKI_OK" = "yes" ]; then
         --data-urlencode "query=count_over_time({container=\"${CONTAINER}\"}[24h])" \
         2>/dev/null || echo '{"data":{"result":[]}}')
     LOG_VOLUME_RAW=$(echo "$LOG_VOLUME_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
-    LOG_VOLUME="${LOG_VOLUME_RAW} lines"
+    if [[ "$LOG_VOLUME_RAW" =~ ^[0-9]+$ ]]; then
+        LOG_VOLUME="${LOG_VOLUME_RAW} lines"
+    else
+        LOG_VOLUME="$LOG_VOLUME_RAW"
+    fi
 else
     log "Skipping Loki queries (unreachable)..."
     ERROR_LOG_COUNT="N/A (Loki unreachable)"
