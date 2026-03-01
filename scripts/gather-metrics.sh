@@ -104,6 +104,22 @@ TOTAL_5XX=$(echo "$TOTAL_5XX_JSON" | jq -r '[.data.result[].value[1] | tonumber 
 THROTTLE_JSON=$(prom_query "sum(increase(container_cpu_cfs_throttled_periods_total{container=\"${CONTAINER}\"}[24h]))")
 THROTTLE_TOTAL=$(echo "$THROTTLE_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
 
+THROTTLE_RATIO_JSON=$(prom_query "sum(increase(container_cpu_cfs_throttled_periods_total{container=\"${CONTAINER}\"}[24h])) / sum(increase(container_cpu_cfs_periods_total{container=\"${CONTAINER}\"}[24h]))")
+THROTTLE_RATIO_RAW=$(echo "$THROTTLE_RATIO_JSON" | jq -r '[.data.result[].value[1] | tonumber] | first // 0' 2>/dev/null || echo "N/A")
+if [ "$THROTTLE_RATIO_RAW" != "N/A" ] && [ "$THROTTLE_RATIO_RAW" != "0" ]; then
+    THROTTLE_RATIO=$(echo "$THROTTLE_RATIO_RAW" | awk '{printf "%.2f%%", $1*100}')
+else
+    THROTTLE_RATIO="0%"
+fi
+
+CPU_LIMIT_JSON=$(prom_query "max(kube_pod_container_resource_limits{container=\"${CONTAINER}\",resource=\"cpu\"})")
+CPU_LIMIT_CORES=$(prom_value "$CPU_LIMIT_JSON")
+if [ "$CPU_LIMIT_CORES" != "N/A" ]; then
+    CPU_LIMIT_DISPLAY=$(echo "$CPU_LIMIT_CORES" | awk '{printf "%.0fm (%.2f cores)", $1*1000, $1}')
+else
+    CPU_LIMIT_DISPLAY="none (burstable/unlimited)"
+fi
+
 # ─── Loki logs ────────────────────────────────────────────────────────────────
 
 if [ "$LOKI_OK" = "yes" ]; then
@@ -198,9 +214,11 @@ cat <<EOF
 | Peak Memory | ${MEMORY_MAX_MB} MB |
 | Avg CPU | ${CPU_AVG_PERCENT} |
 | Peak CPU | ${CPU_MAX_PERCENT} |
+| CPU Limit | ${CPU_LIMIT_DISPLAY} |
 | Total Requests | ${TOTAL_REQUESTS} |
 | Total 5xx Errors | ${TOTAL_5XX} |
 | CPU Throttled Periods | ${THROTTLE_TOTAL} |
+| CPU Throttle Ratio | ${THROTTLE_RATIO} |
 
 ### Connectivity
 

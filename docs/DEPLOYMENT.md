@@ -55,3 +55,42 @@ See `.github/skills/deployment-debugging/SKILL.md` for the full debugging flow.
 ## Rollback
 
 Roll back by re-deploying the previous git SHA or using ArgoCD UI to sync to a previous revision.
+
+## Resource Configuration
+
+The container resource limits are defined in the Kubernetes manifests in the private IaC repo (`Szer/my-infra`, path: `k8s/manifests/coupon-bot`).
+
+### Current Configuration
+
+```yaml
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+```
+
+### Recommended Configuration
+
+For a low-traffic Telegram bot with bursty workloads (OCR, DB queries, Telegram API calls),
+**remove the CPU hard limit** to allow the container to burst freely during request spikes.
+This is the standard pattern for bots and avoids CFS throttling caused by brief CPU bursts
+(e.g., .NET JIT compilation, GC, reminder service fan-out) that temporarily exceed the quota
+even when sustained average CPU is well below the limit.
+
+```yaml
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    # no cpu limit — burstable QoS, prevents CFS throttling during brief spikes
+    memory: 512Mi
+```
+
+The CPU request (`50m`) is kept for the scheduler to reserve capacity on the node;
+the memory limit is kept to cap potential memory leaks. Only the CPU hard cap is removed.
+
+To apply: update `k8s/manifests/coupon-bot/deployment.yaml` in the IaC repo and let ArgoCD sync.

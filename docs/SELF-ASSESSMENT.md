@@ -51,7 +51,8 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 ### Prometheus
 - Process up status and pod readiness
 - Memory usage (MB) and CPU usage (%)
-- CPU throttling rate
+- CPU throttling rate (throttled periods count and throttle ratio %)
+- CPU limit (millicores), for correlating throttle events with the configured cap
 - Container restart count
 - HTTP request rate and 5xx error rate
 - Pod waiting reasons (CrashLoopBackOff, OOMKilled, etc.)
