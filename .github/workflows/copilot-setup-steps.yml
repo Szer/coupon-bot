@@ -28,6 +28,16 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Configure GitHub CLI for issue management
+        run: |
+          if [ -n "$PAT" ]; then
+            printf '%s' "$PAT" | gh auth login --with-token
+          else
+            echo "WARNING: COPILOT_ASSIGN_PAT not available, gh CLI will use default token"
+          fi
+        env:
+          PAT: ${{ secrets.COPILOT_ASSIGN_PAT }}
+
       - name: Setup WireGuard VPN
         run: |
           sudo apt-get update && sudo apt-get install -y wireguard resolvconf
@@ -37,6 +47,3 @@ jobs:
 
       - name: Restore dependencies
         run: dotnet restore
-
-      - name: Configure GitHub CLI for issue management
-        run: echo "${{ secrets.COPILOT_ASSIGN_PAT }}" | gh auth login --with-token
