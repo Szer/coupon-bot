@@ -1,0 +1,85 @@
+name: Auto-fix Issues
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  auto-fix:
+    runs-on: ubuntu-latest
+    environment: copilot
+    - name: Check for in-flight Copilot session
+      id: mutex
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        # Draft PRs by Copilot = actively working (excluding daily orchestration PRs)
+        ACTIVE=$(gh pr list \
+          --repo "${{ github.repository }}" \
+          --state open \
+          --limit 200 \
+          --author "app/copilot-swe-agent" \
+          --json number,title,isDraft \
+          --jq '[.[] | select(.isDraft == true) | select(.title | test("Daily self-assessment \\d{4}-\\d{2}-\\d{2}"; "i") | not)] | length')
+
+        echo "Active Copilot sessions: $ACTIVE"
+        if [ "$ACTIVE" -gt 0 ]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Find highest priority issue
+      if: steps.mutex.outputs.skip == 'false'
+      id: pick
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        # Get all open self-assess issues, exclude orchestration and infra
+        # Priority: priority-high (3) > priority-medium (2) > priority-low/none (1)
+        # Then by bump count (comments), then by age (oldest first)
+        ISSUE=$(gh issue list \
+          --repo "${{ github.repository }}" \
+          --label "self-assess" \
+          --state open \
+          --limit 200 \
+          --json number,title,labels,comments,createdAt,assignees \
+          --jq '
+            [.[]
+              | select(.title | test("Daily self-assessment \\d{4}-\\d{2}-\\d{2}"; "i") | not)
+              | select(.labels | map(.name) | any(. == "infra") | not)
+              | select(.assignees | length == 0)
+              | .priority = (
+                  if (.labels | map(.name) | any(. == "priority-high")) then 3
+                  elif (.labels | map(.name) | any(. == "priority-medium")) then 2
+                  else 1
+                  end)
+            ]
+            | sort_by([-.priority, -.comments, .createdAt])
+            | .[0]
+            | .number // empty')
+
+        if [ -z "$ISSUE" ]; then
+          echo "No issues to pick up."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "Found issue #$ISSUE"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "issue=$ISSUE" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Assign Copilot to issue
+      if: steps.mutex.outputs.skip == 'false' && steps.pick.outputs.found == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        ISSUE=${{ steps.pick.outputs.issue }}
+        echo "Assigning Copilot to issue #$ISSUE"
+        gh issue edit "$ISSUE" \
+          --repo "${{ github.repository }}" \
+          --add-assignee "copilot" \
+          || echo "WARNING: Failed to assign Copilot to #$ISSUE"

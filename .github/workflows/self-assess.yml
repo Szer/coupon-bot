@@ -87,7 +87,7 @@ jobs:
       if: always()
       run: sudo wg-quick down wg0 || true
 
-    - name: Ensure self-assess label exists
+    - name: Ensure labels exist
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
@@ -95,6 +95,26 @@ jobs:
           --repo "${{ github.repository }}" \
           --description "Auto-discovered by daily self-assessment workflow" \
           --color "7057ff" \
+          --force
+        gh label create infra \
+          --repo "${{ github.repository }}" \
+          --description "Infrastructure issue — cannot be fixed in this repo" \
+          --color "d4c5f9" \
+          --force
+        gh label create priority-high \
+          --repo "${{ github.repository }}" \
+          --description "Reserved for user-reported high-priority issues (not used by self-assess)" \
+          --color "b60205" \
+          --force
+        gh label create priority-medium \
+          --repo "${{ github.repository }}" \
+          --description "Medium priority" \
+          --color "fbca04" \
+          --force
+        gh label create priority-low \
+          --repo "${{ github.repository }}" \
+          --description "Low priority — nice to have" \
+          --color "0e8a16" \
           --force
 
     - name: Create orchestration issue

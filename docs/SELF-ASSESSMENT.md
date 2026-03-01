@@ -41,10 +41,10 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 
 | Component | Path | Purpose |
 |-----------|------|---------|
-| Workflow | `.github/workflows/self-assess.yml` | Scheduled trigger, VPN, metrics collection, issue creation |
-| Metrics script | `scripts/gather-metrics.sh` | Queries Prometheus, Loki, ArgoCD; outputs markdown report |
-| Skill | `.github/skills/self-assess/SKILL.md` | Instructions for Copilot on how to analyze and manage backlog |
-| Label | `self-assess` | Applied to all backlog issues created by this flow |
+| Self-assess workflow | `.github/workflows/self-assess.yml` | Daily trigger, VPN, metrics, issue creation |
+| Auto-fix workflow | `.github/workflows/auto-fix.yml` | Hourly pickup, mutex check, Copilot assignment |
+| Metrics script | `scripts/gather-metrics.sh` | Queries Prometheus, Loki, ArgoCD; outputs markdown |
+| Skill | `.github/skills/self-assess/SKILL.md` | Instructions for Copilot analysis and backlog management |
 
 ## Metrics Gathered
 
@@ -67,12 +67,22 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 - Currently deployed image tag
 - Conditions/warnings
 
+## Labels
+
+| Label | Color | Purpose |
+|-------|-------|---------|
+| `self-assess` | Purple (#7057ff) | Applied to all backlog issues created by self-assessment |
+| `infra` | Light purple (#d4c5f9) | Infrastructure issue — cannot be fixed in this repo, skipped by auto-fix |
+| `priority-high` | Red (#b60205) | Reserved for user-reported feedback (not used by self-assess) |
+| `priority-medium` | Yellow (#fbca04) | Bugs, security, performance, significant tech debt |
+| `priority-low` | Green (#0e8a16) | Nice-to-have improvements |
+
 ## Backlog Management Rules
 
-- **Create**: New issue for a newly discovered problem (labeled `self-assess`)
-- **Bump**: Comment on existing issue if the same problem persists
+- **Create**: New issue for a newly discovered problem (labeled `self-assess` + `priority-medium` or `priority-low` + optional `infra`)
+- **Bump**: Comment on existing issue if the same problem persists; reassess priority (up to `priority-medium` max)
 - **Close**: Close issue if the underlying problem is resolved
-- **Never assign**: Backlog issues are left unassigned — a future companion workflow will pick the most-bumped issue for implementation
+- **Never assign**: Backlog issues are left unassigned — the auto-fix workflow picks them up
 
 ## Issue Lifecycle
 
@@ -112,11 +122,73 @@ The cleanup runs at the start of each workflow invocation, giving Copilot ~24 ho
 
 All secrets are configured in the `copilot` environment.
 
-## Future: Auto-Implementation Companion
+## Auto-Fix Workflow
 
-A planned companion workflow will:
-1. Run daily after self-assessment completes
-2. Query open `self-assess` issues
-3. Rank by number of bump comments (most-bumped = highest priority)
-4. Assign Copilot to the top issue for automatic implementation
-5. This creates a **self-improving codebase** feedback loop
+The auto-fix workflow (`auto-fix.yml`) is the companion to self-assessment. It picks up backlog issues and assigns Copilot to implement fixes automatically.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  auto-fix.yml (hourly at :17)                                   │
+│                                                                 │
+│  1. Mutex check: any draft PRs by Copilot? (excl. self-assess)  │
+│     → If yes: skip (Copilot is busy)                            │
+│     → If no: proceed                                            │
+│                                                                 │
+│  2. Pick highest priority issue:                                │
+│     - Has label: self-assess                                    │
+│     - NOT orchestration issue (title contains "self-assessment") │
+│     - NOT labeled: infra                                        │
+│     - Sort: priority-high > medium > low > bumps > oldest       │
+│                                                                 │
+│  3. Assign Copilot to the issue                                 │
+│     → Copilot creates branch + PR with the fix                  │
+│     → PR goes through normal review                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Mutex: One Session at a Time
+
+The workflow ensures only one Copilot coding session runs at a time by checking for open **draft PRs** by `app/copilot-swe-agent`. Draft = Copilot is actively working. Ready-for-review = done (doesn't block).
+
+### Priority Sorting
+
+Auto-fix only considers issues labeled `self-assess`. Issues are picked in this order (equivalent to `ORDER BY priority DESC, comments DESC, created_at ASC`):
+1. `priority-high` labels first (if a user manually adds both `self-assess` and `priority-high`)
+2. `priority-medium` next (most self-assess issues)
+3. `priority-low` / unlabeled last
+4. Within same priority: most comments first (total GitHub comment count is used as a proxy for bump frequency)
+5. Within same comment count: oldest issue first
+
+### Skipped Issues
+
+- **`infra` label**: Infrastructure issues that belong to a different repo (e.g., `my-infra`). These remain in the backlog for human attention.
+- **Orchestration issues**: Title matching "self-assessment YYYY-MM-DD" — these are workflow artifacts, not fixable issues.
+
+### Schedule
+
+- **Cron**: `17 * * * *` (every hour at :17)
+- **Manual trigger**: Available via `workflow_dispatch`
+
+## Full Feedback Loop
+
+```
+self-assess (daily 04:37)        auto-fix (hourly :17)
+      │                                │
+      ▼                                ▼
+ Scan codebase ──── creates ────► Backlog issues
+ + infra metrics                       │
+                                       ▼
+                              Pick highest priority
+                                       │
+                                       ▼
+                              Assign Copilot ──► PR with fix
+                                                    │
+                                                    ▼
+                                              Human review
+                                                    │
+                                                    ▼
+                                              Merge ──► Next self-assess
+                                                        detects fix, closes issue
+```
