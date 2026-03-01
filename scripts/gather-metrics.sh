@@ -109,45 +109,55 @@ THROTTLE_TOTAL=$(echo "$THROTTLE_JSON" | jq -r '[.data.result[].value[1] | tonum
 
 # ─── Loki logs ────────────────────────────────────────────────────────────────
 
-log "Querying Loki logs (last 24h)..."
+if [ "$LOKI_OK" = "yes" ]; then
+    log "Querying Loki logs (last 24h)..."
 
-START_24H=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)
+    START_24H=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)
 
-# Error/Fatal total count (accurate, uncapped)
-ERROR_LOG_COUNT_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
-    --data-urlencode "query=sum(count_over_time({container=\"${CONTAINER}\"} | json | level=~\"Error|Fatal\"[24h]))" \
-    2>/dev/null || echo '{"data":{"result":[]}}')
-ERROR_LOG_COUNT=$(echo "$ERROR_LOG_COUNT_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
+    # Error/Fatal total count (accurate, uncapped)
+    ERROR_LOG_COUNT_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
+        --data-urlencode "query=sum(count_over_time({container=\"${CONTAINER}\"} | json | level=~\"Error|Fatal\"[24h]))" \
+        2>/dev/null || echo '{"data":{"result":[]}}')
+    ERROR_LOG_COUNT=$(echo "$ERROR_LOG_COUNT_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
 
-# Sample of Error/Fatal logs for pattern extraction (capped at 200)
-ERROR_LOGS_RESPONSE=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query_range" \
-    --data-urlencode "query={container=\"${CONTAINER}\"} | json | level=~\"Error|Fatal\"" \
-    --data-urlencode "start=${START_24H}" \
-    --data-urlencode "limit=200" 2>/dev/null || echo '{"data":{"result":[]}}')
+    # Sample of Error/Fatal logs for pattern extraction (capped at 200)
+    ERROR_LOGS_RESPONSE=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query_range" \
+        --data-urlencode "query={container=\"${CONTAINER}\"} | json | level=~\"Error|Fatal\"" \
+        --data-urlencode "start=${START_24H}" \
+        --data-urlencode "limit=200" 2>/dev/null || echo '{"data":{"result":[]}}')
 
-# Top unique error messages (deduplicated, counts only — messages redacted for public issues)
-TOP_ERRORS_COUNT=$(echo "$ERROR_LOGS_RESPONSE" | jq -r '
-    [.data.result[].values[] | .[1]] |
-    map(. as $line | try (fromjson | .RenderedMessage // .message // .msg // $line) catch $line) |
-    group_by(.) |
-    map({count: length}) |
-    sort_by(-.count) |
-    .[:10] |
-    .[] |
-    "  - \(.count) occurrence(s)"
-' 2>/dev/null || echo "  - (parse error)")
+    # Top unique error messages (deduplicated, counts only — messages redacted for public issues)
+    TOP_ERRORS_COUNT=$(echo "$ERROR_LOGS_RESPONSE" | jq -r '
+        [.data.result[].values[] | .[1]] |
+        map(. as $line | try (fromjson | .RenderedMessage // .message // .msg // $line) catch $line) |
+        group_by(.) |
+        map({count: length}) |
+        sort_by(-.count) |
+        .[:10] |
+        .[] |
+        "  - \(.count) occurrence(s)"
+    ' 2>/dev/null || echo "  - (parse error)")
 
-# Warning total count (accurate, uncapped)
-WARN_LOG_COUNT_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
-    --data-urlencode "query=sum(count_over_time({container=\"${CONTAINER}\"} | json | level=\"Warning\"[24h]))" \
-    2>/dev/null || echo '{"data":{"result":[]}}')
-WARN_LOG_COUNT=$(echo "$WARN_LOG_COUNT_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
+    # Warning total count (accurate, uncapped)
+    WARN_LOG_COUNT_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
+        --data-urlencode "query=sum(count_over_time({container=\"${CONTAINER}\"} | json | level=\"Warning\"[24h]))" \
+        2>/dev/null || echo '{"data":{"result":[]}}')
+    WARN_LOG_COUNT=$(echo "$WARN_LOG_COUNT_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
 
-# Total log volume (last 24h)
-LOG_VOLUME_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
-    --data-urlencode "query=count_over_time({container=\"${CONTAINER}\"}[24h])" \
-    2>/dev/null || echo '{"data":{"result":[]}}')
-LOG_VOLUME=$(echo "$LOG_VOLUME_JSON" | jq -r '[.data.result[].value[1] | tonumber] | add // 0' 2>/dev/null || echo "N/A")
+    # Total log volume (last 24h)
+    LOG_VOLUME_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
+        --data-urlencode "query=count_over_time({container=\"${CONTAINER}\"}[24h])" \
+        2>/dev/null || echo '{"data":{"result":[]}}')
+    LOG_VOLUME_RAW=$(echo "$LOG_VOLUME_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
+    LOG_VOLUME="${LOG_VOLUME_RAW} lines"
+else
+    log "Skipping Loki queries (unreachable)..."
+    ERROR_LOG_COUNT="N/A (Loki unreachable)"
+    WARN_LOG_COUNT="N/A (Loki unreachable)"
+    LOG_VOLUME="N/A (Loki unreachable)"
+
+    TOP_ERRORS_COUNT="  - N/A (Loki unreachable)"
+fi
 
 # ─── ArgoCD status ────────────────────────────────────────────────────────────
 
@@ -158,7 +168,7 @@ ARGO_RESPONSE=$(curl -sf "${ARGOCD_URL}/api/v1/applications/${APP_NAME}" \
 
 SYNC_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.sync.status // "Unknown"')
 HEALTH_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.health.status // "Unknown"')
-DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | .[]' 2>/dev/null || echo "Unknown")
+DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | .[] | sub(":[a-f0-9]{40}$"; ":" + (split(":") | last | .[:12]) + "…")' 2>/dev/null || echo "Unknown")
 ARGO_CONDITIONS=$(echo "$ARGO_RESPONSE" | jq -r '[.status.conditions[]? | "\(.type): \(.message)"] | join("\n")' 2>/dev/null)
 [ -z "$ARGO_CONDITIONS" ] && ARGO_CONDITIONS="none"
 
@@ -202,7 +212,7 @@ cat <<EOF
 
 - **Error/Fatal entries**: ${ERROR_LOG_COUNT}
 - **Warning entries**: ${WARN_LOG_COUNT}
-- **Total log volume (24h)**: ${LOG_VOLUME} lines
+- **Total log volume (24h)**: ${LOG_VOLUME}
 
 ### Top Error Patterns (counts only — query Loki for details)
 ${TOP_ERRORS_COUNT:-  - (none)}
