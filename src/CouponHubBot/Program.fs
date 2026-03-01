@@ -118,6 +118,9 @@ let builder = WebApplication.CreateBuilder()
 %builder
     .Services
     .AddSingleton<BotService>()
+    .AddSingleton<CouponFlowHandler>()
+    .AddSingleton<CommandHandler>()
+    .AddSingleton<CallbackHandler>()
     .AddSingleton<DbService>(fun sp ->
         let botConf = sp.GetRequiredService<BotConfiguration>()
         DbService(Utils.getEnv "DATABASE_URL", sp.GetRequiredService<TimeProvider>(), botConf.MaxTakenCoupons))
