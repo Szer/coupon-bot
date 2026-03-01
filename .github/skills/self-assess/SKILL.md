@@ -12,8 +12,9 @@ You are acting as an **automated product manager**. Your job is to analyze the s
 > 1. **DO NOT make code changes.** Do not fix bugs, update docs, or refactor code. Your ONLY output is GitHub issues and comments on issues.
 > 2. **DO NOT create a PR with code changes.** If you find something to fix (e.g., outdated docs, a bug), create a GitHub issue describing it — do NOT fix it yourself.
 > 3. **Use `gh` CLI** to create, comment on, and close issues. All issue management must go through `gh` commands.
-> 4. **Close the orchestration issue** (the one you were assigned to) with a summary comment when done — this is your final step.
+> 4. **Close the orchestration issue** (the one you were assigned to) with a summary comment when done — this is your final step. If the `gh issue close` command fails (e.g., network timeout), retry up to 3 times with a 10-second delay between attempts.
 > 5. Your role is a **product manager**, not an engineer. Identify problems, create a backlog, prioritize — but never implement.
+> 6. **GitHub will auto-create a PR** when you are assigned to an issue — this is expected platform behavior and cannot be avoided. The PR will be auto-closed by the cleanup job. Do NOT add commits, files, or code changes to this PR.
 
 ## Prerequisites
 
@@ -207,9 +208,11 @@ For each finding from Phases 2-3, decide: **create**, **bump**, or **skip**.
 
 After completing all phases, close the orchestration issue (the one you were assigned to) with a summary:
 
-```
-gh issue close ISSUE_NUMBER \
-  --comment "## Self-Assessment Summary (YYYY-MM-DD)
+```bash
+# Retry up to 3 times in case of network issues
+for i in 1 2 3; do
+  gh issue close ISSUE_NUMBER \
+    --comment "## Self-Assessment Summary (YYYY-MM-DD)
 
 ### Metrics Overview
 - Pod healthy: yes/no
@@ -231,6 +234,7 @@ gh issue close ISSUE_NUMBER \
 ### Backlog Summary
 - Total open self-assess issues: N
 - Most-bumped issue: #X (N bumps) — [title]"
+done && break || sleep 10; done
 ```
 
 ## Notes

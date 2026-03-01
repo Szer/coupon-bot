@@ -10,11 +10,16 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 ┌─────────────────────────────────────────────────────────────────┐
 │  self-assess.yml (daily at 04:37 UTC)                           │
 │                                                                 │
-│  1. Connect VPN                                                 │
-│  2. Run gather-metrics.sh → Prometheus + Loki + ArgoCD snapshot │
-│  3. Create orchestration issue with metrics in body             │
-│  4. Assign @copilot                                             │
-│  5. Disconnect VPN                                              │
+│  Job 1: cleanup                                                 │
+│    - Close stale orchestration issues from previous runs        │
+│    - Close & delete Copilot PRs from previous runs              │
+│                                                                 │
+│  Job 2: self-assess (needs: cleanup)                            │
+│    1. Connect VPN                                               │
+│    2. Run gather-metrics.sh → Prometheus + Loki + ArgoCD        │
+│    3. Create orchestration issue with metrics in body           │
+│    4. Assign @copilot                                           │
+│    5. Disconnect VPN                                            │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -26,6 +31,9 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 │  4. Review existing open issues                                 │
 │  5. Create / bump / close self-assess backlog issues            │
 │  6. Close orchestration issue with summary                      │
+│                                                                 │
+│  Note: Copilot may auto-create an empty PR (platform behavior)  │
+│  — this is cleaned up by the next day's cleanup job             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -77,6 +85,16 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
      ↓
 [Fixed] → closed by self-assessment with resolution comment
 ```
+
+## Cleanup Mechanism
+
+The Copilot coding agent has a platform-level behavior: when assigned to an issue, it automatically creates a branch and PR. This cannot be disabled via instructions. The cleanup job handles this:
+
+1. **Stale orchestration issues**: If Copilot fails to close the orchestration issue (e.g., network timeout), the next day's cleanup job closes it automatically.
+2. **Empty PRs**: Copilot creates a PR from `copilot/daily-self-assessment-*` branches even when told not to make code changes. The cleanup job closes these PRs and deletes the branches.
+3. **False-positive issues**: If a backlog issue was created due to a temporary condition (e.g., Loki briefly unreachable), the next self-assessment should close it when the condition resolves.
+
+The cleanup runs at the start of each workflow invocation, giving Copilot ~24 hours to complete its analysis before artifacts are cleaned up.
 
 ## Schedule
 
