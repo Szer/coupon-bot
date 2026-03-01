@@ -40,7 +40,7 @@ prom_value() {
 log "Verifying connectivity..."
 
 PROM_OK=$(curl -sf -o /dev/null "${PROMETHEUS_URL}/-/healthy" 2>/dev/null && echo "yes" || echo "no")
-LOKI_OK=$(curl -sf -o /dev/null "${LOKI_URL}/ready" 2>/dev/null && echo "yes" || echo "no")
+LOKI_OK=$(curl -sf -o /dev/null "${LOKI_URL}/loki/api/v1/labels" 2>/dev/null && echo "yes" || echo "no")
 ARGO_OK=$(curl -sf "${ARGOCD_URL}/api/v1/applications" -H "${AUTH_HEADER}" -o /dev/null 2>/dev/null && echo "yes" || echo "no")
 
 log "Prometheus: ${PROM_OK}, Loki: ${LOKI_OK}, ArgoCD: ${ARGO_OK}"
@@ -50,9 +50,6 @@ log "Prometheus: ${PROM_OK}, Loki: ${LOKI_OK}, ArgoCD: ${ARGO_OK}"
 log "Querying Prometheus metrics..."
 
 # ── Current status (instant gauges) ──
-
-PROCESS_UP_JSON=$(prom_query "up{job=\"${CONTAINER}\"}")
-PROCESS_UP=$(prom_value "$PROCESS_UP_JSON")
 
 POD_READY_JSON=$(prom_query "min(kube_pod_status_ready{pod=~\"${CONTAINER}.*\",condition=\"true\"})")
 POD_READY=$(prom_value "$POD_READY_JSON")
@@ -149,7 +146,11 @@ if [ "$LOKI_OK" = "yes" ]; then
         --data-urlencode "query=count_over_time({container=\"${CONTAINER}\"}[24h])" \
         2>/dev/null || echo '{"data":{"result":[]}}')
     LOG_VOLUME_RAW=$(echo "$LOG_VOLUME_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "N/A")
-    LOG_VOLUME="${LOG_VOLUME_RAW} lines"
+    if [[ "$LOG_VOLUME_RAW" =~ ^[0-9]+$ ]]; then
+        LOG_VOLUME="${LOG_VOLUME_RAW} lines"
+    else
+        LOG_VOLUME="$LOG_VOLUME_RAW"
+    fi
 else
     log "Skipping Loki queries (unreachable)..."
     ERROR_LOG_COUNT="N/A (Loki unreachable)"
@@ -168,8 +169,10 @@ ARGO_RESPONSE=$(curl -sf "${ARGOCD_URL}/api/v1/applications/${APP_NAME}" \
 
 SYNC_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.sync.status // "Unknown"')
 HEALTH_STATUS=$(echo "$ARGO_RESPONSE" | jq -r '.status.health.status // "Unknown"')
-DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | .[] | sub(":[a-f0-9]{40}$"; ":" + (split(":") | last | .[:12]) + "…")' 2>/dev/null || echo "Unknown")
-ARGO_CONDITIONS=$(echo "$ARGO_RESPONSE" | jq -r '[.status.conditions[]? | "\(.type): \(.message)"] | join("\n")' 2>/dev/null)
+DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | join(", ")' 2>/dev/null \
+    | sed 's/:\([a-f0-9]\{12\}\)[a-f0-9]\{28,\}/:\1…/g' || true)
+[ -z "$DEPLOYED_IMAGES" ] && DEPLOYED_IMAGES="Unknown"
+ARGO_CONDITIONS=$(echo "$ARGO_RESPONSE" | jq -r '[.status.conditions[]? | "\(.type): \(.message)"] | join("\n")' 2>/dev/null || true)
 [ -z "$ARGO_CONDITIONS" ] && ARGO_CONDITIONS="none"
 
 # ─── Output markdown report ──────────────────────────────────────────────────
@@ -183,7 +186,6 @@ cat <<EOF
 
 | Metric | Value |
 |--------|-------|
-| Process Up | ${PROCESS_UP} |
 | Pod Ready | ${POD_READY} |
 | Memory Usage | ${MEMORY_MB} MB |
 | Container Restarts (total) | ${RESTART_COUNT} |
