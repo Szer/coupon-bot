@@ -235,8 +235,8 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText calls 211L "Не понял discount/min_check/date",
-                $"Expected DM with 'Не понял discount/min_check/date'. Got %d{calls.Length} calls")
+            Assert.True(findCallWithText calls 211L "Не понял скидку/мин.чек/дату",
+                $"Expected DM with 'Не понял скидку/мин.чек/дату'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
