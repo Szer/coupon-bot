@@ -12,6 +12,7 @@ jobs:
   auto-fix:
     runs-on: ubuntu-latest
     environment: copilot
+    steps:
     - name: Check for in-flight Copilot session
       id: mutex
       env:
