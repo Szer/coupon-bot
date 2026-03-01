@@ -80,7 +80,7 @@ jobs:
       run: |
         ISSUE=${{ steps.pick.outputs.issue }}
         echo "Assigning Copilot to issue #$ISSUE"
-        gh api "repos/${{ github.repository }}/issues/$ISSUE/assignees" \
-          --method POST \
-          -f 'assignees[]=copilot' \
+        gh issue edit "$ISSUE" \
+          --repo "${{ github.repository }}" \
+          --add-assignee "@copilot" \
           || echo "WARNING: Failed to assign Copilot to #$ISSUE"
