@@ -15,7 +15,6 @@ type CommandHandler(
     botClient: ITelegramBotClient,
     db: DbService,
     botConfig: BotConfiguration,
-    membership: TelegramMembershipService,
     notifications: TelegramNotificationService,
     time: TimeProvider,
     logger: ILogger<CommandHandler>,
@@ -23,14 +22,6 @@ type CommandHandler(
 ) =
     let sendText (chatId: int64) (text: string) =
         botClient.SendMessage(ChatId chatId, text) |> taskIgnore
-
-    member _.EnsureCommunityMember(userId: int64, chatId: int64) =
-        task {
-            let! isMember = membership.IsMember(userId)
-            if not isMember then
-                do! sendText chatId "Бот доступен только членам сообщества. Если ты уверен что ты в чате — напиши /start ещё раз."
-            return isMember
-        }
 
     member _.HandleDebug(userId: int64, chatId: int64, couponId: int) =
         task {

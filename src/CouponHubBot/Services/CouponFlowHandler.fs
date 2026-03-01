@@ -6,6 +6,7 @@ open Telegram.Bot.Types
 open Telegram.Bot.Types.Enums
 open CouponHubBot
 open CouponHubBot.Utils
+open CouponHubBot.Telemetry
 open CouponHubBot.Services.BotHelpers
 
 /// Handles the multi-step add/OCR wizard flow for adding new coupons.
@@ -55,6 +56,8 @@ type CouponFlowHandler(
 
     member _.HandleAddManual(user: DbUser, msg: Message) =
         task {
+            use a = botActivity.StartActivity("handleAdd")
+            %a.SetTag("userId", user.id)
             let chatId = msg.Chat.Id
             let caption = msg.Caption
             let hasPhoto = not (isNull msg.Photo) && msg.Photo.Length > 0
