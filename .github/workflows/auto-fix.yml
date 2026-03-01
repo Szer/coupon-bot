@@ -60,7 +60,7 @@ jobs:
                   else 1
                   end)
             ]
-            | sort_by([-.priority, -.comments, .createdAt])
+            | sort_by([-.priority, -(.comments | length), .createdAt])
             | .[0]
             | .number // empty')
 
