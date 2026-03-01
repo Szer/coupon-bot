@@ -27,7 +27,8 @@ jobs:
           echo "Closing orchestration issue #${NUM}"
           gh issue close "$NUM" \
             --repo "${{ github.repository }}" \
-            --comment "🧹 **Auto-closed by cleanup.** Copilot did not close this issue in time. Check the linked PR (if any) for Copilot's analysis summary."
+            --comment "🧹 **Auto-closed by cleanup.** Copilot did not close this issue in time. Check the linked PR (if any) for Copilot's analysis summary." \
+            || echo "WARNING: Failed to close orchestration issue #${NUM}, continuing"
         done
 
     - name: Close stale Copilot PRs
@@ -45,7 +46,8 @@ jobs:
           gh pr close "$NUM" \
             --repo "${{ github.repository }}" \
             --comment "🧹 **Auto-closed.** Self-assessment PRs are not meant to be merged — the real output is the backlog issues." \
-            --delete-branch
+            --delete-branch \
+            || echo "WARNING: Failed to close PR #${NUM}, continuing"
         done
 
   self-assess:

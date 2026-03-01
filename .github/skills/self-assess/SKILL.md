@@ -233,8 +233,9 @@ for i in 1 2 3; do
 
 ### Backlog Summary
 - Total open self-assess issues: N
-- Most-bumped issue: #X (N bumps) — [title]"
-done && break || sleep 10; done
+- Most-bumped issue: #X (N bumps) — [title]" \
+  && break || sleep 10
+done
 ```
 
 ## Notes
