@@ -37,3 +37,6 @@ jobs:
 
       - name: Restore dependencies
         run: dotnet restore
+
+      - name: Configure GitHub CLI for issue management
+        run: echo "${{ secrets.COPILOT_ASSIGN_PAT }}" | gh auth login --with-token
