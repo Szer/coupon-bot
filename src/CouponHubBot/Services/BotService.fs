@@ -13,32 +13,25 @@ open CouponHubBot.Services
 open CouponHubBot.Telemetry
 open CouponHubBot.Utils
 
-/// Thin orchestrator: routes incoming Telegram updates to the focused handler classes.
 type BotService(
     botClient: ITelegramBotClient,
     botConfig: BotConfiguration,
     db: DbService,
     membership: TelegramMembershipService,
+    couponFlow: CouponFlowHandler,
+    commandHandler: CommandHandler,
+    callbackHandler: CallbackHandler,
     logger: ILogger<BotService>,
-    time: TimeProvider,
-    commands: CommandHandler,
-    flow: CouponFlowHandler,
-    callbacks: CallbackHandler
+    time: TimeProvider
 ) =
-    let sendText (chatId: int64) (text: string) =
-        botClient.SendMessage(ChatId chatId, text) |> taskIgnore
-
-    let ensureCommunityMember (userId: int64) (chatId: int64) =
-        task {
-            let! isMember = membership.IsMember(userId)
-            if not isMember then
-                do! sendText chatId "Бот доступен только членам сообщества. Если ты уверен что ты в чате — напиши /start ещё раз."
-            return isMember
-        }
+    let sendText = BotHelpers.sendText botClient
+    let ensureCommunityMember = BotHelpers.ensureCommunityMember membership sendText
 
     let handlePrivateMessage (msg: Message) =
         task {
-            use a = botActivity.StartActivity("handlePrivateMessage")
+            use a =
+                botActivity
+                    .StartActivity("handlePrivateMessage")
 
             if msg.Chat <> null && msg.Chat.Type = ChatType.Private && msg.From <> null then
                 %a.SetTag("fromId", msg.From.Id)
@@ -82,11 +75,14 @@ type BotService(
                         do! sendText msg.Chat.Id "Спасибо! Сообщение отправлено авторам."
                         handledAddFlow <- true
                     else
-                        let! handled = flow.HandleAddFlowMessage(user, msg)
+                        let! handled = couponFlow.TryHandleWizardMessage user msg
                         handledAddFlow <- handled
 
-                if not handledAddFlow then
-                    do! commands.DispatchCommand(user, msg)
+                if handledAddFlow then
+                    ()
+                else
+
+                do! commandHandler.Dispatch user msg
             else ()
         }
 
@@ -109,7 +105,7 @@ type BotService(
                 elif update.ChatMember <> null then
                     membership.OnChatMemberUpdated(update.ChatMember)
                 elif not (isNull update.CallbackQuery) then
-                    do! callbacks.HandleCallbackQuery update.CallbackQuery
+                    do! callbackHandler.HandleCallbackQuery update.CallbackQuery
                 elif not (isNull update.Message) then
                     do! handlePrivateMessage update.Message
                 else
