@@ -40,7 +40,7 @@ prom_value() {
 log "Verifying connectivity..."
 
 PROM_OK=$(curl -sf -o /dev/null "${PROMETHEUS_URL}/-/healthy" 2>/dev/null && echo "yes" || echo "no")
-LOKI_OK=$(curl -sf -o /dev/null "${LOKI_URL}/ready" 2>/dev/null && echo "yes" || echo "no")
+LOKI_OK=$(curl -sf -o /dev/null "${LOKI_URL}/loki/api/v1/labels" 2>/dev/null && echo "yes" || echo "no")
 ARGO_OK=$(curl -sf "${ARGOCD_URL}/api/v1/applications" -H "${AUTH_HEADER}" -o /dev/null 2>/dev/null && echo "yes" || echo "no")
 
 log "Prometheus: ${PROM_OK}, Loki: ${LOKI_OK}, ArgoCD: ${ARGO_OK}"
