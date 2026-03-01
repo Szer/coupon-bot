@@ -32,6 +32,9 @@ jobs:
         run: |
           if [ -n "$PAT" ]; then
             printf '%s' "$PAT" | gh auth login --with-token
+            # GH_TOKEN takes precedence over GITHUB_TOKEN (set by Actions).
+            printf 'export GH_TOKEN=%q\n' "$PAT" >> ~/.bashrc
+            echo "GH_TOKEN=$PAT" >> "$GITHUB_ENV"
           else
             echo "WARNING: COPILOT_ASSIGN_PAT not available, gh CLI will use default token"
           fi
