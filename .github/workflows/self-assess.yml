@@ -23,7 +23,7 @@ jobs:
           --label "self-assess" \
           --state open \
           --json number,title \
-          --jq '.[] | select(.title | test("self-assessment"; "i")) | .number' \
+          --jq '.[] | select(.title | test("self-assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | .number' \
         | while read -r NUM; do
           echo "Closing orchestration issue #${NUM}"
           gh issue close "$NUM" \
@@ -42,7 +42,7 @@ jobs:
           --state open \
           --author "app/copilot-swe-agent" \
           --json number,headRefName,title \
-          --jq '.[] | select(.title | test("self-assessment"; "i")) | "\(.number) \(.headRefName)"' \
+          --jq '.[] | select(.title | test("self-assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | "\(.number) \(.headRefName)"' \
         | while read -r NUM BRANCH; do
           echo "Closing PR #${NUM} (branch: ${BRANCH})"
           gh pr close "$NUM" \
