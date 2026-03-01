@@ -16,13 +16,14 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
-        # Close any open orchestration issues from previous runs
+        # Close any open orchestration/summary issues from previous runs
+        # Match any issue with self-assess label containing "self-assessment" in title
         gh issue list \
           --repo "${{ github.repository }}" \
           --label "self-assess" \
           --state open \
           --json number,title \
-          --jq '.[] | select(.title | startswith("Daily self-assessment")) | .number' \
+          --jq '.[] | select(.title | test("self-assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | .number' \
         | while read -r NUM; do
           echo "Closing orchestration issue #${NUM}"
           gh issue close "$NUM" \
@@ -35,12 +36,13 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
-        # Close any open PRs from Copilot's self-assessment branches
+        # Close any open PRs created by Copilot for self-assessment
         gh pr list \
           --repo "${{ github.repository }}" \
           --state open \
-          --json number,headRefName \
-          --jq '.[] | select(.headRefName | startswith("copilot/daily-self-assessment")) | "\(.number) \(.headRefName)"' \
+          --author "app/copilot-swe-agent" \
+          --json number,headRefName,title \
+          --jq '.[] | select(.title | test("self-assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | "\(.number) \(.headRefName)"' \
         | while read -r NUM BRANCH; do
           echo "Closing PR #${NUM} (branch: ${BRANCH})"
           gh pr close "$NUM" \
