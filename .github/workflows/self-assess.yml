@@ -9,7 +9,49 @@ permissions:
   contents: read
 
 jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Close stale orchestration issues
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        # Close any open orchestration issues from previous runs
+        gh issue list \
+          --repo "${{ github.repository }}" \
+          --label "self-assess" \
+          --state open \
+          --json number,title \
+          --jq '.[] | select(.title | startswith("Daily self-assessment")) | .number' \
+        | while read -r NUM; do
+          echo "Closing orchestration issue #${NUM}"
+          gh issue close "$NUM" \
+            --repo "${{ github.repository }}" \
+            --comment "🧹 **Auto-closed by cleanup.** Copilot did not close this issue in time. Check the linked PR (if any) for Copilot's analysis summary." \
+            || echo "WARNING: Failed to close orchestration issue #${NUM}, continuing"
+        done
+
+    - name: Close stale Copilot PRs
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        # Close any open PRs from Copilot's self-assessment branches
+        gh pr list \
+          --repo "${{ github.repository }}" \
+          --state open \
+          --json number,headRefName \
+          --jq '.[] | select(.headRefName | startswith("copilot/daily-self-assessment")) | "\(.number) \(.headRefName)"' \
+        | while read -r NUM BRANCH; do
+          echo "Closing PR #${NUM} (branch: ${BRANCH})"
+          gh pr close "$NUM" \
+            --repo "${{ github.repository }}" \
+            --comment "🧹 **Auto-closed.** Self-assessment PRs are not meant to be merged — the real output is the backlog issues." \
+            --delete-branch \
+            || echo "WARNING: Failed to close PR #${NUM}, continuing"
+        done
+
   self-assess:
+    needs: cleanup
     runs-on: ubuntu-latest
     environment: copilot
 
