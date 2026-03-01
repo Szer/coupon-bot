@@ -161,7 +161,9 @@ For each finding from Phases 2-3, decide: **create**, **bump**, or **skip**.
 
    This issue is still relevant. [Updated context: specific details about current state]
    ```
-3. **Create if new**: Use this template for new issues:
+   Also ensure the issue has the `self-assess` label — if not, add it: `gh issue edit NUMBER --add-label "self-assess"`
+3. **ALWAYS use `--label "self-assess"`** when creating issues. Every issue created by self-assessment MUST have this label. No exceptions.
+4. **Create if new**: Use this template for new issues:
    ```
    gh issue create \
      --title "Brief descriptive title" \
@@ -182,15 +184,15 @@ For each finding from Phases 2-3, decide: **create**, **bump**, or **skip**.
 
    [Why this matters: reliability, security, performance, maintainability]"
    ```
-4. **Close if resolved**: For each open `self-assess` issue, check if the underlying problem is still present. If it's fixed, close it:
+5. **Close if resolved**: For each open `self-assess` issue, check if the underlying problem is still present. If it's fixed, close it:
    ```
    gh issue close NUMBER \
      --comment "✅ **Resolved** (YYYY-MM-DD self-assessment)
 
    [Explanation of how/when this was fixed]"
    ```
-5. **Never assign**: Do not assign anyone (including Copilot) to backlog issues
-6. **Quality over quantity**: Only create issues for things that genuinely matter:
+6. **Never assign**: Do not assign anyone (including Copilot) to backlog issues
+7. **Quality over quantity**: Only create issues for things that genuinely matter:
    - Bugs or potential bugs
    - Security vulnerabilities
    - Performance problems
@@ -198,7 +200,7 @@ For each finding from Phases 2-3, decide: **create**, **bump**, or **skip**.
    - Significant tech debt
    - Documentation that's actively misleading
    - Infrastructure concerns
-7. **Do NOT create issues for**:
+8. **Do NOT create issues for**:
    - Style preferences or minor formatting
    - Speculative improvements with no clear benefit
    - Things that are working correctly and don't need changes
