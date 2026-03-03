@@ -82,7 +82,7 @@ jobs:
         echo "Assigning Copilot to issue #$ISSUE"
         ASSIGNED=false
         for i in 1 2 3; do
-          gh api --method POST \
+          if gh api --method POST \
             "/repos/${{ github.repository }}/issues/${ISSUE}/assignees" \
             --input - <<EOF
         {
@@ -90,8 +90,14 @@ jobs:
           "agent_assignment": {}
         }
         EOF
-          && { ASSIGNED=true; echo "Assigned Copilot (default coding agent) to issue #$ISSUE"; break; } \
-          || { echo "WARNING: Assignment attempt $i failed for issue #$ISSUE"; sleep 5; }
+          then
+            ASSIGNED=true
+            echo "Assigned Copilot (default coding agent) to issue #$ISSUE"
+            break
+          else
+            echo "WARNING: Assignment attempt $i failed for issue #$ISSUE"
+            sleep 5
+          fi
         done
         if [ "$ASSIGNED" = false ]; then
           echo "ERROR: All 3 assignment attempts failed for issue #$ISSUE"
