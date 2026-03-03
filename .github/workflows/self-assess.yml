@@ -137,7 +137,7 @@ jobs:
 
         ${REPORT}")
 
-        ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -o '[0-9]*$')
+        ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -Eo '[0-9]+$')
         if [ -z "$ISSUE_NUMBER" ]; then
           echo "ERROR: Failed to parse issue number from: $ISSUE_URL"
           exit 1

@@ -30,7 +30,7 @@ excludeAgent: "code-review"
 
 | Agent | When used |
 |-------|-----------|
-| `self-assess` | Daily self-assessment of codebase and infrastructure, backlog management. Read-only (no edit tool). |
+| `self-assess` | Daily self-assessment of codebase and infrastructure, backlog management. No edit tool; analysis and issue management only. |
 
 ### Skills (`.github/skills/`)
 

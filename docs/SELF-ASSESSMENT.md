@@ -25,7 +25,7 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  Copilot (self-assess custom agent)                             │
-│  Tools: read, search, execute (NO edit — cannot modify files)   │
+│  Tools: read, search, execute (no edit tool)                    │
 │                                                                 │
 │  1. Read metrics snapshot from issue body                       │
 │  2. Deeply analyze the codebase (open-ended, judgment-driven)   │
@@ -51,7 +51,7 @@ The self-assess agent is defined in `.github/agents/self-assess.agent.md`. Key p
 Both workflows assign Copilot using the REST API with `agent_assignment`:
 
 ```bash
-# Self-assess workflow — uses custom agent (read-only)
+# Self-assess workflow — uses custom agent (no edit tool, analysis only)
 gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
   --input - <<< '{
   "assignees": ["copilot-swe-agent[bot]"],
