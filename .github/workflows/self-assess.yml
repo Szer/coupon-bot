@@ -121,6 +121,7 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
+        set -euo pipefail
         DATE=$(date -u +%Y-%m-%d)
         REPORT=$(cat /tmp/metrics-report.md)
 
