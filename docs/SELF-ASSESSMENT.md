@@ -17,9 +17,10 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 │  Job 2: self-assess (needs: cleanup)                            │
 │    1. Connect VPN                                               │
 │    2. Run gather-metrics.sh → Prometheus + Loki + ArgoCD        │
-│    3. Create orchestration issue with metrics in body           │
-│    4. Assign Copilot (self-assess custom agent) via REST API    │
-│    5. Disconnect VPN                                            │
+│    3. Disconnect VPN                                            │
+│    4. Ensure labels exist                                       │
+│    5. Create orchestration issue with metrics in body           │
+│    6. Assign Copilot (self-assess custom agent) via REST API    │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -41,7 +42,7 @@ The self-assess agent is defined in `.github/agents/self-assess.agent.md`. Key p
 
 | Property | Value | Why |
 |----------|-------|-----|
-| `tools` | `["read", "search", "execute"]` | No `edit` tool → agent cannot modify files, create branches, or open PRs |
+| `tools` | `["read", "search", "execute"]` | No `edit` tool — agent is instructed not to modify files. `execute` is needed for `gh` CLI and `curl` commands. |
 | `name` | `self-assess` | Used in REST API `agent_assignment.custom_agent` field |
 | Prompt | Analytical, open-ended | Agent reads code and reasons about it rather than following a grep checklist |
 
