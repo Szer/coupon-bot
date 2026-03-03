@@ -147,7 +147,7 @@ jobs:
         # Assign Copilot with custom agent via REST API (retry up to 3 times)
         ASSIGNED=false
         for i in 1 2 3; do
-          gh api --method POST \
+          if gh api --method POST \
             "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
             --input - <<EOF
         {
@@ -157,8 +157,14 @@ jobs:
           }
         }
         EOF
-          && { ASSIGNED=true; echo "Assigned Copilot (self-assess agent) to issue #${ISSUE_NUMBER}"; break; } \
-          || { echo "WARNING: Assignment attempt $i failed for issue #${ISSUE_NUMBER}"; sleep 5; }
+          then
+            ASSIGNED=true
+            echo "Assigned Copilot (self-assess agent) to issue #${ISSUE_NUMBER}"
+            break
+          else
+            echo "WARNING: Assignment attempt $i failed for issue #${ISSUE_NUMBER}"
+            sleep 5
+          fi
         done
         if [ "$ASSIGNED" = false ]; then
           echo "ERROR: All 3 assignment attempts failed for issue #${ISSUE_NUMBER}"
