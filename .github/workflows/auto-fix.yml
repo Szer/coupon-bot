@@ -80,6 +80,7 @@ jobs:
       run: |
         ISSUE=${{ steps.pick.outputs.issue }}
         echo "Assigning Copilot to issue #$ISSUE"
+        ASSIGNED=false
         for i in 1 2 3; do
           gh api --method POST \
             "/repos/${{ github.repository }}/issues/${ISSUE}/assignees" \
@@ -89,6 +90,10 @@ jobs:
           "agent_assignment": {}
         }
         EOF
-          && echo "Assigned Copilot (default coding agent) to issue #$ISSUE" && break \
+          && { ASSIGNED=true; echo "Assigned Copilot (default coding agent) to issue #$ISSUE"; break; } \
           || { echo "WARNING: Assignment attempt $i failed for issue #$ISSUE"; sleep 5; }
         done
+        if [ "$ASSIGNED" = false ]; then
+          echo "ERROR: All 3 assignment attempts failed for issue #$ISSUE"
+          exit 1
+        fi
