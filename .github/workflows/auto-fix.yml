@@ -80,7 +80,12 @@ jobs:
       run: |
         ISSUE=${{ steps.pick.outputs.issue }}
         echo "Assigning Copilot to issue #$ISSUE"
-        gh issue edit "$ISSUE" \
-          --repo "${{ github.repository }}" \
-          --add-assignee "@copilot" \
-          || echo "WARNING: Failed to assign Copilot to #$ISSUE"
+        gh api --method POST \
+          "/repos/${{ github.repository }}/issues/${ISSUE}/assignees" \
+          --input - <<EOF
+        {
+          "assignees": ["copilot-swe-agent[bot]"],
+          "agent_assignment": {}
+        }
+        EOF
+        echo "Assigned Copilot (default coding agent) to issue #$ISSUE"

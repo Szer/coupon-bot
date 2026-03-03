@@ -124,27 +124,30 @@ jobs:
         DATE=$(date -u +%Y-%m-%d)
         REPORT=$(cat /tmp/metrics-report.md)
 
-        gh issue create \
+        ISSUE_URL=$(gh issue create \
           --repo "${{ github.repository }}" \
           --title "Daily self-assessment ${DATE}" \
           --label "self-assess" \
-          --assignee "@copilot" \
           --body "## Daily Self-Assessment — ${DATE}
-
-        This is an automated self-assessment. Use the \`self-assess\` skill to analyze the metrics below, review the codebase, and manage the backlog.
 
         **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
         ---
 
-        ${REPORT}
+        ${REPORT}")
 
-        ---
+        ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -oP '\d+$')
+        echo "Created issue #${ISSUE_NUMBER}"
 
-        ## Instructions
-
-        1. Read the metrics snapshot above
-        2. Analyze the codebase for quality issues
-        3. Review existing open issues (especially \`self-assess\` labeled)
-        4. Create new issues, bump existing ones, or close resolved ones
-        5. Close this orchestration issue with a summary"
+        # Assign Copilot with custom agent via REST API
+        gh api --method POST \
+          "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
+          --input - <<EOF
+        {
+          "assignees": ["copilot-swe-agent[bot]"],
+          "agent_assignment": {
+            "custom_agent": "self-assess"
+          }
+        }
+        EOF
+        echo "Assigned Copilot (self-assess agent) to issue #${ISSUE_NUMBER}"
