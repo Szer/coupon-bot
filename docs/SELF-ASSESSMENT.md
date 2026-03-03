@@ -2,7 +2,7 @@
 
 ## Overview
 
-The daily self-assessment workflow acts as an **automated product manager**. It runs every day at 04:37 UTC, gathers infrastructure metrics, and creates an orchestration issue for Copilot to analyze the system and maintain a backlog.
+The daily self-assessment workflow acts as an **automated product manager**. It runs every day at 04:37 UTC, gathers infrastructure metrics, and creates an orchestration issue. The issue is assigned to a **custom Copilot agent** (`self-assess`) that analyzes the system and maintains a backlog — without making any code changes.
 
 ## How It Works
 
@@ -12,29 +12,60 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 │                                                                 │
 │  Job 1: cleanup                                                 │
 │    - Close stale orchestration issues from previous runs        │
-│    - Close & delete Copilot PRs from previous runs              │
+│    - Close & delete Copilot PRs from previous runs (safety net) │
 │                                                                 │
 │  Job 2: self-assess (needs: cleanup)                            │
 │    1. Connect VPN                                               │
 │    2. Run gather-metrics.sh → Prometheus + Loki + ArgoCD        │
-│    3. Create orchestration issue with metrics in body           │
-│    4. Assign @copilot                                           │
-│    5. Disconnect VPN                                            │
+│    3. Disconnect VPN                                            │
+│    4. Ensure labels exist                                       │
+│    5. Create orchestration issue with metrics in body           │
+│    6. Assign Copilot (self-assess custom agent) via REST API    │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  Copilot (self-assess skill)                                    │
+│  Copilot (self-assess custom agent)                             │
+│  Tools: read, search, execute (no edit tool)                    │
 │                                                                 │
 │  1. Read metrics snapshot from issue body                       │
-│  2. Analyze codebase (TODOs, test gaps, large files, security)  │
-│  3. Query live Loki/Prometheus if needed                        │
+│  2. Deeply analyze the codebase (open-ended, judgment-driven)   │
+│  3. Query live Loki/Prometheus if VPN available                 │
 │  4. Review existing open issues                                 │
 │  5. Create / bump / close self-assess backlog issues            │
 │  6. Close orchestration issue with summary                      │
-│                                                                 │
-│  Note: Copilot may auto-create an empty PR (platform behavior)  │
-│  — this is cleaned up by the next day's cleanup job             │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+## Custom Agent Architecture
+
+The self-assess agent is defined in `.github/agents/self-assess.agent.md`. Key properties:
+
+| Property | Value | Why |
+|----------|-------|-----|
+| `tools` | `["read", "search", "execute"]` | No `edit` tool — agent is instructed not to modify files. `execute` is needed for `gh` CLI and `curl` commands. |
+| `name` | `self-assess` | Used in REST API `agent_assignment.custom_agent` field |
+| Prompt | Analytical, open-ended | Agent reads code and reasons about it rather than following a grep checklist |
+
+### Assignment via REST API
+
+Both workflows assign Copilot using the REST API with `agent_assignment`:
+
+```bash
+# Self-assess workflow — uses custom agent (no edit tool, analysis only)
+gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
+  --input - <<< '{
+  "assignees": ["copilot-swe-agent[bot]"],
+  "agent_assignment": {
+    "custom_agent": "self-assess"
+  }
+}'
+
+# Auto-fix workflow — uses default coding agent (can write code)
+gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
+  --input - <<< '{
+  "assignees": ["copilot-swe-agent[bot]"],
+  "agent_assignment": {}
+}'
 ```
 
 ## Components
@@ -44,7 +75,7 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 | Self-assess workflow | `.github/workflows/self-assess.yml` | Daily trigger, VPN, metrics, issue creation |
 | Auto-fix workflow | `.github/workflows/auto-fix.yml` | Hourly pickup, mutex check, Copilot assignment |
 | Metrics script | `scripts/gather-metrics.sh` | Queries Prometheus, Loki, ArgoCD; outputs markdown |
-| Skill | `.github/skills/self-assess/SKILL.md` | Instructions for Copilot analysis and backlog management |
+| Custom agent | `.github/agents/self-assess.agent.md` | Agent profile with tools and analysis instructions |
 
 ## Metrics Gathered
 
@@ -98,13 +129,9 @@ The daily self-assessment workflow acts as an **automated product manager**. It 
 
 ## Cleanup Mechanism
 
-The Copilot coding agent has a platform-level behavior: when assigned to an issue, it automatically creates a branch and PR. This cannot be disabled via instructions. The cleanup job handles this:
-
 1. **Stale orchestration issues**: If Copilot fails to close the orchestration issue (e.g., network timeout), the next day's cleanup job closes it automatically.
-2. **Empty PRs**: Copilot creates a PR from `copilot/daily-self-assessment-*` branches even when told not to make code changes. The cleanup job closes these PRs and deletes the branches.
+2. **Stale Copilot PRs (safety net)**: The custom agent has no `edit` tool and shouldn't create PRs. The PR cleanup step is kept as a safety net in case platform behavior changes. In normal operation, this step is a no-op.
 3. **False-positive issues**: If a backlog issue was created due to a temporary condition (e.g., Loki briefly unreachable), the next self-assessment should close it when the condition resolves.
-
-The cleanup runs at the start of each workflow invocation, giving Copilot ~24 hours to complete its analysis before artifacts are cleaned up.
 
 ## Schedule
 
@@ -142,7 +169,7 @@ The auto-fix workflow (`auto-fix.yml`) is the companion to self-assessment. It p
 │     - NOT labeled: infra                                        │
 │     - Sort: priority-high > medium > low > bumps > oldest       │
 │                                                                 │
-│  3. Assign Copilot to the issue                                 │
+│  3. Assign Copilot (default coding agent) via REST API          │
 │     → Copilot creates branch + PR with the fix                  │
 │     → PR goes through normal review                             │
 └─────────────────────────────────────────────────────────────────┘
