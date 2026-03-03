@@ -24,7 +24,15 @@ excludeAgent: "code-review"
 - **Self-assess**: `.github/workflows/self-assess.yml` — daily self-assessment, gathers metrics, creates orchestration issue for Copilot
 - **Agent env**: `.github/workflows/copilot-setup-steps.yml` — sets up .NET SDK, VPN, dependencies
 
-## Agent Skills (`.github/skills/`)
+## Agent Skills and Agents
+
+### Custom Agents (`.github/agents/`)
+
+| Agent | When used |
+|-------|-----------|
+| `self-assess` | Daily self-assessment of codebase and infrastructure, backlog management. Read-only (no edit tool). |
+
+### Skills (`.github/skills/`)
 
 | Skill | When used |
 |-------|-----------|
@@ -32,7 +40,6 @@ excludeAgent: "code-review"
 | `argocd-status` | Checking ArgoCD sync/health status, deployed image tags |
 | `loki-logs` | Querying application logs via Loki for errors or patterns |
 | `prometheus-metrics` | Checking pod restarts, 5xx rates, health metrics |
-| `self-assess` | Daily self-assessment of codebase and infrastructure, backlog management |
 
 The agent has VPN access to `*.internal` hosts (established by `copilot-setup-steps.yml`).
 

@@ -136,13 +136,18 @@ jobs:
 
         ${REPORT}")
 
-        ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -oP '\d+$')
+        ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -o '[0-9]*$')
+        if [ -z "$ISSUE_NUMBER" ]; then
+          echo "ERROR: Failed to parse issue number from: $ISSUE_URL"
+          exit 1
+        fi
         echo "Created issue #${ISSUE_NUMBER}"
 
-        # Assign Copilot with custom agent via REST API
-        gh api --method POST \
-          "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
-          --input - <<EOF
+        # Assign Copilot with custom agent via REST API (retry up to 3 times)
+        for i in 1 2 3; do
+          gh api --method POST \
+            "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
+            --input - <<EOF
         {
           "assignees": ["copilot-swe-agent[bot]"],
           "agent_assignment": {
@@ -150,4 +155,6 @@ jobs:
           }
         }
         EOF
-        echo "Assigned Copilot (self-assess agent) to issue #${ISSUE_NUMBER}"
+          && echo "Assigned Copilot (self-assess agent) to issue #${ISSUE_NUMBER}" && break \
+          || { echo "WARNING: Assignment attempt $i failed for issue #${ISSUE_NUMBER}"; sleep 5; }
+        done
