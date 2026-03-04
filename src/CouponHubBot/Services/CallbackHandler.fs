@@ -17,7 +17,6 @@ type CallbackHandler(
     membership: TelegramMembershipService,
     couponFlow: CouponFlowHandler,
     commandHandler: CommandHandler,
-    notifications: TelegramNotificationService,
     time: TimeProvider
 ) =
     let sendText = BotHelpers.sendText botClient
@@ -140,7 +139,6 @@ type CallbackHandler(
                                     let mc = coupon.min_check.ToString("0.##")
                                     let d = BotHelpers.formatUiDate coupon.expires_at
                                     do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v}€ из {mc}€, до {d}"
-                                    do! notifications.CouponAdded(coupon)
                                 | AddCouponResult.Expired ->
                                     do! db.ClearPendingAddFlow user.id
                                     do! sendText cq.Message.Chat.Id "Нельзя добавить истёкший купон (дата в прошлом). Начни заново: /add"
@@ -187,7 +185,6 @@ type CallbackHandler(
                                     let mc = coupon.min_check.ToString("0.##")
                                     let d = BotHelpers.formatUiDate coupon.expires_at
                                     do! sendText cq.Message.Chat.Id $"Добавил купон ID:{coupon.id}: {v}€ из {mc}€, до {d}"
-                                    do! notifications.CouponAdded(coupon)
                                 | AddCouponResult.Expired ->
                                     do! db.ClearPendingAddFlow user.id
                                     do! sendText cq.Message.Chat.Id "Нельзя добавить истёкший купон (дата в прошлом). Начни заново: /add"

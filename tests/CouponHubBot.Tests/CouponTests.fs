@@ -99,8 +99,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 200L "Добавил купон",
                 $"Expected DM to user 200 with 'Добавил купон'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls fixture.CommunityChatId "добавил(а) купон",
-                $"Expected group notification with 'добавил(а) купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -126,10 +124,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
                 | Some parsed -> parsed.ChatId = Some 202L
                 | _ -> false),
                 $"Expected sendPhoto to user 202. Got %d{photoCalls.Length} calls")
-
-            let! msgCalls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithText msgCalls fixture.CommunityChatId "взял(а) купон",
-                $"Expected group notification with 'взял(а) купон'. Got %d{msgCalls.Length} calls")
         }
 
     [<Fact>]
@@ -537,8 +531,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 221L "Отметил",
                 $"Expected DM with 'Отметил'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls fixture.CommunityChatId "использовал(а) купон",
-                $"Expected group notification with 'использовал(а) купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]
@@ -585,8 +577,6 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
             let! calls = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText calls 226L "Вернул",
                 $"Expected DM with 'Вернул'. Got %d{calls.Length} calls")
-            Assert.True(findCallWithText calls fixture.CommunityChatId "вернул(а) купон",
-                $"Expected group notification with 'вернул(а) купон'. Got %d{calls.Length} calls")
         }
 
     [<Fact>]

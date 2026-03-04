@@ -355,18 +355,16 @@ UPDATE coupon
 SET status = 'used'
 WHERE id = @coupon_id
 AND status = 'taken'
-AND taken_by = @user_id
-RETURNING *;
+AND taken_by = @user_id;
 """
-            let! updated = conn.QueryAsync<Coupon>(sql, {| coupon_id = couponId; user_id = userId |}, tx)
-            match updated |> Seq.tryHead with
-            | None ->
-                do! tx.RollbackAsync()
-                return None
-            | Some coupon ->
+            let! rows = conn.ExecuteAsync(sql, {| coupon_id = couponId; user_id = userId |}, tx)
+            if rows = 1 then
                 do! insertEvent conn tx couponId userId "used"
                 do! tx.CommitAsync()
-                return Some coupon
+                return true
+            else
+                do! tx.RollbackAsync()
+                return false
         }
 
     member _.ReturnToAvailable(couponId, userId) =
@@ -383,18 +381,16 @@ SET status = 'available',
     taken_at = NULL
 WHERE id = @coupon_id
   AND status = 'taken'
-  AND taken_by = @user_id
-RETURNING *;
+  AND taken_by = @user_id;
 """
-            let! updated = conn.QueryAsync<Coupon>(sql, {| coupon_id = couponId; user_id = userId |}, tx)
-            match updated |> Seq.tryHead with
-            | None ->
-                do! tx.RollbackAsync()
-                return None
-            | Some coupon ->
+            let! rows = conn.ExecuteAsync(sql, {| coupon_id = couponId; user_id = userId |}, tx)
+            if rows = 1 then
                 do! insertEvent conn tx couponId userId "returned"
                 do! tx.CommitAsync()
-                return Some coupon
+                return true
+            else
+                do! tx.RollbackAsync()
+                return false
         }
 
     member _.GetExpiringTodayAvailable() =

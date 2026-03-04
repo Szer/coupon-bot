@@ -14,7 +14,6 @@ type CouponFlowHandler(
     botConfig: BotConfiguration,
     db: DbService,
     couponOcr: CouponOcrEngine,
-    notifications: TelegramNotificationService,
     time: TimeProvider
 ) =
     let sendText = BotHelpers.sendText botClient
@@ -76,7 +75,6 @@ type CouponFlowHandler(
                         let mc = coupon.min_check.ToString("0.##")
                         let d = BotHelpers.formatUiDate coupon.expires_at
                         do! sendText chatId $"Добавил купон ID:{coupon.id}: {v}€ из {mc}€, до {d}"
-                        do! notifications.CouponAdded(coupon)
                     | AddCouponResult.Expired ->
                         do! sendText chatId "Нельзя добавить истёкший купон (дата в прошлом). Проверь дату и попробуй ещё раз."
                     | AddCouponResult.DuplicatePhoto existingId ->
