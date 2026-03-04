@@ -85,26 +85,31 @@ type CommandHandler(
                         caption = $"Ты взял(а) купон ID:{couponId}: {BotHelpers.formatCouponValue coupon}, истекает {d}",
                         replyMarkup = BotHelpers.singleTakenKeyboard coupon)
                     |> taskIgnore
+                do! notifications.CouponTaken(coupon, taker)
         }
 
     let handleUsed (user: DbUser) (chatId: int64) (couponId: int) =
         task {
-            let! updated = db.MarkUsed(couponId, user.id)
-            if updated then
+            match! db.MarkUsed(couponId, user.id) with
+            | Some coupon ->
                 do! sendText chatId $"Отметил купон ID:{couponId} как использованный."
-            else
+                do! notifications.CouponUsed(coupon, user)
+                return true
+            | None ->
                 do! sendText chatId $"Не получилось отметить купон ID:{couponId}. Убедись что он взят тобой."
-            return updated
+                return false
         }
 
     let handleReturn (user: DbUser) (chatId: int64) (couponId: int) =
         task {
-            let! updated = db.ReturnToAvailable(couponId, user.id)
-            if updated then
+            match! db.ReturnToAvailable(couponId, user.id) with
+            | Some coupon ->
                 do! sendText chatId $"Вернул купон ID:{couponId} в доступные."
-            else
+                do! notifications.CouponReturned(coupon, user)
+                return true
+            | None ->
                 do! sendText chatId $"Не получилось вернуть купон ID:{couponId}. Убедись что он взят тобой."
-            return updated
+                return false
         }
 
     let handleStats (user: DbUser) (chatId: int64) =
