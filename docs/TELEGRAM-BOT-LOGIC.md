@@ -110,13 +110,13 @@ taken → voided (owner void / admin void → notify taker)
 
 `voided` и `used` — терминальные статусы.
 
-## Notifications (TelegramNotificationService)
+## Уведомления (TelegramNotificationService)
 
-The bot intentionally sends **only one** type of notification via `TelegramNotificationService`:
+Бот намеренно отправляет **только один** тип уведомлений через `TelegramNotificationService`:
 
-- **Taker notified on void** (`NotifyTakerCouponVoided`): when an owner voids a coupon that is currently `taken`, the taker receives a private message informing them the coupon is no longer available.
+- **Уведомление получателю при аннулировании** (`NotifyTakerCouponVoided`): когда владелец аннулирует купон в статусе `taken`, получатель получает личное сообщение о том, что купон больше недоступен.
 
-Group-chat notifications for other coupon lifecycle events (coupon added, taken, used, returned) are **intentionally disabled** to avoid spamming the community chat. These events are tracked internally in `coupon_event` for statistics/reminders but are not broadcast to the group.
+Уведомления в групповом чате для других событий жизненного цикла купона (добавление, взятие, использование, возврат) **преднамеренно отключены**, чтобы не засорять чат сообщества. Эти события фиксируются во внутренней таблице `coupon_event` для статистики и напоминаний, но не рассылаются в групповой чат.
 
 ## Daily Reminders (ReminderService)
 
