@@ -131,25 +131,72 @@ jobs:
     needs: [deploy, verify-deploy]
     if: failure()
     runs-on: ubuntu-latest
+    environment: copilot
 
     steps:
-    - name: Create debugging issue
+    - name: Ensure deploy-failure label exists
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
-        gh issue create \
+        gh label create deploy-failure \
+          --repo "${{ github.repository }}" \
+          --description "Automated deploy pipeline failure" \
+          --color "d93f0b" \
+          --force
+
+    - name: Create debugging issue and assign SRE agent
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        set -euo pipefail
+
+        ISSUE_URL=$(gh issue create \
           --repo "${{ github.repository }}" \
           --title "Deploy pipeline failed for ${GITHUB_SHA:0:7}" \
           --label "deploy-failure" \
-          --assignee "@copilot" \
           --body "## Deploy pipeline failed
 
         **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         **Commit:** \`${{ github.sha }}\`
 
-        A job in the deploy pipeline failed. Use the \`deployment-debugging\` skill to investigate.
+        A job in the deploy pipeline failed. Follow the incident response runbook to investigate.
 
-        1. Read the workflow logs from the link above to identify which job and step failed
-        2. If it was a test failure, check the container-logs artifact and fix the flaky test
-        3. If it was a deploy verification failure, query ArgoCD, Loki, and Prometheus
-        4. Create a fix PR"
+        1. Assess severity — is production impacted?
+        2. If production is down, rollback first
+        3. Read the workflow logs to identify which phase failed
+        4. Query ArgoCD, Loki, and Prometheus for diagnostics
+        5. If a code fix is needed, create a priority-high issue and assign the coding agent")
+
+        ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -Eo '[0-9]+$')
+        if [ -z "$ISSUE_NUMBER" ]; then
+          echo "ERROR: Failed to parse issue number from: $ISSUE_URL"
+          exit 1
+        fi
+        echo "Created issue #${ISSUE_NUMBER}"
+
+        # Assign Copilot with SRE custom agent via REST API (retry up to 3 times)
+        ASSIGNED=false
+        for i in 1 2 3; do
+          if gh api --method POST \
+            "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
+            --input - <<EOF
+        {
+          "assignees": ["copilot-swe-agent[bot]"],
+          "agent_assignment": {
+            "custom_agent": "sre"
+          }
+        }
+        EOF
+          then
+            ASSIGNED=true
+            echo "Assigned Copilot (SRE agent) to issue #${ISSUE_NUMBER}"
+            break
+          else
+            echo "WARNING: Assignment attempt $i failed for issue #${ISSUE_NUMBER}"
+            sleep 5
+          fi
+        done
+        if [ "$ASSIGNED" = false ]; then
+          echo "ERROR: All 3 assignment attempts failed for issue #${ISSUE_NUMBER}"
+          exit 1
+        fi
