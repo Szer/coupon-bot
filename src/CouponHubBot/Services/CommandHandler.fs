@@ -130,14 +130,14 @@ type CommandHandler(
                     )
                     |> taskIgnore
             else
-                // Clamp to Telegram's media group limit of 10; guard against non-positive MaxTakenCoupons.
-                let maxShown = max 0 (min botConfig.MaxTakenCoupons 10)
+                // Clamp to Telegram's media group limit of 10; always show at least 1 coupon when there are taken coupons.
+                let maxShown = max 1 (min botConfig.MaxTakenCoupons 10)
                 let shown = taken |> Array.truncate maxShown
 
                 // 1) Photo(s) — SendPhoto for single item, SendMediaGroup for 2–10 (Telegram requires 2–10 items in a media group)
                 if shown.Length = 1 then
                     do! botClient.SendPhoto(ChatId chatId, InputFileId shown[0].photo_file_id) |> taskIgnore
-                elif shown.Length >= 2 then
+                else
                     let media =
                         shown
                         |> Array.map (fun c -> InputMediaPhoto(InputFileId c.photo_file_id) :> IAlbumInputMedia)
@@ -146,6 +146,12 @@ type CommandHandler(
                     do! botClient.SendMediaGroup(ChatId chatId, media) |> taskIgnore
 
                 // 2) Text + inline buttons
+                let truncationNote =
+                    if taken.Length > shown.Length then
+                        $"\n(показаны первые {shown.Length} из {taken.Length})"
+                    else
+                        ""
+
                 let text =
                     shown
                     |> Array.indexed
@@ -172,7 +178,7 @@ type CommandHandler(
                 do!
                     botClient.SendMessage(
                         ChatId chatId,
-                        $"{todayStr}\n\nМои купоны:\n{text}",
+                        $"{todayStr}\n\nМои купоны:\n{text}{truncationNote}",
                         replyMarkup = kb
                     )
                     |> taskIgnore
