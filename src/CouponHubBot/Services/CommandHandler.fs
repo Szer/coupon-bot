@@ -132,13 +132,16 @@ type CommandHandler(
             else
                 let shown = taken |> Array.truncate botConfig.MaxTakenCoupons
 
-                // 1) Album message with photos only (1..4)
-                let media =
-                    shown
-                    |> Array.map (fun c -> InputMediaPhoto(InputFileId c.photo_file_id) :> IAlbumInputMedia)
-                    |> Seq.ofArray
+                // 1) Photo(s) — SendPhoto for single item, SendMediaGroup for 2+ (Telegram requires min 2 in media group)
+                if shown.Length = 1 then
+                    do! botClient.SendPhoto(ChatId chatId, InputFileId shown[0].photo_file_id) |> taskIgnore
+                else
+                    let media =
+                        shown
+                        |> Array.map (fun c -> InputMediaPhoto(InputFileId c.photo_file_id) :> IAlbumInputMedia)
+                        |> Seq.ofArray
 
-                do! botClient.SendMediaGroup(ChatId chatId, media) |> taskIgnore
+                    do! botClient.SendMediaGroup(ChatId chatId, media) |> taskIgnore
 
                 // 2) Text + inline buttons
                 let text =
