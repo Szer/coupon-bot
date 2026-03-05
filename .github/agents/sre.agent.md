@@ -182,9 +182,33 @@ Based on the diagnostic data, classify the root cause:
 
 **Only rollback if the app is genuinely unhealthy (P1 or persistent P2).** Do NOT rollback for transient verification failures.
 
-#### Option A: Trigger ArgoCD sync (preferred)
+#### Option A: ArgoCD rollback to previous deployment (preferred for P1/P2 code regressions)
 
-This tells ArgoCD to re-sync, which can resolve stuck syncs:
+This is a **true rollback** — it reverts ArgoCD to the previous synced revision (the last known-good image), without touching the IaC repo. Use this when the new image is unhealthy (crash-loop, unhandled exception, regression).
+
+First, get the deployment history and identify the last known-good deployment. Entries are ordered newest-first; inspect `deployedAt` and `revision` to pick the correct one (typically the second entry, but verify it is not itself a failed or rolled-back deployment):
+
+```bash
+curl -s "http://argo.internal/api/v1/applications/coupon-bot/history" \
+  -H "Authorization: Bearer $ARGOCD_AUTH_TOKEN" \
+  | jq '[.items[] | {id: .id, revision: .revision, deployedAt: .deployedAt, initiatedBy: .initiatedBy}]'
+```
+
+Then trigger the rollback using the numeric `id` field of the target entry:
+
+```bash
+# Set TARGET_ID to the numeric id of the deployment you want to restore to
+TARGET_ID=42   # replace with the id from history output above
+
+curl -s -X POST "http://argo.internal/api/v1/applications/coupon-bot/rollback" \
+  -H "Authorization: Bearer $ARGOCD_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"id\": $TARGET_ID}"
+```
+
+#### Option B: Trigger ArgoCD sync (for stuck/OutOfSync situations only)
+
+Use this **only** when ArgoCD is stuck or OutOfSync (e.g., it did not pick up the new image). This re-applies the current desired state and does **not** roll back to a previous image. Do **not** use for crash-loop or application-level failures — it will re-deploy the same broken image.
 
 ```bash
 curl -s -X POST http://argo.internal/api/v1/applications/coupon-bot/sync \
@@ -193,7 +217,9 @@ curl -s -X POST http://argo.internal/api/v1/applications/coupon-bot/sync \
   -d '{}'
 ```
 
-#### Option B: Delete the unhealthy pod (triggers ReplicaSet to recreate)
+#### Option C: Delete the unhealthy pod (triggers ReplicaSet to recreate)
+
+Use this only if the pod is stuck/crashlooping with the **current healthy image** (i.e., the deployment succeeded but a pod is stuck). This does not roll back.
 
 First list managed resources to find the exact pod name:
 
@@ -214,7 +240,7 @@ curl -s -X DELETE "http://argo.internal/api/v1/applications/coupon-bot/resource"
   --data-urlencode "version=v1"
 ```
 
-#### Option C: Delete stale ReplicaSets
+#### Option D: Delete stale ReplicaSets
 
 Old ReplicaSets can hold resources and interfere with new rollouts:
 

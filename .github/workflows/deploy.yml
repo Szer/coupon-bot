@@ -134,7 +134,7 @@ jobs:
     environment: copilot
 
     steps:
-    - name: Ensure deploy-failure label exists
+    - name: Ensure required labels exist
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
@@ -142,6 +142,11 @@ jobs:
           --repo "${{ github.repository }}" \
           --description "Automated deploy pipeline failure" \
           --color "d93f0b" \
+          --force
+        gh label create priority-high \
+          --repo "${{ github.repository }}" \
+          --description "High priority issue" \
+          --color "b60205" \
           --force
 
     - name: Create debugging issue and assign SRE agent
