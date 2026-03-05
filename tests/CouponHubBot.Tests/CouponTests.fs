@@ -1393,8 +1393,15 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
 
             do! fixture.ClearFakeCalls()
             let! _ = fixture.SendUpdate(Tg.dmMessage("/my", taker))
+            // Single taken coupon → sendPhoto (not sendMediaGroup; Telegram requires ≥2 for media groups)
+            let! photoCalls = fixture.GetFakeCalls("sendPhoto")
+            Assert.True(photoCalls |> Array.exists (fun c ->
+                match parseCallBody c.Body with
+                | Some p -> p.ChatId = Some 232L
+                | _ -> false),
+                $"Expected sendPhoto to taker 232. Got %d{photoCalls.Length} calls")
             let! albumCalls = fixture.GetFakeCalls("sendMediaGroup")
-            Assert.Equal(1, albumCalls.Length)
+            Assert.Equal(0, albumCalls.Length)
 
             let! callsTaker = fixture.GetFakeCalls("sendMessage")
             Assert.True(findCallWithText callsTaker 232L "Мои купоны",
@@ -1403,6 +1410,37 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 "Expected coupon ID in /my text")
             Assert.True(callsTaker |> Array.exists (fun c -> c.Body.Contains("return:") && c.Body.Contains("used:")),
                 "Expected inline keyboard with return: and used: callback_data under /my text message")
+        }
+
+    [<Fact>]
+    let ``My uses sendMediaGroup when user has 2 or more taken coupons`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let owner1 = Tg.user(id = 261L, username = "my_multi_o1", firstName = "O1")
+            let owner2 = Tg.user(id = 262L, username = "my_multi_o2", firstName = "O2")
+            let taker  = Tg.user(id = 263L, username = "my_multi_t",  firstName = "T")
+            do! fixture.SetChatMemberStatus(owner1.Id, "member")
+            do! fixture.SetChatMemberStatus(owner2.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id,  "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner1))
+            let! couponId1 = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 20 50 2026-01-25", owner2))
+            let! couponId2 = getLatestCouponId ()
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId1}", taker))
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/take {couponId2}", taker))
+
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/my", taker))
+            // Two taken coupons → sendMediaGroup (not sendPhoto)
+            let! albumCalls = fixture.GetFakeCalls("sendMediaGroup")
+            Assert.Equal(1, albumCalls.Length)
+            let! photoCalls = fixture.GetFakeCalls("sendPhoto")
+            Assert.Equal(0, photoCalls.Length)
+
+            let! callsTaker = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText callsTaker 263L "Мои купоны",
+                $"Expected 'Мои купоны' for taker. Got %d{callsTaker.Length} calls")
         }
 
     [<Fact>]
