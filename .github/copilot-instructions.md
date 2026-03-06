@@ -22,6 +22,7 @@ Telegram bot for collaborative coupon management in a private community. Written
 | Deployment | [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) |
 | Observability | [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) |
 | Self-Assessment | [docs/SELF-ASSESSMENT.md](../docs/SELF-ASSESSMENT.md) |
+| Product Vision | [docs/PRODUCT-VISION.md](../docs/PRODUCT-VISION.md) |
 
 ## Key Conventions
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The daily self-assessment workflow acts as an **automated product manager**. It runs every day at 04:37 UTC, gathers infrastructure metrics, and creates an orchestration issue. The issue is assigned to a **custom Copilot agent** (`self-assess`) that analyzes the system and maintains a backlog — without making any code changes.
+The daily self-assessment workflow acts as an **automated project manager**. It runs every day at 04:37 UTC, gathers infrastructure metrics, and creates an orchestration issue. The issue is assigned to a **custom Copilot agent** (`self-assess`) that analyzes the system and maintains a backlog — without making any code changes.
 
 ## How It Works
 
@@ -50,7 +50,8 @@ The self-assess agent is defined in `.github/agents/self-assess.agent.md`. Key p
 
 | Agent | Role | Triggered by |
 |-------|------|-------------|
-| `self-assess` | Product manager — analyze codebase, manage backlog | Daily workflow (`self-assess.yml`) |
+| `self-assess` | Project manager — analyze codebase, manage backlog | Daily workflow (`self-assess.yml`) |
+| `product` | Product manager — triage feedback, analyze usage, create refined tickets | Daily workflow (`product.yml`) + feedback trigger |
 | `sre` | SRE — debug production incidents, rollback, escalate code fixes | Deploy failure (`deploy.yml` notify-failure job) |
 | Default coding agent | Write code, fix bugs, create PRs | Auto-fix workflow, manual assignment, SRE escalation |
 
