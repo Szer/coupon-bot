@@ -48,6 +48,7 @@ type CallbackHandler(
                 let hasData = not (isNull cq.Data)
 
                 if isPrivateChat && hasData && cq.Data.StartsWith("take:") then
+                    Metrics.callbackTotal.Add(1L, KeyValuePair("action", box "take"))
                     Metrics.buttonClickTotal.Add(1L, KeyValuePair("button", box "take"))
                     let idStr = cq.Data.Substring("take:".Length)
                     match BotHelpers.parseInt idStr with
@@ -56,6 +57,7 @@ type CallbackHandler(
                     | None ->
                         ()
                 elif isPrivateChat && hasData && cq.Data.StartsWith("addflow:") then
+                    Metrics.callbackTotal.Add(1L, KeyValuePair("action", box "addflow"))
                     Metrics.buttonClickTotal.Add(1L, KeyValuePair("button", box cq.Data))
                     match! db.GetPendingAddFlow user.id with
                     | None ->
@@ -202,6 +204,7 @@ type CallbackHandler(
                         | _ ->
                             do! sendText cq.Message.Chat.Id "Не понял действие. Начни заново: /add"
                 elif isPrivateChat && hasData && cq.Data.StartsWith("return:") then
+                    Metrics.callbackTotal.Add(1L, KeyValuePair("action", box "return"))
                     let deleteOnSuccess = cq.Data.EndsWith(":del")
                     let baseData = if deleteOnSuccess then cq.Data.Substring(0, cq.Data.Length - 4) else cq.Data
                     let idStr = baseData.Substring("return:".Length)
@@ -214,6 +217,7 @@ type CallbackHandler(
                             with _ -> ()
                     | None -> ()
                 elif isPrivateChat && hasData && cq.Data.StartsWith("used:") then
+                    Metrics.callbackTotal.Add(1L, KeyValuePair("action", box "used"))
                     let deleteOnSuccess = cq.Data.EndsWith(":del")
                     let baseData = if deleteOnSuccess then cq.Data.Substring(0, cq.Data.Length - 4) else cq.Data
                     let idStr = baseData.Substring("used:".Length)
@@ -226,6 +230,7 @@ type CallbackHandler(
                             with _ -> ()
                     | None -> ()
                 elif isPrivateChat && hasData && cq.Data.StartsWith("void:") then
+                    Metrics.callbackTotal.Add(1L, KeyValuePair("action", box "void"))
                     let deleteOnSuccess = cq.Data.EndsWith(":del")
                     let baseData = if deleteOnSuccess then cq.Data.Substring(0, cq.Data.Length - 4) else cq.Data
                     let idStr = baseData.Substring("void:".Length)
@@ -235,6 +240,7 @@ type CallbackHandler(
                         do! commandHandler.HandleVoid user cq.Message.Chat.Id couponId isAdmin deleteOnSuccess (Some cq.Message)
                     | None -> ()
                 elif isPrivateChat && hasData && cq.Data = "myAdded" then
+                    Metrics.callbackTotal.Add(1L, KeyValuePair("action", box "myAdded"))
                     do! commandHandler.HandleAdded user cq.Message.Chat.Id
 
             do! botClient.AnswerCallbackQuery(cq.Id)

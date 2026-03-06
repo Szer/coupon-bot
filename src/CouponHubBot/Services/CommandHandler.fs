@@ -1,6 +1,7 @@
 namespace CouponHubBot.Services
 
 open System
+open System.Collections.Generic
 open Microsoft.Extensions.Logging
 open Telegram.Bot
 open Telegram.Bot.Types
@@ -279,53 +280,95 @@ type CommandHandler(
 
     member _.Dispatch (user: DbUser) (msg: Message) =
         task {
+            let recordCommand cmd =
+                Metrics.commandTotal.Add(1L, KeyValuePair("command", box cmd))
+
             match msg.Text with
-            | "/start" -> do! handleStart msg.Chat.Id
-            | "/help" -> do! handleHelp msg.Chat.Id
-            | "/list" -> do! handleCoupons msg.Chat.Id
-            | "/l" -> do! handleCoupons msg.Chat.Id
-            | "/coupons" -> do! handleCoupons msg.Chat.Id // legacy alias
-            | "/take" -> do! handleCoupons msg.Chat.Id // legacy alias (list)
-            | "/my" -> do! handleMy user msg.Chat.Id
-            | "/m" -> do! handleMy user msg.Chat.Id
-            | "/added" -> do! handleAdded user msg.Chat.Id
-            | "/ad" -> do! handleAdded user msg.Chat.Id
-            | "/stats" -> do! handleStats user msg.Chat.Id
-            | "/s" -> do! handleStats user msg.Chat.Id
-            | "/feedback" -> do! handleFeedback user msg.Chat.Id
-            | "/f" -> do! handleFeedback user msg.Chat.Id
-            | "/add" -> do! couponFlow.HandleAddWizardStart user msg.Chat.Id
-            | "/a" -> do! couponFlow.HandleAddWizardStart user msg.Chat.Id
+            | "/start" ->
+                recordCommand "start"
+                do! handleStart msg.Chat.Id
+            | "/help" ->
+                recordCommand "help"
+                do! handleHelp msg.Chat.Id
+            | "/list" ->
+                recordCommand "list"
+                do! handleCoupons msg.Chat.Id
+            | "/l" ->
+                recordCommand "list"
+                do! handleCoupons msg.Chat.Id
+            | "/coupons" ->
+                recordCommand "list"
+                do! handleCoupons msg.Chat.Id // legacy alias
+            | "/take" ->
+                recordCommand "list"
+                do! handleCoupons msg.Chat.Id // legacy alias (list)
+            | "/my" ->
+                recordCommand "my"
+                do! handleMy user msg.Chat.Id
+            | "/m" ->
+                recordCommand "my"
+                do! handleMy user msg.Chat.Id
+            | "/added" ->
+                recordCommand "added"
+                do! handleAdded user msg.Chat.Id
+            | "/ad" ->
+                recordCommand "added"
+                do! handleAdded user msg.Chat.Id
+            | "/stats" ->
+                recordCommand "stats"
+                do! handleStats user msg.Chat.Id
+            | "/s" ->
+                recordCommand "stats"
+                do! handleStats user msg.Chat.Id
+            | "/feedback" ->
+                recordCommand "feedback"
+                do! handleFeedback user msg.Chat.Id
+            | "/f" ->
+                recordCommand "feedback"
+                do! handleFeedback user msg.Chat.Id
+            | "/add" ->
+                recordCommand "add"
+                do! couponFlow.HandleAddWizardStart user msg.Chat.Id
+            | "/a" ->
+                recordCommand "add"
+                do! couponFlow.HandleAddWizardStart user msg.Chat.Id
             | t when not (isNull t) && t.StartsWith("/take ") ->
+                recordCommand "take"
                 match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind BotHelpers.parseInt with
                 | Some couponId -> do! handleTake user msg.Chat.Id couponId
                 | None -> do! sendText msg.Chat.Id "Формат: /take <id>"
             | t when not (isNull t) && t.StartsWith("/used ") ->
+                recordCommand "used"
                 match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind BotHelpers.parseInt with
                 | Some couponId ->
                     let! _ = handleUsed user msg.Chat.Id couponId
                     ()
                 | None -> do! sendText msg.Chat.Id "Формат: /used <id>"
             | t when not (isNull t) && t.StartsWith("/return ") ->
+                recordCommand "return"
                 match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind BotHelpers.parseInt with
                 | Some couponId ->
                     let! _ = handleReturn user msg.Chat.Id couponId
                     ()
                 | None -> do! sendText msg.Chat.Id "Формат: /return <id>"
             | t when not (isNull t) && (t.StartsWith("/add ") || t.StartsWith("/a ")) ->
+                recordCommand "add_manual"
                 do! sendText msg.Chat.Id "Для ручного добавления пришли фото с подписью: /add <discount> <min_check> <date>"
             | t when not (isNull t) && t.StartsWith("/void ") ->
+                recordCommand "void"
                 match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind BotHelpers.parseInt with
                 | Some couponId ->
                     let isAdmin = botConfig.FeedbackAdminIds |> Array.contains msg.From.Id
                     do! handleVoid user msg.Chat.Id couponId isAdmin false None
                 | None -> do! sendText msg.Chat.Id "Формат: /void <id>"
             | t when not (isNull t) && t.StartsWith("/debug ") ->
+                recordCommand "debug"
                 match t.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast |> Option.bind BotHelpers.parseInt with
                 | Some couponId -> do! handleDebug msg.From.Id msg.Chat.Id couponId
                 | None -> ()
             | _ ->
                 if msg.Photo <> null && msg.Photo.Length > 0 && not (isNull msg.Caption) && (msg.Caption.StartsWith("/add") || msg.Caption.StartsWith("/a")) then
+                    recordCommand "add_photo"
                     do! couponFlow.HandleAddManual user msg
                 else
                     logger.LogInformation("Ignoring private message")
