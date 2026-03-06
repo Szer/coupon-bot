@@ -27,7 +27,7 @@ Stores messages from the community group chat for product analysis. Only the com
 
 Key columns:
 - `chat_id BIGINT` + `message_id INT` — unique per message
-- `user_id BIGINT` — Telegram user who sent the message
+- `user_id BIGINT` — sender identifier: Telegram user ID for regular messages, or `SenderChat.Id` for anonymous admins / channel posts
 - `text TEXT NULL` — message text (NULL for media-only messages)
 - `has_photo`, `has_document` — media flags (content is not stored)
 - `reply_to_message_id INT NULL` — enables conversation threading analysis
