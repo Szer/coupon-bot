@@ -24,8 +24,22 @@ log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
 
 # Helper: query Prometheus instant endpoint
 prom_query() {
-    curl -sf -G "${PROMETHEUS_URL}/api/v1/query" \
-        --data-urlencode "query=$1" 2>/dev/null || echo '{"data":{"result":[]}}'
+    local query="$1"
+    local attempt
+    for attempt in 1 2 3; do
+        if result=$(curl -sf -G \
+            --connect-timeout 5 \
+            --max-time 20 \
+            "${PROMETHEUS_URL}/api/v1/query" \
+            --data-urlencode "query=${query}" 2>/dev/null); then
+            echo "$result"
+            return 0
+        fi
+        log "Prometheus query failed (attempt ${attempt}/3), retrying..."
+        sleep 1
+    done
+    log "Prometheus query failed after 3 attempts, returning empty result."
+    echo '{"data":{"result":[]}}'
 }
 
 # Helper: query PostgreSQL via psql
@@ -161,13 +175,13 @@ fi
 
 log "Querying GitHub issues..."
 
-OPEN_FEEDBACK=$(gh issue list --repo "$REPO" --label "user-feedback" --state open --json number,title,createdAt \
+OPEN_FEEDBACK=$(gh issue list --repo "$REPO" --label "user-feedback" --state open -L 1000 --json number,title,createdAt \
     --jq 'length' 2>/dev/null || echo "0")
 
-OPEN_FEATURES=$(gh issue list --repo "$REPO" --label "feature-request" --state open --json number,title \
+OPEN_FEATURES=$(gh issue list --repo "$REPO" --label "feature-request" --state open -L 1000 --json number,title \
     --jq 'length' 2>/dev/null || echo "0")
 
-OPEN_BUGS=$(gh issue list --repo "$REPO" --label "bug" --state open --json number,title \
+OPEN_BUGS=$(gh issue list --repo "$REPO" --label "bug" --state open -L 1000 --json number,title \
     --jq 'length' 2>/dev/null || echo "0")
 
 # ─── Output markdown report ──────────────────────────────────────────────────

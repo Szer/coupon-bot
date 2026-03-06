@@ -160,6 +160,21 @@ jobs:
           --description "Bug report" \
           --color "d73a4a" \
           --force
+        gh label create priority-high \
+          --repo "${{ github.repository }}" \
+          --description "High priority — severe bugs affecting all users" \
+          --color "b60205" \
+          --force
+        gh label create priority-medium \
+          --repo "${{ github.repository }}" \
+          --description "Medium priority — default for actionable items" \
+          --color "d93f0b" \
+          --force
+        gh label create priority-low \
+          --repo "${{ github.repository }}" \
+          --description "Low priority — nice-to-have improvements" \
+          --color "0e8a16" \
+          --force
 
     - name: Create orchestration issue
       env:

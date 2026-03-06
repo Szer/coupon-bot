@@ -35,6 +35,7 @@ Members of a single private Telegram group (~10–30 people) who trust each othe
 - Integration with external coupon aggregators
 - Gamification (points, leaderboards, badges)
 - AI-powered coupon recommendations
+- Support for other stores (e.g., SuperValu) — Dunnes only
 
 ## Quality Attributes
 
