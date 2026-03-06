@@ -109,6 +109,15 @@ type ReminderService(
                 with ex ->
                     logger.LogWarning(ex, "Failed to send add-coupon reminder to {UserId}", userId)
 
+            // Retention cleanup: delete community chat messages older than 1 year.
+            try
+                let oneYearAgo = nowUtc.AddYears(-1)
+                let! deleted = db.DeleteOldChatMessages(oneYearAgo)
+                if deleted > 0 then
+                    logger.LogInformation("Deleted {Count} chat messages older than 1 year", deleted)
+            with ex ->
+                logger.LogWarning(ex, "Failed to clean up old chat messages")
+
             return anySent
         }
 

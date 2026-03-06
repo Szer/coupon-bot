@@ -27,6 +27,26 @@ type BotService(
     let sendText = BotHelpers.sendText botClient
     let ensureCommunityMember = BotHelpers.ensureCommunityMember membership sendText
 
+    let handleCommunityMessage (msg: Message) =
+        task {
+            if msg.Chat <> null
+               && msg.From <> null
+               && msg.Chat.Id = botConfig.CommunityChatId
+               && not msg.From.IsBot then
+                let text =
+                    if isNull msg.Text then null
+                    else msg.Text
+                let hasPhoto = msg.Photo <> null && msg.Photo.Length > 0
+                let hasDocument = not (isNull msg.Document)
+                let replyToId =
+                    if msg.ReplyToMessage <> null then Nullable(msg.ReplyToMessage.MessageId)
+                    else Nullable()
+                try
+                    do! db.SaveChatMessage(msg.Chat.Id, msg.MessageId, msg.From.Id, text, hasPhoto, hasDocument, replyToId)
+                with ex ->
+                    logger.LogWarning(ex, "Failed to save community chat message {MessageId}", msg.MessageId)
+        }
+
     let handlePrivateMessage (msg: Message) =
         task {
             use a =
@@ -108,6 +128,10 @@ type BotService(
                 elif not (isNull update.CallbackQuery) then
                     do! callbackHandler.HandleCallbackQuery update.CallbackQuery
                 elif not (isNull update.Message) then
+                    if update.Message.Chat <> null
+                       && (update.Message.Chat.Type = ChatType.Group || update.Message.Chat.Type = ChatType.Supergroup)
+                       && update.Message.Chat.Id = botConfig.CommunityChatId then
+                        do! handleCommunityMessage update.Message
                     do! handlePrivateMessage update.Message
                 else
                     ()
