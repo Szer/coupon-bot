@@ -279,8 +279,10 @@ curl -s http://argo.internal/api/v1/applications/coupon-bot \
 If root cause is a code bug, create a new issue and assign the coding agent:
 
 ```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+
 ISSUE_URL=$(gh issue create \
-  --repo "OWNER/REPO" \
+  --repo "$REPO" \
   --title "Fix: [brief description of the bug]" \
   --label "deploy-failure" \
   --label "priority-high" \
@@ -307,7 +309,7 @@ ISSUE_URL=$(gh issue create \
 # Assign the default coding agent
 ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -Eo '[0-9]+$')
 gh api --method POST \
-  "/repos/OWNER/REPO/issues/${ISSUE_NUMBER}/assignees" \
+  "/repos/$REPO/issues/${ISSUE_NUMBER}/assignees" \
   --input - <<EOF
 {
   "assignees": ["copilot-swe-agent[bot]"],
@@ -316,7 +318,7 @@ gh api --method POST \
 EOF
 ```
 
-Replace `OWNER/REPO`, `ORIGINAL_ISSUE_NUMBER`, and `COMMIT_SHA` with actual values from the deploy-failure issue.
+Replace `ORIGINAL_ISSUE_NUMBER` and `COMMIT_SHA` with actual values from the deploy-failure issue.
 
 ### Step 7: Close the Deploy-Failure Issue
 

@@ -148,6 +148,11 @@ jobs:
           --description "High priority issue" \
           --color "b60205" \
           --force
+        gh label create infra \
+          --repo "${{ github.repository }}" \
+          --description "Infrastructure / configuration issue" \
+          --color "d4c5f9" \
+          --force
 
     - name: Create debugging issue and assign SRE agent
       env:

@@ -39,7 +39,7 @@ Script: `scripts/verify-deploy.sh` (parameterized via env vars, reusable across 
 
 ## Automated Failure Response
 
-When `verify-deploy` fails, the workflow automatically:
+When any job in the deploy pipeline fails, the workflow automatically:
 1. Creates a GitHub issue labeled `deploy-failure` with the workflow run link and commit SHA
 2. Assigns the issue to the **SRE custom agent** (`sre`) via REST API (requires `COPILOT_ASSIGN_PAT` secret)
 3. SRE agent classifies incident severity (P1/P2/P3) and assesses production impact
