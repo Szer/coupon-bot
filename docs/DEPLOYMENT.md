@@ -56,6 +56,8 @@ See `.github/agents/sre.agent.md` for the full incident response runbook.
 
 ## Rollback
 
+**Important:** ArgoCD has auto-sync enabled from the `Szer/my-infra` IaC repo. Any rollback will be overwritten unless auto-sync is disabled first. The SRE agent handles this automatically for P1 incidents.
+
 Roll back by:
-- **SRE agent**: Triggers ArgoCD sync, deletes unhealthy pods, or removes stale ReplicaSets (automated during incident response)
-- **Manual**: Re-deploy the previous git SHA, or use ArgoCD UI to sync to a previous revision
+- **SRE agent (P1 only)**: Disables ArgoCD auto-sync, rolls back to the previous known-good image via ArgoCD rollback API, then escalates to coding agent. Auto-sync must be re-enabled after the fix is deployed.
+- **Manual**: Disable ArgoCD auto-sync, re-deploy the previous git SHA or use ArgoCD UI to sync to a previous revision, then re-enable auto-sync.

@@ -33,8 +33,8 @@ Read the deploy-failure issue body to get the workflow run link and commit SHA. 
 
 | Severity | Criteria | Response |
 |----------|----------|----------|
-| **P1 — Production down** | App health is not `Healthy`, pods are in CrashLoopBackOff/OOMKilled, or 5xx rate is high | **Rollback immediately**, then investigate |
-| **P2 — Degraded** | App is running but with errors in Loki, elevated restart count, or partial failures | Investigate, rollback if errors persist |
+| **P1 — Production down** | **No pods serving traffic** — all replicas unhealthy, 5xx rate is high, app completely unreachable | **Rollback immediately**, then investigate |
+| **P2 — New pod failing, old replica serving** | New pod is in CrashLoopBackOff/OOMKilled but the **previous ReplicaSet still has healthy pods serving traffic**. Users are not impacted. | Investigate without urgency. This is the most common deploy failure scenario — the old replica keeps serving while the new one fails to start. |
 | **P3 — Deploy verification failed** | `verify-deploy.sh` failed but app is actually healthy (timing issue, flaky check) | Investigate, likely close as transient |
 
 **Always assess severity first.** Run the quick health check before diving into logs:
@@ -50,7 +50,23 @@ curl -s http://argo.internal/api/v1/applications/coupon-bot \
   }'
 ```
 
-If health is not `Healthy`, jump to **Step 5: Rollback** before continuing investigation.
+**Critical: Check if old replicas are still serving.** A failing new pod with a healthy old ReplicaSet is **P2, not P1** — users are unaffected:
+
+```bash
+# Check all pods and ReplicaSets — look for healthy pods from the OLD ReplicaSet
+curl -s http://argo.internal/api/v1/applications/coupon-bot/resource-tree \
+  -H "Authorization: Bearer $ARGOCD_AUTH_TOKEN" \
+  | jq '.nodes[] | select(.kind == "Pod" or .kind == "ReplicaSet") | {kind, name, health: .health}'
+```
+
+```bash
+# Verify traffic is being served (5xx rate should be 0 if old replica is healthy)
+curl -s -G 'http://prometheus.internal:9090/api/v1/query' \
+  --data-urlencode 'query=sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",job="coupon-bot"}[5m]))' \
+  | jq '.data.result[].value[1]'
+```
+
+If old replica is healthy and 5xx rate is 0 → **P2**. Only jump to **Step 5: Rollback** if this is genuinely **P1** (no healthy pods, active 5xx errors).
 
 ### Step 2: Read the Failed Workflow Logs
 
@@ -180,13 +196,35 @@ Based on the diagnostic data, classify the root cause:
 
 ### Step 5: Rollback (if production is impacted)
 
-**Only rollback if the app is genuinely unhealthy (P1 or persistent P2).** Do NOT rollback for transient verification failures.
+**Only rollback for genuine P1 incidents** — all pods are unhealthy and no traffic is being served. If old replicas are still serving (P2), skip rollback and go straight to root cause analysis and escalation.
 
-#### Option A: ArgoCD rollback to previous deployment (preferred for P1/P2 code regressions)
+#### Important: ArgoCD auto-sync
 
-This is a **true rollback** — it reverts ArgoCD to the previous synced revision (the last known-good image), without touching the IaC repo. Use this when the new image is unhealthy (crash-loop, unhandled exception, regression).
+ArgoCD is configured with **auto-sync enabled**, syncing from the `Szer/my-infra` IaC repo. The image-reloader in that repo has already updated the desired image tag to the new (broken) image. **Any rollback will be overwritten by auto-sync within minutes** unless you disable auto-sync first.
 
-First, get the deployment history and identify the last known-good deployment. Entries are ordered newest-first; inspect `deployedAt` and `revision` to pick the correct one (typically the second entry, but verify it is not itself a failed or rolled-back deployment):
+**For P1 only — disable auto-sync, then rollback:**
+
+```bash
+# Step 1: Disable auto-sync to prevent ArgoCD from re-applying the broken image
+curl -s -X PATCH "http://argo.internal/api/v1/applications/coupon-bot" \
+  -H "Authorization: Bearer $ARGOCD_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"spec": {"syncPolicy": {"automated": null}}}'
+```
+
+```bash
+# Step 2: Verify auto-sync is disabled
+curl -s http://argo.internal/api/v1/applications/coupon-bot \
+  -H "Authorization: Bearer $ARGOCD_AUTH_TOKEN" \
+  | jq '.spec.syncPolicy'
+# Should show automated: null or no automated field
+```
+
+#### Option A: ArgoCD rollback to previous deployment (preferred for P1 code regressions)
+
+This reverts to the previous synced revision (the last known-good image). **Only works after disabling auto-sync** (above).
+
+First, get the deployment history to identify the last known-good deployment:
 
 ```bash
 curl -s "http://argo.internal/api/v1/applications/coupon-bot/history" \
@@ -206,9 +244,23 @@ curl -s -X POST "http://argo.internal/api/v1/applications/coupon-bot/rollback" \
   -d "{\"id\": $TARGET_ID}"
 ```
 
+#### After rollback: re-enable auto-sync
+
+**After the code fix is deployed**, re-enable auto-sync. Document this in the incident report and the escalation issue so the coding agent or a human knows to re-enable it:
+
+```bash
+# Re-enable auto-sync (run this AFTER the fix is deployed)
+curl -s -X PATCH "http://argo.internal/api/v1/applications/coupon-bot" \
+  -H "Authorization: Bearer $ARGOCD_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"spec": {"syncPolicy": {"automated": {"prune": true, "selfHeal": true}}}}'
+```
+
+**Always mention in the incident report and escalation issue that auto-sync was disabled and must be re-enabled.**
+
 #### Option B: Trigger ArgoCD sync (for stuck/OutOfSync situations only)
 
-Use this **only** when ArgoCD is stuck or OutOfSync (e.g., it did not pick up the new image). This re-applies the current desired state and does **not** roll back to a previous image. Do **not** use for crash-loop or application-level failures — it will re-deploy the same broken image.
+Use this **only** when ArgoCD is stuck or OutOfSync (e.g., it did not pick up the new image). This re-applies the current desired state and does **not** roll back to a previous image. Do **not** use for crash-loop or application-level failures.
 
 ```bash
 curl -s -X POST http://argo.internal/api/v1/applications/coupon-bot/sync \
@@ -219,7 +271,7 @@ curl -s -X POST http://argo.internal/api/v1/applications/coupon-bot/sync \
 
 #### Option C: Delete the unhealthy pod (triggers ReplicaSet to recreate)
 
-Use this only if the pod is stuck/crashlooping with the **current healthy image** (i.e., the deployment succeeded but a pod is stuck). This does not roll back.
+Use this only if a pod is stuck with the **current healthy image** (i.e., the image is fine but a pod crashed). This does not roll back.
 
 First list managed resources to find the exact pod name:
 
@@ -346,6 +398,7 @@ gh issue close ISSUE_NUMBER \
 
 ### Resolution
 - [What fixed it — rollback, transient issue resolved, escalated to coding agent as #ISSUE_NUMBER]
+- **Auto-sync status:** [enabled / DISABLED — must be re-enabled after fix is deployed]
 
 ### Follow-up
 - [Any recommended actions — infra changes, monitoring improvements, etc.]"
@@ -358,6 +411,7 @@ gh issue close ISSUE_NUMBER \
 - Base URL: `http://argo.internal`
 - Auth header: `Authorization: Bearer $ARGOCD_AUTH_TOKEN`
 - App name: `coupon-bot`
+- **Auto-sync is enabled** — ArgoCD syncs from the `Szer/my-infra` IaC repo. Rollbacks require disabling auto-sync first.
 - Image reloader polls every ~5 minutes; sync delays up to 10 minutes are normal
 - Readiness probes may fail for up to 3 minutes after deployment
 
