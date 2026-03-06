@@ -39,14 +39,16 @@ Script: `scripts/verify-deploy.sh` (parameterized via env vars, reusable across 
 
 ## Automated Failure Response
 
-When `verify-deploy` fails, the workflow automatically:
+When any job in the deploy pipeline fails, the workflow automatically:
 1. Creates a GitHub issue labeled `deploy-failure` with the workflow run link and commit SHA
-2. Assigns the issue to `@copilot` (requires `COPILOT_ASSIGN_PAT` secret)
-3. Copilot coding agent picks up the issue and uses the `deployment-debugging` skill
-4. Agent queries ArgoCD, Loki, and Prometheus via VPN to diagnose the root cause
-5. Agent creates a fix PR
+2. Assigns the issue to the **SRE custom agent** (`sre`) via REST API (requires `COPILOT_ASSIGN_PAT` secret)
+3. SRE agent classifies incident severity (P1/P2/P3) and assesses production impact
+4. If production is impacted (P1), SRE agent rolls back via ArgoCD before investigating
+5. SRE agent queries ArgoCD, Loki, and Prometheus via VPN to diagnose root cause
+6. If a code fix is needed, SRE agent creates a `priority-high` issue and assigns the coding agent
+7. SRE agent closes the deploy-failure issue with a structured incident report
 
-See `.github/skills/deployment-debugging/SKILL.md` for the full debugging flow.
+See `.github/agents/sre.agent.md` for the full incident response runbook.
 
 ## Manual Deploy
 
@@ -54,4 +56,8 @@ See `.github/skills/deployment-debugging/SKILL.md` for the full debugging flow.
 
 ## Rollback
 
-Roll back by re-deploying the previous git SHA or using ArgoCD UI to sync to a previous revision.
+**Important:** ArgoCD has auto-sync enabled from the `Szer/my-infra` IaC repo. Any rollback will be overwritten unless auto-sync is disabled first. The SRE agent handles this automatically for P1 incidents.
+
+Roll back by:
+- **SRE agent (P1 only)**: Disables ArgoCD auto-sync, rolls back to the previous known-good image via ArgoCD rollback API, then escalates to coding agent. Auto-sync must be re-enabled after the fix is deployed.
+- **Manual**: Disable ArgoCD auto-sync, re-deploy the previous git SHA or use ArgoCD UI to sync to a previous revision, then re-enable auto-sync.

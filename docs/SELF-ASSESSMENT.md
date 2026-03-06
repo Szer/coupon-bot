@@ -46,9 +46,17 @@ The self-assess agent is defined in `.github/agents/self-assess.agent.md`. Key p
 | `name` | `self-assess` | Used in REST API `agent_assignment.custom_agent` field |
 | Prompt | Analytical, open-ended | Agent reads code and reasons about it rather than following a grep checklist |
 
+### All Custom Agents
+
+| Agent | Role | Triggered by |
+|-------|------|-------------|
+| `self-assess` | Product manager — analyze codebase, manage backlog | Daily workflow (`self-assess.yml`) |
+| `sre` | SRE — debug production incidents, rollback, escalate code fixes | Deploy failure (`deploy.yml` notify-failure job) |
+| Default coding agent | Write code, fix bugs, create PRs | Auto-fix workflow, manual assignment, SRE escalation |
+
 ### Assignment via REST API
 
-Both workflows assign Copilot using the REST API with `agent_assignment`:
+These workflows assign Copilot using the REST API with `agent_assignment`:
 
 ```bash
 # Self-assess workflow — uses custom agent (no edit tool, analysis only)

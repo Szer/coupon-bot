@@ -31,26 +31,19 @@ excludeAgent: "code-review"
 | Agent | When used |
 |-------|-----------|
 | `self-assess` | Daily self-assessment of codebase and infrastructure, backlog management. No edit tool; analysis and issue management only. |
+| `sre` | Production incident response — debugs deploy failures, queries ArgoCD/Loki/Prometheus, performs rollbacks. Escalates to coding agent when a code fix is needed. No edit tool. |
 
 ### Skills (`.github/skills/`)
 
 | Skill | When used |
 |-------|-----------|
-| `deployment-debugging` | Debugging a failed `verify-deploy` step or `deploy-failure` issue |
 | `argocd-status` | Checking ArgoCD sync/health status, deployed image tags |
 | `loki-logs` | Querying application logs via Loki for errors or patterns |
 | `prometheus-metrics` | Checking pod restarts, 5xx rates, health metrics |
 
 The agent has VPN access to `*.internal` hosts (established by `copilot-setup-steps.yml`).
 
-## Debugging Deployment Failures
-
-When assigned a `deploy-failure` issue:
-
-1. Use the `deployment-debugging` skill — it walks through the full investigation flow
-2. Read the failed workflow logs to identify which verification phase failed
-3. Query ArgoCD, Loki, and Prometheus via the corresponding skills
-4. Create a fix PR referencing the `deploy-failure` issue
+**Note:** Deploy failure debugging is handled by the SRE custom agent, not the coding agent. If the SRE agent determines a code fix is needed, it creates a `priority-high` issue and assigns the coding agent.
 
 ## Debugging Test Failures
 
