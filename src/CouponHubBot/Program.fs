@@ -70,6 +70,8 @@ let globalBotConfDontUseOnlyRegister =
       AzureOcrEndpoint = Utils.getEnvOr "AZURE_OCR_ENDPOINT" ""
       AzureOcrKey = Utils.getEnvOr "AZURE_OCR_KEY" ""
       FeedbackAdminIds = Utils.getEnvOr "FEEDBACK_ADMINS" "" |> parseAdmins
+      GitHubToken = Utils.getEnv "GITHUB_TOKEN"
+      GitHubRepo = Utils.getEnvOr "GITHUB_REPO" "Szer/coupon-bot"
       TestMode = Utils.getEnvOrBool "TEST_MODE" false
       MaxTakenCoupons = Utils.getEnvOr "MAX_TAKEN_COUPONS" "6" |> int }
 
@@ -113,6 +115,7 @@ let builder = WebApplication.CreateBuilder()
         TelegramBotClient(options, httpClient) :> ITelegramBotClient)
 
 %builder.Services.AddHttpClient<IAzureTextOcr, AzureOcrService>()
+%builder.Services.AddHttpClient<GitHubService>()
 %builder.Services.AddSingleton<CouponOcrEngine>()
 
 %builder

@@ -18,6 +18,8 @@ type BotConfiguration =
       AzureOcrEndpoint: string
       AzureOcrKey: string
       FeedbackAdminIds: int64 array
+      GitHubToken: string
+      GitHubRepo: string
       TestMode: bool
       MaxTakenCoupons: int }
 
@@ -68,6 +70,16 @@ type CouponEventHistoryRow =
     { date: string
       user: string
       event_type: string }
+
+[<CLIMutable>]
+type UserFeedbackRow =
+    { id: int64
+      user_id: int64
+      feedback_text: string | null
+      has_media: bool
+      telegram_message_id: Nullable<int>
+      github_issue_number: Nullable<int>
+      created_at: DateTime }
 
 /// Used by FakeTgApi test endpoints (serialize minimal info)
 [<CLIMutable>]

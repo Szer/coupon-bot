@@ -21,6 +21,7 @@ type BotService(
     couponFlow: CouponFlowHandler,
     commandHandler: CommandHandler,
     callbackHandler: CallbackHandler,
+    gitHub: GitHubService,
     logger: ILogger<BotService>,
     time: TimeProvider
 ) =
@@ -104,10 +105,44 @@ type BotService(
                     let! feedbackConsumed = db.TryConsumePendingFeedback(user.id)
                     if feedbackConsumed then
                         Metrics.feedbackTotal.Add(1L)
+
+                        // Extract feedback content
+                        let feedbackText =
+                            if not (isNull msg.Text) then msg.Text
+                            elif not (isNull msg.Caption) then msg.Caption
+                            else null
+                        let hasMedia =
+                            (msg.Photo <> null && msg.Photo.Length > 0)
+                            || not (isNull msg.Document)
+                            || not (isNull msg.Voice)
+                            || not (isNull msg.Video)
+
+                        // 1. Save feedback to database
+                        let! feedbackId =
+                            try db.SaveUserFeedback(user.id, feedbackText, hasMedia, msg.MessageId)
+                            with ex ->
+                                logger.LogError(ex, "Failed to save user feedback to database")
+                                task { return 0L }
+
+                        // 2. Forward to admins (existing behavior)
                         for adminId in botConfig.FeedbackAdminIds do
                             try
                                 do! botClient.ForwardMessage(ChatId adminId, ChatId msg.Chat.Id, msg.MessageId) |> taskIgnore
                             with _ -> ()
+
+                        // 3. Create GitHub issue (best-effort, anonymous — no username)
+                        if gitHub.IsConfigured && feedbackId > 0L then
+                            try
+                                let! issueNumber = gitHub.CreateFeedbackIssue(feedbackText, hasMedia)
+                                match issueNumber with
+                                | Some num ->
+                                    do! db.UpdateFeedbackGitHubIssue(feedbackId, num)
+                                    try do! gitHub.AssignProductAgent(num)
+                                    with ex -> logger.LogWarning(ex, "Failed to assign product agent to issue #{IssueNumber}", num)
+                                | None -> ()
+                            with ex ->
+                                logger.LogWarning(ex, "Failed to create GitHub issue for feedback")
+
                         do! sendText msg.Chat.Id "Спасибо! Сообщение отправлено авторам."
                         handledAddFlow <- true
                     else
