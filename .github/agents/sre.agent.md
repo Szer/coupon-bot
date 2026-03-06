@@ -403,15 +403,17 @@ cat > /tmp/incident-report.md << 'BODY'
 - **Prometheus:** [restart count, 5xx rate]
 
 ### Resolution
-- [What fixed it — rollback, transient issue resolved, escalated to coding agent as #ISSUE_NUMBER]
+- [What fixed it — rollback, transient issue resolved, escalated to coding agent as #CODING_AGENT_ISSUE_NUMBER]
 - **Auto-sync status:** [enabled / DISABLED — must be re-enabled after fix is deployed]
 
 ### Follow-up
 - [Any recommended actions — infra changes, monitoring improvements, etc.]
 BODY
 
-gh issue comment ISSUE_NUMBER --body-file /tmp/incident-report.md
-gh issue close ISSUE_NUMBER
+# This is the original deploy-failure issue you were assigned to (not the coding-agent issue created in Step 6)
+DEPLOY_FAILURE_ISSUE_NUMBER="ORIGINAL_ISSUE_NUMBER"
+gh issue comment "$DEPLOY_FAILURE_ISSUE_NUMBER" --body-file /tmp/incident-report.md
+gh issue close "$DEPLOY_FAILURE_ISSUE_NUMBER"
 ```
 
 ## Reference
