@@ -745,3 +745,32 @@ ORDER BY cm.created_at;
             let! rows = conn.QueryAsync<ChatMessageRow>(sql, {| chat_id = chatId; since = since |})
             return rows |> Seq.toArray
         }
+
+    // ── User feedback ────────────────────────────────────────────────
+
+    member _.SaveUserFeedback(userId: int64, feedbackText: string | null, hasMedia: bool, telegramMessageId: int) =
+        task {
+            use! conn = openConn()
+            //language=postgresql
+            let sql =
+                """
+INSERT INTO user_feedback (user_id, feedback_text, has_media, telegram_message_id)
+VALUES (@user_id, @feedback_text, @has_media, @telegram_message_id)
+RETURNING id;
+"""
+            let! id = conn.QuerySingleAsync<int64>(sql,
+                {| user_id = userId
+                   feedback_text = feedbackText
+                   has_media = hasMedia
+                   telegram_message_id = telegramMessageId |})
+            return id
+        }
+
+    member _.UpdateFeedbackGitHubIssue(feedbackId: int64, issueNumber: int) =
+        task {
+            use! conn = openConn()
+            //language=postgresql
+            let sql = "UPDATE user_feedback SET github_issue_number = @issue_number WHERE id = @id;"
+            let! _ = conn.ExecuteAsync(sql, {| id = feedbackId; issue_number = issueNumber |})
+            return ()
+        }

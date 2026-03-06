@@ -14,6 +14,7 @@
     <Compile Include="Services/NotificationService.fs" />
     <Compile Include="Services/OcrService.fs" />
     <Compile Include="Services/CouponOcrEngine.fs" />
+    <Compile Include="Services/GitHubService.fs" />
     <Compile Include="Services/ReminderService.fs" />
     <Compile Include="Services/BotHelpers.fs" />
     <Compile Include="Services/CouponFlowHandler.fs" />

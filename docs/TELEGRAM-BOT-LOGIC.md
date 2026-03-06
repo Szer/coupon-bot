@@ -151,3 +151,24 @@ The bot passively saves all content messages from the community group (`COMMUNIT
 - For anonymous admin posts or channel-forwarded messages, `SenderChat.Id` is stored as the sender identifier.
 - Retention: 1 year (cleanup via `ReminderService`).
 - **Prerequisite**: Bot Privacy Mode must be disabled in BotFather, otherwise Telegram does not deliver non-command messages in groups.
+
+## Feedback Flow (/feedback)
+
+The `/feedback` command lets users send feedback to bot authors. The flow is:
+
+1. User sends `/feedback` → bot sets `pending_feedback` flag in DB and prompts the user
+2. Next non-command message from that user triggers feedback consumption:
+   a. Feedback text/media metadata is saved to the `user_feedback` table
+   b. Message is forwarded to all configured admin IDs (`FEEDBACK_ADMINS`)
+   c. If GitHub integration is configured (`GITHUB_TOKEN` + `GITHUB_REPO`), a GitHub issue is created with the `user-feedback` label, and the Product Manager agent is assigned to triage it
+   d. The `user_feedback` row is updated with the GitHub issue number
+   e. User receives confirmation: "Спасибо! Сообщение отправлено авторам."
+3. Any command cancels pending feedback
+
+Steps (c) and (d) are best-effort — if GitHub API fails, feedback is still saved in DB and forwarded to admins. The user experience is unaffected.
+
+### GitHub Issue Format
+
+- **Title:** `[Feedback] @username: <first 60 chars of text>`
+- **Labels:** `user-feedback` (quarantines from coding agent — only Product agent triages)
+- **Assignment:** `copilot-swe-agent[bot]` with `custom_agent: product`

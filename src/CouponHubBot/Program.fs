@@ -73,6 +73,10 @@ let globalBotConfDontUseOnlyRegister =
       TestMode = Utils.getEnvOrBool "TEST_MODE" false
       MaxTakenCoupons = Utils.getEnvOr "MAX_TAKEN_COUPONS" "6" |> int }
 
+let globalGitHubConf =
+    { Token = Utils.getEnvOr "GITHUB_TOKEN" ""
+      Repo = Utils.getEnvOr "GITHUB_REPO" "" }
+
 let validateApiKey (ctx: HttpContext) =
     let botConf = ctx.RequestServices.GetRequiredService<BotConfiguration>()
     match ctx.Request.Headers.TryGetValue "X-Telegram-Bot-Api-Secret-Token" with
@@ -93,6 +97,7 @@ let builder = WebApplication.CreateBuilder()
 )
 
 %builder.Services.AddSingleton globalBotConfDontUseOnlyRegister
+%builder.Services.AddSingleton globalGitHubConf
 %builder.Services.AddSingleton<TimeProvider>(fun _sp -> CouponHubBot.Time.fromEnvironment ())
 // Configure JSON options for Telegram.Bot compatibility
 %builder.Services.Configure<JsonSerializerOptions>(fun (opts: JsonSerializerOptions) ->
@@ -113,6 +118,7 @@ let builder = WebApplication.CreateBuilder()
         TelegramBotClient(options, httpClient) :> ITelegramBotClient)
 
 %builder.Services.AddHttpClient<IAzureTextOcr, AzureOcrService>()
+%builder.Services.AddHttpClient<GitHubService>()
 %builder.Services.AddSingleton<CouponOcrEngine>()
 
 %builder

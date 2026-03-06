@@ -35,6 +35,18 @@ Key columns:
 
 Retention: 1 year. Cleanup runs daily via `ReminderService`.
 
+### user_feedback table
+
+Stores user feedback submitted via `/feedback` command. Each row links back to the user and optionally to a GitHub issue.
+
+Key columns:
+- `user_id BIGINT` — references `user(id)`, the user who submitted feedback
+- `feedback_text TEXT NULL` — text content (NULL for media-only messages)
+- `has_media BOOLEAN` — whether the feedback message contained media (photo, document, voice, video)
+- `telegram_message_id INT NULL` — original Telegram message ID
+- `github_issue_number INT NULL` — linked GitHub issue number (NULL if GitHub integration is disabled or failed)
+- `created_at TIMESTAMPTZ` — when the feedback was submitted
+
 ## Migrations
 
 Migration files live in `src/migrations/` (V1 through V11+). Flyway runs them:
