@@ -333,12 +333,9 @@ If root cause is a code bug, create a new issue and assign the coding agent:
 ```bash
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 
-ISSUE_URL=$(gh issue create \
-  --repo "$REPO" \
-  --title "Fix: [brief description of the bug]" \
-  --label "deploy-failure" \
-  --label "priority-high" \
-  --body "## Bug from Deploy Failure
+# Write body to file to avoid shell metacharacter injection from log content
+cat > /tmp/issue-body.md << 'BODY'
+## Bug from Deploy Failure
 
 **Root cause identified by SRE agent from deploy-failure issue #ORIGINAL_ISSUE_NUMBER.**
 
@@ -356,7 +353,15 @@ ISSUE_URL=$(gh issue create \
 
 ### Commit that introduced the bug
 
-\`COMMIT_SHA\`")
+`COMMIT_SHA`
+BODY
+
+ISSUE_URL=$(gh issue create \
+  --repo "$REPO" \
+  --title "Fix: [brief description of the bug]" \
+  --label "deploy-failure" \
+  --label "priority-high" \
+  --body-file /tmp/issue-body.md)
 
 # Assign the default coding agent
 ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -Eo '[0-9]+$')
@@ -377,8 +382,9 @@ Replace `ORIGINAL_ISSUE_NUMBER` and `COMMIT_SHA` with actual values from the dep
 After completing the investigation, close the original deploy-failure issue with a structured incident report:
 
 ```bash
-gh issue close ISSUE_NUMBER \
-  --comment "## Incident Report
+# Write report to file to avoid shell metacharacter injection from log content
+cat > /tmp/incident-report.md << 'BODY'
+## Incident Report
 
 ### Summary
 - **Severity:** P1/P2/P3
@@ -386,7 +392,7 @@ gh issue close ISSUE_NUMBER \
 - **Root cause:** [one-line summary]
 
 ### Timeline
-1. Deploy triggered by commit \`COMMIT_SHA\`
+1. Deploy triggered by commit `COMMIT_SHA`
 2. [What happened]
 3. [What failed]
 4. [What action was taken]
@@ -401,7 +407,11 @@ gh issue close ISSUE_NUMBER \
 - **Auto-sync status:** [enabled / DISABLED — must be re-enabled after fix is deployed]
 
 ### Follow-up
-- [Any recommended actions — infra changes, monitoring improvements, etc.]"
+- [Any recommended actions — infra changes, monitoring improvements, etc.]
+BODY
+
+gh issue comment ISSUE_NUMBER --body-file /tmp/incident-report.md
+gh issue close ISSUE_NUMBER
 ```
 
 ## Reference

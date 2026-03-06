@@ -145,12 +145,12 @@ jobs:
           --force
         gh label create priority-high \
           --repo "${{ github.repository }}" \
-          --description "High priority issue" \
+          --description "Reserved for user-reported high-priority issues (not used by self-assess)" \
           --color "b60205" \
           --force
         gh label create infra \
           --repo "${{ github.repository }}" \
-          --description "Infrastructure / configuration issue" \
+          --description "Infrastructure issue — cannot be fixed in this repo" \
           --color "d4c5f9" \
           --force
 
