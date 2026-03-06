@@ -44,7 +44,7 @@ type GitHubService(httpClient: HttpClient, botConfig: BotConfiguration, logger: 
         repoApiUrl.IsSome
         && not (String.IsNullOrWhiteSpace botConfig.GitHubToken)
 
-    member _.CreateFeedbackIssue(feedbackText: string, hasMedia: bool) =
+    member _.CreateFeedbackIssue(feedbackText: string | null, hasMedia: bool) =
         task {
             match repoApiUrl with
             | None ->

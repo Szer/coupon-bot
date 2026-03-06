@@ -160,12 +160,12 @@ The `/feedback` command lets users send feedback to bot authors. The flow is:
 2. Next non-command message from that user triggers feedback consumption:
    a. Feedback text/media metadata is saved to the `user_feedback` table
    b. Message is forwarded to all configured admin IDs (`FEEDBACK_ADMINS`)
-   c. If GitHub integration is configured (`GITHUB_TOKEN` + `GITHUB_REPO`), a GitHub issue is created with the `user-feedback` label, and the Product Manager agent is assigned to triage it
+   c. A GitHub issue is created with the `user-feedback` label, and the Product Manager agent is assigned to triage it
    d. The `user_feedback` row is updated with the GitHub issue number
    e. User receives confirmation: "Спасибо! Сообщение отправлено авторам."
 3. Any command cancels pending feedback
 
-Steps (c) and (d) are best-effort — if GitHub API fails, feedback is still saved in DB and forwarded to admins. The user experience is unaffected.
+Steps (c) and (d) are best-effort — if the GitHub API call fails at runtime, feedback is still saved in DB and forwarded to admins. The user experience is unaffected. Note: `GITHUB_TOKEN` is required at startup; the bot will not start without it.
 
 ### GitHub Issue Format
 
