@@ -14,6 +14,23 @@
 - Key metrics: HTTP request duration, Npgsql query duration
 - Health queries: see Cursor skill `prometheus-metrics`
 
+### Custom Bot Metrics
+
+All custom metrics are defined in `src/CouponHubBot/Telemetry.fs` under the `CouponHubBot.Metrics` meter.
+
+| Metric | Type | Tags | Description |
+|--------|------|------|-------------|
+| `couponhubbot_command_total` | Counter | `command` | Counts every command invocation (e.g. `list`, `add`, `feedback`) |
+| `couponhubbot_callback_total` | Counter | `action` | Counts every callback button press (e.g. `take`, `return`, `used`, `void`, `addflow`, `myAdded`) |
+| `couponhubbot_feedback_total` | Counter | — | Counts user feedback submissions via the `/feedback` flow |
+| `couponhubbot_button_click_total` | Counter | `button` | Legacy: counts UI/button interactions with raw callback data |
+
+### Useful PromQL Queries
+
+- Top commands (24h): `sort_desc(sum by (command)(increase(couponhubbot_command_total[24h])))`
+- Feedback rate: `sum(rate(couponhubbot_feedback_total[1h]))`
+- Callback distribution: `sum by (action)(increase(couponhubbot_callback_total[24h]))`
+
 ## Tracing
 
 - OpenTelemetry traces configured in `Telemetry.fs`

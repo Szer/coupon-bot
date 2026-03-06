@@ -175,6 +175,36 @@ DEPLOYED_IMAGES=$(echo "$ARGO_RESPONSE" | jq -r '.status.summary.images // [] | 
 ARGO_CONDITIONS=$(echo "$ARGO_RESPONSE" | jq -r '[.status.conditions[]? | "\(.type): \(.message)"] | join("\n")' 2>/dev/null || true)
 [ -z "$ARGO_CONDITIONS" ] && ARGO_CONDITIONS="none"
 
+# ─── Bot-specific metrics ─────────────────────────────────────────────────────
+
+log "Querying bot-specific metrics..."
+
+# Command usage distribution (24h)
+CMD_USAGE_JSON=$(prom_query "sum by (command)(increase(couponhubbot_command_total[24h]))")
+CMD_USAGE=$(echo "$CMD_USAGE_JSON" | jq -r '
+    [.data.result[] | {cmd: .metric.command, count: (.value[1] | tonumber | floor)}]
+    | sort_by(-.count)
+    | .[] | "  - \(.cmd): \(.count)"
+' 2>/dev/null)
+[ -z "$CMD_USAGE" ] && CMD_USAGE="  - (no data yet)"
+
+# Callback action distribution (24h)
+CB_USAGE_JSON=$(prom_query "sum by (action)(increase(couponhubbot_callback_total[24h]))")
+CB_USAGE=$(echo "$CB_USAGE_JSON" | jq -r '
+    [.data.result[] | {action: .metric.action, count: (.value[1] | tonumber | floor)}]
+    | sort_by(-.count)
+    | .[] | "  - \(.action): \(.count)"
+' 2>/dev/null)
+[ -z "$CB_USAGE" ] && CB_USAGE="  - (no data yet)"
+
+# Feedback submissions (24h)
+FEEDBACK_JSON=$(prom_query "sum(increase(couponhubbot_feedback_total[24h]))")
+FEEDBACK_COUNT=$(echo "$FEEDBACK_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
+
+# Button clicks (24h)
+BUTTON_JSON=$(prom_query "sum(increase(couponhubbot_button_click_total[24h]))")
+BUTTON_COUNT=$(echo "$BUTTON_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
+
 # ─── Output markdown report ──────────────────────────────────────────────────
 
 log "Generating report..."
@@ -229,6 +259,19 @@ ${TOP_ERRORS_COUNT:-  - (none)}
 
 ### Conditions
 ${ARGO_CONDITIONS}
+
+## Bot Usage (24h)
+
+| Metric | Value |
+|--------|-------|
+| Feedback Submissions | ${FEEDBACK_COUNT} |
+| Button Clicks | ${BUTTON_COUNT} |
+
+### Command Usage
+${CMD_USAGE}
+
+### Callback Actions
+${CB_USAGE}
 EOF
 
 log "Report generated successfully."

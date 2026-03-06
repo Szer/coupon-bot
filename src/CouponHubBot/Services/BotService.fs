@@ -68,6 +68,7 @@ type BotService(
                 if not isCommand then
                     let! feedbackConsumed = db.TryConsumePendingFeedback(user.id)
                     if feedbackConsumed then
+                        Metrics.feedbackTotal.Add(1L)
                         for adminId in botConfig.FeedbackAdminIds do
                             try
                                 do! botClient.ForwardMessage(ChatId adminId, ChatId msg.Chat.Id, msg.MessageId) |> taskIgnore
