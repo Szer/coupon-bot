@@ -137,3 +137,17 @@ taken → voided (owner void / admin void → notify taker)
    - Если пользователь использовал хотя бы один купон вчера, но не добавил ни одного купона в тот же день, бот на следующий день отправляет личное напоминание: «Не забудь добавить купоны в бота».
    - Одно напоминание на пользователя независимо от количества использованных купонов.
    - Проверка основывается на событиях `coupon_event` с типами `'used'` и `'added'` за предыдущий календарный день (UTC).
+
+5. **Chat message retention cleanup** (daily):
+   - Deletes `chat_message` records older than 1 year.
+
+## Community Chat Monitoring
+
+The bot passively saves all content messages from the community group (`COMMUNITY_CHAT_ID`) to the `chat_message` table for analysis by the Product Manager agent.
+
+- Saved: text (including photo/document captions), photo/document presence flags, reply threading (`reply_to_message_id`).
+- Not saved: media content, bot messages, service messages (join/leave/pin/etc.).
+- Only `Text`, `Photo`, and `Document` message types are persisted; all other types are skipped.
+- For anonymous admin posts or channel-forwarded messages, `SenderChat.Id` is stored as the sender identifier.
+- Retention: 1 year (cleanup via `ReminderService`).
+- **Prerequisite**: Bot Privacy Mode must be disabled in BotFather, otherwise Telegram does not deliver non-command messages in groups.

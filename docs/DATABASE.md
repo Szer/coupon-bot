@@ -21,9 +21,23 @@ Wizard state for `/add` flow:
 
 Event types: `added`, `taken`, `returned`, `used`, `voided`
 
+### chat_message table
+
+Stores messages from the community group chat for product analysis. Only the community chat (`COMMUNITY_CHAT_ID`) is monitored. Bot messages are excluded.
+
+Key columns:
+- `chat_id BIGINT` + `message_id INT` — unique per message
+- `user_id BIGINT` — sender identifier: Telegram user ID for regular messages, or `SenderChat.Id` for anonymous admins / channel posts
+- `text TEXT NULL` — message text (NULL for media-only messages)
+- `has_photo`, `has_document` — media flags (content is not stored)
+- `reply_to_message_id INT NULL` — enables conversation threading analysis
+- `created_at TIMESTAMPTZ` — when the message was saved
+
+Retention: 1 year. Cleanup runs daily via `ReminderService`.
+
 ## Migrations
 
-Migration files live in `src/migrations/` (V1 through V8+). Flyway runs them:
+Migration files live in `src/migrations/` (V1 through V11+). Flyway runs them:
 - In tests: via Testcontainers Flyway container
 - In CI/CD: via Docker against production DB over WireGuard VPN
 

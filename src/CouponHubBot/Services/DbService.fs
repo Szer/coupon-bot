@@ -53,6 +53,16 @@ type EventTypeCountRow =
     { event_type: string
       count: int64 }
 
+[<CLIMutable>]
+type ChatMessageRow =
+    { user_id: int64
+      message_id: int
+      text: string | null
+      has_photo: bool
+      has_document: bool
+      reply_to_message_id: Nullable<int>
+      created_at: DateTime }
+
 type DbService(connString: string, timeProvider: TimeProvider, maxTakenCoupons: int) =
     let utcNow () = timeProvider.GetUtcNow().UtcDateTime
     let todayUtc () = DateOnly.FromDateTime(utcNow ())
@@ -684,5 +694,54 @@ WHERE ce.coupon_id = @couponId
 ORDER BY ce.created_at;
 """
             let! rows = conn.QueryAsync<CouponEventHistoryRow>(sql, {| couponId = couponId |})
+            return rows |> Seq.toArray
+        }
+
+    // ── Chat message monitoring ──────────────────────────────────────
+
+    member _.SaveChatMessage(chatId: int64, messageId: int, userId: int64, text: string | null, hasPhoto: bool, hasDocument: bool, replyToMessageId: Nullable<int>) =
+        task {
+            use! conn = openConn()
+            //language=postgresql
+            let sql =
+                """
+INSERT INTO chat_message (chat_id, message_id, user_id, text, has_photo, has_document, reply_to_message_id)
+VALUES (@chat_id, @message_id, @user_id, @text, @has_photo, @has_document, @reply_to_message_id)
+ON CONFLICT (chat_id, message_id) DO NOTHING;
+"""
+            let! _ = conn.ExecuteAsync(sql,
+                {| chat_id = chatId
+                   message_id = messageId
+                   user_id = userId
+                   text = text
+                   has_photo = hasPhoto
+                   has_document = hasDocument
+                   reply_to_message_id = replyToMessageId |})
+            return ()
+        }
+
+    member _.DeleteOldChatMessages(olderThan: DateTime) =
+        task {
+            use! conn = openConn()
+            //language=postgresql
+            let sql = "DELETE FROM chat_message WHERE created_at < @older_than;"
+            let! deleted = conn.ExecuteAsync(sql, {| older_than = olderThan |})
+            return deleted
+        }
+
+    member _.GetRecentChatMessages(chatId: int64, since: DateTime) =
+        task {
+            use! conn = openConn()
+            //language=postgresql
+            let sql =
+                """
+SELECT cm.user_id, cm.message_id, cm.text, cm.has_photo, cm.has_document,
+       cm.reply_to_message_id, cm.created_at
+FROM chat_message cm
+WHERE cm.chat_id = @chat_id
+  AND cm.created_at >= @since
+ORDER BY cm.created_at;
+"""
+            let! rows = conn.QueryAsync<ChatMessageRow>(sql, {| chat_id = chatId; since = since |})
             return rows |> Seq.toArray
         }

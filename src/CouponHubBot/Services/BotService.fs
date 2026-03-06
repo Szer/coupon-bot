@@ -27,6 +27,41 @@ type BotService(
     let sendText = BotHelpers.sendText botClient
     let ensureCommunityMember = BotHelpers.ensureCommunityMember membership sendText
 
+    let handleCommunityMessage (msg: Message) =
+        task {
+            if msg.Chat <> null && msg.Chat.Id = botConfig.CommunityChatId then
+                // Only persist regular content messages, skip Telegram service/system messages
+                let isRegularContent =
+                    match msg.Type with
+                    | MessageType.Text
+                    | MessageType.Photo
+                    | MessageType.Document -> true
+                    | _ -> false
+
+                if isRegularContent then
+                    // Determine sender: regular user (msg.From) or anonymous admin/channel post (msg.SenderChat)
+                    let senderId =
+                        if msg.From <> null && not msg.From.IsBot then Some msg.From.Id
+                        elif msg.SenderChat <> null then Some msg.SenderChat.Id
+                        else None
+                    match senderId with
+                    | None -> ()
+                    | Some userId ->
+                        let text =
+                            if not (isNull msg.Text) then msg.Text
+                            elif not (isNull msg.Caption) then msg.Caption
+                            else null
+                        let hasPhoto = msg.Photo <> null && msg.Photo.Length > 0
+                        let hasDocument = not (isNull msg.Document)
+                        let replyToId =
+                            if msg.ReplyToMessage <> null then Nullable(msg.ReplyToMessage.MessageId)
+                            else Nullable()
+                        try
+                            do! db.SaveChatMessage(msg.Chat.Id, msg.MessageId, userId, text, hasPhoto, hasDocument, replyToId)
+                        with ex ->
+                            logger.LogWarning(ex, "Failed to save community chat message {MessageId}", msg.MessageId)
+        }
+
     let handlePrivateMessage (msg: Message) =
         task {
             use a =
@@ -108,6 +143,10 @@ type BotService(
                 elif not (isNull update.CallbackQuery) then
                     do! callbackHandler.HandleCallbackQuery update.CallbackQuery
                 elif not (isNull update.Message) then
+                    if update.Message.Chat <> null
+                       && (update.Message.Chat.Type = ChatType.Group || update.Message.Chat.Type = ChatType.Supergroup)
+                       && update.Message.Chat.Id = botConfig.CommunityChatId then
+                        do! handleCommunityMessage update.Message
                     do! handlePrivateMessage update.Message
                 else
                     ()
