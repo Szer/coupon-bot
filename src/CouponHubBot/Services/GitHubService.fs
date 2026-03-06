@@ -40,7 +40,9 @@ type GitHubService(httpClient: HttpClient, botConfig: BotConfiguration, logger: 
         if String.IsNullOrEmpty text then text
         else text.Replace("@", "@\u200B")
 
-    member _.IsConfigured = repoApiUrl.IsSome
+    member _.IsConfigured =
+        repoApiUrl.IsSome
+        && not (String.IsNullOrWhiteSpace botConfig.GitHubToken)
 
     member _.CreateFeedbackIssue(feedbackText: string, hasMedia: bool) =
         task {
