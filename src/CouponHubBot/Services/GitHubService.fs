@@ -8,7 +8,7 @@ open System.Text.Json
 open Microsoft.Extensions.Logging
 open CouponHubBot
 
-type GitHubService(httpClient: HttpClient, gitHubConfig: GitHubConfiguration, logger: ILogger<GitHubService>) =
+type GitHubService(httpClient: HttpClient, botConfig: BotConfiguration, logger: ILogger<GitHubService>) =
 
     do
         httpClient.BaseAddress <- Uri("https://api.github.com")
@@ -16,54 +16,62 @@ type GitHubService(httpClient: HttpClient, gitHubConfig: GitHubConfiguration, lo
         httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28")
         httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("CouponHubBot/1.0")
 
-        if not (String.IsNullOrWhiteSpace gitHubConfig.Token) then
+        if not (String.IsNullOrWhiteSpace botConfig.GitHubToken) then
             httpClient.DefaultRequestHeaders.Authorization <-
-                AuthenticationHeaderValue("Bearer", gitHubConfig.Token)
-
-    let isConfigured =
-        not (String.IsNullOrWhiteSpace gitHubConfig.Token)
-        && not (String.IsNullOrWhiteSpace gitHubConfig.Repo)
+                AuthenticationHeaderValue("Bearer", botConfig.GitHubToken)
 
     let repoApiUrl =
-        if isConfigured then
-            let parts = gitHubConfig.Repo.Split('/')
-            if parts.Length = 2 then
-                Some $"/repos/{parts[0]}/{parts[1]}"
+        let repo = botConfig.GitHubRepo.Trim()
+        let parts = repo.Split('/', StringSplitOptions.RemoveEmptyEntries)
+        if parts.Length = 2 then
+            let owner = parts[0].Trim()
+            let name = parts[1].Trim()
+            if owner <> "" && name <> "" then
+                Some $"/repos/{owner}/{name}"
             else
-                logger.LogWarning("GITHUB_REPO must be in owner/repo format, got: {Repo}", gitHubConfig.Repo)
+                logger.LogWarning("GITHUB_REPO must be in owner/repo format, got: {Repo}", botConfig.GitHubRepo)
                 None
         else
+            logger.LogWarning("GITHUB_REPO must be in owner/repo format, got: {Repo}", botConfig.GitHubRepo)
             None
 
-    member _.IsConfigured = isConfigured && repoApiUrl.IsSome
+    /// Neutralize GitHub @mentions to avoid unwanted notifications on the public repo
+    let neutralizeMentions (text: string) =
+        if String.IsNullOrEmpty text then text
+        else text.Replace("@", "@\u200B")
 
-    member _.CreateFeedbackIssue(userDisplayName: string, feedbackText: string, hasMedia: bool) =
+    member _.IsConfigured = repoApiUrl.IsSome
+
+    member _.CreateFeedbackIssue(feedbackText: string, hasMedia: bool) =
         task {
             match repoApiUrl with
             | None ->
                 logger.LogWarning("GitHub integration not configured, skipping issue creation")
                 return None
             | Some baseUrl ->
+                let safeText =
+                    if not (String.IsNullOrWhiteSpace feedbackText) then neutralizeMentions feedbackText
+                    else feedbackText
+
                 let titlePreview =
-                    if String.IsNullOrWhiteSpace feedbackText then
+                    if String.IsNullOrWhiteSpace safeText then
                         if hasMedia then "media message" else "empty message"
                     else
                         let maxLen = 60
-                        if feedbackText.Length <= maxLen then feedbackText
-                        else feedbackText.Substring(0, maxLen) + "..."
+                        if safeText.Length <= maxLen then safeText
+                        else safeText.Substring(0, maxLen) + "..."
 
-                let title = $"[Feedback] @{userDisplayName}: {titlePreview}"
+                let title = $"[Feedback] {titlePreview}"
 
                 let bodyParts = ResizeArray<string>()
-                bodyParts.Add($"**From:** @{userDisplayName}")
                 let dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm")
                 bodyParts.Add($"**Date:** {dateStr} UTC")
                 if hasMedia then bodyParts.Add("**Attachments:** media content (see Telegram)")
                 bodyParts.Add("")
-                if not (String.IsNullOrWhiteSpace feedbackText) then
+                if not (String.IsNullOrWhiteSpace safeText) then
                     bodyParts.Add("---")
                     bodyParts.Add("")
-                    bodyParts.Add(feedbackText)
+                    bodyParts.Add(safeText)
                 else
                     bodyParts.Add("_(no text, media-only message)_")
 
@@ -76,7 +84,7 @@ type GitHubService(httpClient: HttpClient, gitHubConfig: GitHubConfiguration, lo
 
                 let json = JsonSerializer.Serialize(payload)
                 use content = new StringContent(json, Encoding.UTF8, "application/json")
-                let! response = httpClient.PostAsync($"{baseUrl}/issues", content)
+                use! response = httpClient.PostAsync($"{baseUrl}/issues", content)
 
                 if response.IsSuccessStatusCode then
                     let! responseBody = response.Content.ReadAsStringAsync()
@@ -99,7 +107,6 @@ type GitHubService(httpClient: HttpClient, gitHubConfig: GitHubConfiguration, lo
             match repoApiUrl with
             | None -> ()
             | Some baseUrl ->
-                // Assign copilot-swe-agent[bot] with product custom agent
                 let payload =
                     JsonSerializer.Serialize(
                         {| assignees = [| "copilot-swe-agent[bot]" |]
@@ -107,7 +114,7 @@ type GitHubService(httpClient: HttpClient, gitHubConfig: GitHubConfiguration, lo
                     )
 
                 use content = new StringContent(payload, Encoding.UTF8, "application/json")
-                let! response = httpClient.PostAsync($"{baseUrl}/issues/{issueNumber}/assignees", content)
+                use! response = httpClient.PostAsync($"{baseUrl}/issues/{issueNumber}/assignees", content)
 
                 if response.IsSuccessStatusCode then
                     logger.LogInformation("Assigned product agent to issue #{IssueNumber}", issueNumber)

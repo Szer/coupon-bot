@@ -184,6 +184,8 @@ type OcrTests(output: ITestOutputHelper) =
               AzureOcrEndpoint = effectiveEndpoint
               AzureOcrKey = effectiveKey
               FeedbackAdminIds = [||]
+              GitHubToken = "test"
+              GitHubRepo = "Szer/coupon-bot"
               TestMode = true
               MaxTakenCoupons = 4 }
 

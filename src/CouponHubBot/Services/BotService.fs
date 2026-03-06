@@ -130,14 +130,10 @@ type BotService(
                                 do! botClient.ForwardMessage(ChatId adminId, ChatId msg.Chat.Id, msg.MessageId) |> taskIgnore
                             with _ -> ()
 
-                        // 3. Create GitHub issue (best-effort)
+                        // 3. Create GitHub issue (best-effort, anonymous — no username)
                         if gitHub.IsConfigured && feedbackId > 0L then
                             try
-                                let displayName =
-                                    match user.username with
-                                    | null -> user.first_name |> Option.ofObj |> Option.defaultValue (string user.id)
-                                    | uname -> uname
-                                let! issueNumber = gitHub.CreateFeedbackIssue(displayName, feedbackText, hasMedia)
+                                let! issueNumber = gitHub.CreateFeedbackIssue(feedbackText, hasMedia)
                                 match issueNumber with
                                 | Some num ->
                                     do! db.UpdateFeedbackGitHubIssue(feedbackId, num)

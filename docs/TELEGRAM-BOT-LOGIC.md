@@ -169,6 +169,7 @@ Steps (c) and (d) are best-effort — if GitHub API fails, feedback is still sav
 
 ### GitHub Issue Format
 
-- **Title:** `[Feedback] @username: <first 60 chars of text>`
+- **Title:** `[Feedback] <first 60 chars of text>` (anonymous — no username exposed on public repo)
 - **Labels:** `user-feedback` (quarantines from coding agent — only Product agent triages)
 - **Assignment:** `copilot-swe-agent[bot]` with `custom_agent: product`
+- User content has `@` mentions neutralized to prevent unwanted GitHub notifications

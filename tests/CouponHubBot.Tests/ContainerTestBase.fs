@@ -162,6 +162,8 @@ type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
                 .WithEnvironment("REMINDER_HOUR_DUBLIN", "10")
                 .WithEnvironment("TEST_MODE", "true")
                 .WithEnvironment("MAX_TAKEN_COUPONS", "4")
+                .WithEnvironment("GITHUB_TOKEN", "fake-token-for-tests")
+                .WithEnvironment("GITHUB_REPO", "Szer/coupon-bot")
                 .WithEnvironment("BOT_FIXED_UTC_NOW", fixedUtcNow.ToString("o"))
                 .DependsOn(flywayContainer)
                 .DependsOn(fakeContainer)

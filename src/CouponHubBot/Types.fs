@@ -18,6 +18,8 @@ type BotConfiguration =
       AzureOcrEndpoint: string
       AzureOcrKey: string
       FeedbackAdminIds: int64 array
+      GitHubToken: string
+      GitHubRepo: string
       TestMode: bool
       MaxTakenCoupons: int }
 
@@ -68,11 +70,6 @@ type CouponEventHistoryRow =
     { date: string
       user: string
       event_type: string }
-
-[<CLIMutable>]
-type GitHubConfiguration =
-    { Token: string
-      Repo: string }
 
 [<CLIMutable>]
 type UserFeedbackRow =

@@ -70,12 +70,10 @@ let globalBotConfDontUseOnlyRegister =
       AzureOcrEndpoint = Utils.getEnvOr "AZURE_OCR_ENDPOINT" ""
       AzureOcrKey = Utils.getEnvOr "AZURE_OCR_KEY" ""
       FeedbackAdminIds = Utils.getEnvOr "FEEDBACK_ADMINS" "" |> parseAdmins
+      GitHubToken = Utils.getEnv "GITHUB_TOKEN"
+      GitHubRepo = Utils.getEnvOr "GITHUB_REPO" "Szer/coupon-bot"
       TestMode = Utils.getEnvOrBool "TEST_MODE" false
       MaxTakenCoupons = Utils.getEnvOr "MAX_TAKEN_COUPONS" "6" |> int }
-
-let globalGitHubConf =
-    { Token = Utils.getEnvOr "GITHUB_TOKEN" ""
-      Repo = Utils.getEnvOr "GITHUB_REPO" "" }
 
 let validateApiKey (ctx: HttpContext) =
     let botConf = ctx.RequestServices.GetRequiredService<BotConfiguration>()
@@ -97,7 +95,6 @@ let builder = WebApplication.CreateBuilder()
 )
 
 %builder.Services.AddSingleton globalBotConfDontUseOnlyRegister
-%builder.Services.AddSingleton globalGitHubConf
 %builder.Services.AddSingleton<TimeProvider>(fun _sp -> CouponHubBot.Time.fromEnvironment ())
 // Configure JSON options for Telegram.Bot compatibility
 %builder.Services.Configure<JsonSerializerOptions>(fun (opts: JsonSerializerOptions) ->
