@@ -27,6 +27,59 @@ Your deliverables are **issue comments** with structured incident analysis, **ro
 
 ## Incident Response Runbook
 
+### Step 0: Verify VPN Connectivity
+
+**Before doing anything else**, verify that the VPN is active and all internal services are reachable. If any check fails, **stop immediately** and post a comment on the issue explaining that the VPN is down or the internal service is unreachable — do not proceed with the investigation.
+
+```bash
+# Check ArgoCD is reachable (expect any HTTP response — 200/401/403 all mean the service is up)
+ARGO_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+  http://argo.internal/api/v1/applications/coupon-bot)
+
+if [ "$ARGO_STATUS" = "000" ]; then
+  echo "ERROR: Cannot reach argo.internal — VPN may be down or service is unavailable. Aborting."
+  exit 1
+fi
+
+echo "ArgoCD reachable (HTTP $ARGO_STATUS)"
+```
+
+```bash
+# Check Loki is reachable
+LOKI_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+  http://loki.internal/loki/api/v1/labels)
+
+if [ "$LOKI_STATUS" = "000" ]; then
+  echo "ERROR: Cannot reach loki.internal — VPN may be down or service is unavailable. Aborting."
+  exit 1
+fi
+
+echo "Loki reachable (HTTP $LOKI_STATUS)"
+```
+
+```bash
+# Check Prometheus is reachable
+PROM_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+  'http://prometheus.internal:9090/-/healthy')
+
+if [ "$PROM_STATUS" = "000" ]; then
+  echo "ERROR: Cannot reach prometheus.internal — VPN may be down or service is unavailable. Aborting."
+  exit 1
+fi
+
+echo "Prometheus reachable (HTTP $PROM_STATUS)"
+```
+
+If all three checks pass (any HTTP response other than `000`), proceed to Step 1. A `401` or `403` from ArgoCD simply means authentication is required but the service is reachable — still proceed.
+
+**If any check returns `000` (connection refused / timeout):** post a comment on the issue:
+
+> ⚠️ **SRE agent cannot proceed — VPN connectivity issue.**
+> Could not reach `[service].internal`. The WireGuard VPN established by `copilot-setup-steps.yml` may be down or the internal service may be unavailable.
+> A human operator should investigate manually.
+
+Then stop. Do not attempt to diagnose or roll back without confirmed connectivity.
+
 ### Step 1: Classify the Incident
 
 Read the deploy-failure issue body to get the workflow run link and commit SHA. Then determine severity:
