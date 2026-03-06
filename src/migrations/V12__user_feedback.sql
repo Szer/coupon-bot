@@ -12,4 +12,4 @@ CREATE INDEX idx_user_feedback_user_id ON user_feedback(user_id);
 CREATE INDEX idx_user_feedback_created_at ON user_feedback(created_at);
 
 GRANT SELECT, INSERT, UPDATE ON user_feedback TO coupon_hub_bot_service;
-GRANT USAGE ON SEQUENCE user_feedback_id_seq TO coupon_hub_bot_service;
+GRANT USAGE, SELECT ON SEQUENCE user_feedback_id_seq TO coupon_hub_bot_service;
