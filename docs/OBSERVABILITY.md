@@ -23,7 +23,7 @@ All custom metrics are defined in `src/CouponHubBot/Telemetry.fs` under the `Cou
 | `couponhubbot_command_total` | Counter | `command` | Counts every command invocation (e.g. `list`, `add`, `feedback`) |
 | `couponhubbot_callback_total` | Counter | `action` | Counts every callback button press (e.g. `take`, `return`, `used`, `void`, `addflow`, `myAdded`) |
 | `couponhubbot_feedback_total` | Counter | — | Counts user feedback submissions via the `/feedback` flow |
-| `couponhubbot_button_click_total` | Counter | `button` | Legacy: counts UI/button interactions with raw callback data |
+| `couponhubbot_button_click_total` | Counter | `button` | Legacy: counts UI/button interactions; `button` tag is a fixed value for some actions (e.g. `take`) and raw callback data for `addflow:` callbacks |
 
 ### Useful PromQL Queries
 
