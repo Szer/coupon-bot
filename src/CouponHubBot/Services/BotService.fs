@@ -34,8 +34,9 @@ type BotService(
                && msg.Chat.Id = botConfig.CommunityChatId
                && not msg.From.IsBot then
                 let text =
-                    if isNull msg.Text then null
-                    else msg.Text
+                    if not (isNull msg.Text) then msg.Text
+                    elif not (isNull msg.Caption) then msg.Caption
+                    else null
                 let hasPhoto = msg.Photo <> null && msg.Photo.Length > 0
                 let hasDocument = not (isNull msg.Document)
                 let replyToId =

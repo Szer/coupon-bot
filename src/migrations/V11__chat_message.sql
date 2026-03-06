@@ -16,6 +16,7 @@ CREATE TABLE chat_message (
 
 CREATE INDEX idx_chat_message_created_at ON chat_message(created_at);
 CREATE INDEX idx_chat_message_user_id ON chat_message(user_id);
+CREATE INDEX idx_chat_message_chat_id_created_at ON chat_message(chat_id, created_at);
 
 GRANT SELECT, INSERT, DELETE ON chat_message TO coupon_hub_bot_service;
 GRANT USAGE, SELECT ON SEQUENCE chat_message_id_seq TO coupon_hub_bot_service;

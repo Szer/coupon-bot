@@ -56,9 +56,11 @@ type EventTypeCountRow =
 [<CLIMutable>]
 type ChatMessageRow =
     { user_id: int64
+      message_id: int
       text: string | null
       has_photo: bool
       has_document: bool
+      reply_to_message_id: Nullable<int>
       created_at: DateTime }
 
 type DbService(connString: string, timeProvider: TimeProvider, maxTakenCoupons: int) =
@@ -733,7 +735,8 @@ ON CONFLICT (chat_id, message_id) DO NOTHING;
             //language=postgresql
             let sql =
                 """
-SELECT cm.user_id, cm.text, cm.has_photo, cm.has_document, cm.created_at
+SELECT cm.user_id, cm.message_id, cm.text, cm.has_photo, cm.has_document,
+       cm.reply_to_message_id, cm.created_at
 FROM chat_message cm
 WHERE cm.chat_id = @chat_id
   AND cm.created_at >= @since
