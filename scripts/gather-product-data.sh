@@ -4,6 +4,8 @@
 # Required env vars:
 #   PROMETHEUS_URL        e.g. http://prometheus.internal:9090
 #   DATABASE_URL          e.g. postgresql://user:pass@host:5432/db
+#                         Only SELECT access is required. Use a read-only role
+#                         or the existing service role — no write queries are run.
 #   GITHUB_REPOSITORY     e.g. Szer/coupon-bot (set by GitHub Actions)
 #
 # Optional env vars:
