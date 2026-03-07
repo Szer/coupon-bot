@@ -395,6 +395,12 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
             do! conn.ExecuteAsync("TRUNCATE coupon CASCADE") :> Task
         }
 
+    member _.ExecuteAsAdmin(sql: string, param: obj) =
+        task {
+            use conn = new NpgsqlConnection(adminConnectionString)
+            return! conn.ExecuteAsync(sql, param)
+        }
+
 type DefaultCouponHubTestContainers() =
     inherit CouponHubTestContainers(seedExpiringToday = false, ocrEnabled = false)
 
