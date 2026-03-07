@@ -65,7 +65,7 @@ type CouponFlowHandler(
                     BotHelpers.parseDecimalInvariant parts[2]
                 let dateOpt = BotHelpers.tryParseDateOnly time parts[3]
                 match valueOpt, minCheckOpt, dateOpt with
-                | Some value, Some minCheck, Some expiresAt ->
+                | Some value, Some minCheck, Some expiresAt when value > 0m && minCheck > 0m ->
                     let largestPhoto =
                         msg.Photo
                         |> Array.maxBy (fun p -> if p.FileSize.HasValue then p.FileSize.Value else 0)
@@ -276,7 +276,7 @@ type CouponFlowHandler(
                 | None -> return false
             | Some flow when flow.stage = "awaiting_discount_choice" && not (isNull msg.Text) ->
                 match BotHelpers.tryParseTwoDecimals msg.Text with
-                | Some (v, mc) ->
+                | Some (v, mc) when v > 0m && mc > 0m ->
                     if flow.expires_at.HasValue then
                         do! db.UpsertPendingAddFlow(
                                 { flow with
@@ -296,7 +296,7 @@ type CouponFlowHandler(
                             )
                         do! this.HandleAddWizardAskDate msg.Chat.Id
                     return true
-                | None ->
+                | _ ->
                     do! sendText msg.Chat.Id "Не понял. Пришли два числа: скидка и минимальный чек. Например: 10 50 или 10/50"
                     return true
             | Some flow when flow.stage = "awaiting_date_choice" && not (isNull msg.Text) ->

@@ -69,7 +69,7 @@ type CallbackHandler(
                             let parts = d.Split(':', StringSplitOptions.RemoveEmptyEntries)
                             if parts.Length >= 4 then
                                 match BotHelpers.parseDecimalInvariant parts[2], BotHelpers.parseDecimalInvariant parts[3] with
-                                | Some v, Some mc ->
+                                | Some v, Some mc when v > 0m && mc > 0m ->
                                     if flow.expires_at.HasValue then
                                         let next =
                                             { flow with
