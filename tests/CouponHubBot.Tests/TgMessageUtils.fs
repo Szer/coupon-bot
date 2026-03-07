@@ -68,6 +68,73 @@ type Tg() =
         upd.Message <- msg
         upd
 
+    /// Builds an Update with a text message in a group/supergroup chat (e.g. community chat).
+    static member groupMessage(text: string, fromUser: User, chatId: int64, ?replyToMessageId: int) =
+        let chat = Tg.groupChat(id = chatId)
+        let msg = Message()
+        msg.Id <- nextInt ()
+        msg.Text <- text
+        msg.From <- fromUser
+        msg.Chat <- chat
+        msg.Date <- DateTime.UtcNow
+
+        match replyToMessageId with
+        | Some rid ->
+            let replyMsg = Message()
+            replyMsg.Id <- rid
+            replyMsg.Chat <- chat
+            msg.ReplyToMessage <- replyMsg
+        | None -> ()
+
+        let upd = Update()
+        upd.Id <- nextInt ()
+        upd.Message <- msg
+        upd
+
+    /// Builds an Update with a photo in a group/supergroup chat.
+    static member groupPhotoMessage(fromUser: User, chatId: int64, ?caption: string, ?fileId: string) =
+        let chat = Tg.groupChat(id = chatId)
+        let fid = defaultArg fileId ($"group-photo-{nextInt64 ()}")
+        let photo = PhotoSize()
+        photo.FileId <- fid
+        photo.FileUniqueId <- fid + "-uid"
+        photo.FileSize <- Nullable<int64>(1024L)
+        photo.Width <- 10
+        photo.Height <- 10
+
+        let msg = Message()
+        msg.Id <- nextInt ()
+        msg.Caption <- defaultArg caption null
+        msg.From <- fromUser
+        msg.Chat <- chat
+        msg.Date <- DateTime.UtcNow
+        msg.Photo <- [| photo |]
+
+        let upd = Update()
+        upd.Id <- nextInt ()
+        upd.Message <- msg
+        upd
+
+    /// Builds an Update with a document in a group/supergroup chat.
+    static member groupDocumentMessage(fromUser: User, chatId: int64, ?caption: string) =
+        let chat = Tg.groupChat(id = chatId)
+        let doc = Document()
+        doc.FileId <- $"group-doc-{nextInt64 ()}"
+        doc.FileUniqueId <- doc.FileId + "-uid"
+
+        let msg = Message()
+        msg.Id <- nextInt ()
+        msg.Caption <- defaultArg caption null
+        msg.From <- fromUser
+        msg.Chat <- chat
+        msg.Date <- DateTime.UtcNow
+        msg.Document <- doc
+
+        let upd = Update()
+        upd.Id <- nextInt ()
+        upd.Message <- msg
+        upd
+
     /// Builds an Update with CallbackQuery (e.g. take:N or confirm_add:GUID) as if from a private chat.
     static member dmCallback(data: string, fromUser: User) =
         let chat = Tg.privateChat(id = fromUser.Id)

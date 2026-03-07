@@ -375,6 +375,18 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
             use conn = new NpgsqlConnection(publicConnectionString)
             return! conn.QuerySingleAsync<'t>(sql, param)
         }
+
+    member _.QuerySingleOrDefault<'t>(sql: string, param: obj) =
+        task {
+            use conn = new NpgsqlConnection(publicConnectionString)
+            return! conn.QuerySingleOrDefaultAsync<'t>(sql, param)
+        }
+
+    member _.Execute(sql: string, param: obj) =
+        task {
+            use conn = new NpgsqlConnection(publicConnectionString)
+            return! conn.ExecuteAsync(sql, param)
+        }
         
     member _.TruncateCoupons() =
         task {

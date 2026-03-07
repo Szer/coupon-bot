@@ -331,5 +331,44 @@ VALUES
             Assert.Equal(0, dmCallsToUser703.Length)
         }
 
+    [<Fact>]
+    let ``Retention cleanup deletes chat messages older than 1 year`` () =
+        task {
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+
+            // Ensure sender user exists
+            do! conn.ExecuteAsync(
+                """INSERT INTO "user"(id, username, first_name, created_at, updated_at) VALUES (2099,'retention_user','Ret',NOW(),NOW()) ON CONFLICT (id) DO NOTHING;""") :> Task
+
+            // Insert an old message (2 years ago from the bot's fixed time 2026-01-01)
+            do! conn.ExecuteAsync(
+                """INSERT INTO chat_message(chat_id, message_id, user_id, text, has_photo, has_document, created_at)
+                   VALUES (-42, 50001, 2099, 'Old message', false, false, '2024-01-01T00:00:00Z')
+                   ON CONFLICT (chat_id, message_id) DO NOTHING;""") :> Task
+
+            // Insert a recent message (within 1 year)
+            do! conn.ExecuteAsync(
+                """INSERT INTO chat_message(chat_id, message_id, user_id, text, has_photo, has_document, created_at)
+                   VALUES (-42, 50002, 2099, 'Recent message', false, false, '2025-06-15T00:00:00Z')
+                   ON CONFLICT (chat_id, message_id) DO NOTHING;""") :> Task
+
+            // Run reminder (which triggers retention cleanup)
+            use body = new StringContent("", Encoding.UTF8, "application/json")
+            let! resp = fixture.Bot.PostAsync("/test/run-reminder?nowUtc=2026-01-01T10:00:00Z", body)
+            if not resp.IsSuccessStatusCode then
+                let! text = resp.Content.ReadAsStringAsync()
+                failwith $"Expected 2xx from /test/run-reminder, got {resp.StatusCode}. Body: {text}"
+
+            // Old message should be deleted
+            let! oldCount = conn.QuerySingleAsync<int>(
+                "SELECT COUNT(*)::int FROM chat_message WHERE message_id = 50001 AND chat_id = -42", null)
+            Assert.Equal(0, oldCount)
+
+            // Recent message should survive
+            let! recentCount = conn.QuerySingleAsync<int>(
+                "SELECT COUNT(*)::int FROM chat_message WHERE message_id = 50002 AND chat_id = -42", null)
+            Assert.Equal(1, recentCount)
+        }
+
 
 

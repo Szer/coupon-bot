@@ -18,6 +18,7 @@ src/CouponHubBot/
     ├── CouponService.fs  # Coupon CRUD operations
     ├── AddFlowService.fs # /add wizard state machine
     ├── ReminderService.fs # Scheduled reminders (expiring coupons, weekly stats)
+    ├── GitHubService.fs  # GitHub API client (feedback issues, agent assignment)
     ├── AzureOcrService.fs # Azure Computer Vision OCR client
     └── CouponOcrEngine.fs # Barcode + text OCR processing
 ```
@@ -36,3 +37,35 @@ src/CouponHubBot/
 - **Container**: Docker image pushed to GHCR (`ghcr.io/szer/coupon-bot`)
 - **Orchestration**: ArgoCD with image-reloader (polls GHCR every ~5 min)
 - **Observability**: Serilog → Loki, OpenTelemetry → Prometheus
+
+## Copilot Custom Agents
+
+Three AI agents automate different aspects of the project lifecycle:
+
+| Agent | Role | Trigger | Tools |
+|-------|------|---------|-------|
+| **self-assess** (project manager) | Backlog management, codebase quality analysis | Daily schedule (`self-assess.yml`) | Read-only: search, execute, GitHub CLI |
+| **product** (product manager) | User feedback triage, feature prioritization | Daily schedule + `user-feedback` label (`product.yml`) | Read-only: search, execute, GitHub CLI, Prometheus, Loki |
+| **sre** | Production incident response, deploy failure debugging | `deploy-failure` label (`deploy.yml`) | Read-only: ArgoCD, Loki, Prometheus, GitHub CLI |
+
+### Product Agent Data Flow
+
+```
+User Signals:
+  /feedback command ──→ user_feedback table ──→ GitHub issue (user-feedback label)
+  Community chat ──────→ chat_message table ──→ Daily analysis report
+  Bot interactions ────→ Prometheus counters ─→ Daily analysis report
+
+Product Agent Processing:
+  1. Reads PRODUCT-VISION.md (human-curated authority)
+  2. Analyzes signals: feedback, chat themes, usage metrics
+  3. Decision: discard (close) or create refined issue (bug/feature-request)
+
+Output:
+  Refined issues with clear problem statements, evidence, and priority labels
+  → Picked up by coding agent or project manager
+```
+
+### Agent Isolation
+
+The coding agent is guardrailed from raw user signals — it only sees refined tickets (`bug`, `feature-request`). Labels `user-feedback`, `product`, `self-assess`, and `deploy-failure` are reserved for their respective agents.
