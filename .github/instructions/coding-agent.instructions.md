@@ -27,7 +27,7 @@ excludeAgent: "code-review"
 
 ## Agent Roles and PR Authority
 
-The coding agent is the **ONLY** agent that creates branches and pull requests. Other agents (project, product, SRE) produce issues and comments exclusively — they must never create branches, commits, or PRs.
+The coding agent is the **ONLY** agent that creates branches, commits, and pull requests. Other agents (project, product, SRE) must never create branches, commits, or PRs, but may perform other actions defined in their runbooks (such as creating issues, comments, or triggering rollbacks).
 
 ## Issue Label Rules
 
