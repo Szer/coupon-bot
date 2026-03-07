@@ -17,6 +17,8 @@
     <Compile Include="OcrAddFlowTests.fs" />
     <Compile Include="CouponTests.fs" />
     <Compile Include="ReminderTests.fs" />
+    <Compile Include="ChatMonitoringTests.fs" />
+    <Compile Include="FeedbackFlowTests.fs" />
     <Compile Include="AdminDebugTests.fs" />
     <Compile Include="VoidFlowTests.fs" />
     <Compile Include="HealthCheckTests.fs" />
