@@ -1,4 +1,4 @@
-name: Daily Self-Assessment
+name: Daily Project Assessment
 
 on:
   schedule:
@@ -17,13 +17,13 @@ jobs:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
         # Close any open orchestration/summary issues from previous runs
-        # Match any issue with self-assess label containing "self-assessment" in title
+        # Match any issue with project label containing "project assessment" in title
         gh issue list \
           --repo "${{ github.repository }}" \
-          --label "self-assess" \
+          --label "project" \
           --state open \
           --json number,title \
-          --jq '.[] | select(.title | test("self-assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | .number' \
+          --jq '.[] | select(.title | test("project assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | .number' \
         | while read -r NUM; do
           echo "Closing orchestration issue #${NUM}"
           gh issue close "$NUM" \
@@ -32,27 +32,42 @@ jobs:
             || echo "WARNING: Failed to close orchestration issue #${NUM}, continuing"
         done
 
+        # Also close legacy "self-assessment" orchestration issues (from before rename)
+        gh issue list \
+          --repo "${{ github.repository }}" \
+          --label "self-assess" \
+          --state open \
+          --json number,title \
+          --jq '.[] | select(.title | test("self-assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | .number' \
+        | while read -r NUM; do
+          echo "Closing legacy orchestration issue #${NUM}"
+          gh issue close "$NUM" \
+            --repo "${{ github.repository }}" \
+            --comment "🧹 **Auto-closed by cleanup.** Legacy self-assessment issue." \
+            || echo "WARNING: Failed to close orchestration issue #${NUM}, continuing"
+        done
+
     - name: Close stale Copilot PRs
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
-        # Close any open PRs created by Copilot for self-assessment
+        # Close any open PRs created by Copilot for project assessment
         gh pr list \
           --repo "${{ github.repository }}" \
           --state open \
           --author "app/copilot-swe-agent" \
           --json number,headRefName,title \
-          --jq '.[] | select(.title | test("self-assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | "\(.number) \(.headRefName)"' \
+          --jq '.[] | select(.title | test("(self-assessment|project assessment) \\d{4}-\\d{2}-\\d{2}"; "i")) | "\(.number) \(.headRefName)"' \
         | while read -r NUM BRANCH; do
           echo "Closing PR #${NUM} (branch: ${BRANCH})"
           gh pr close "$NUM" \
             --repo "${{ github.repository }}" \
-            --comment "🧹 **Auto-closed.** Self-assessment PRs are not meant to be merged — the real output is the backlog issues." \
+            --comment "🧹 **Auto-closed.** Project assessment PRs are not meant to be merged — the real output is the backlog issues." \
             --delete-branch \
             || echo "WARNING: Failed to close PR #${NUM}, continuing"
         done
 
-  self-assess:
+  project:
     needs: cleanup
     runs-on: ubuntu-latest
     environment: copilot
@@ -91,9 +106,9 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
-        gh label create self-assess \
+        gh label create project \
           --repo "${{ github.repository }}" \
-          --description "Auto-discovered by daily self-assessment workflow" \
+          --description "Managed by project agent — technical backlog" \
           --color "7057ff" \
           --force
         gh label create infra \
@@ -103,7 +118,7 @@ jobs:
           --force
         gh label create priority-high \
           --repo "${{ github.repository }}" \
-          --description "Reserved for user-reported high-priority issues (not used by self-assess)" \
+          --description "Reserved for user-reported high-priority issues (not used by project agent)" \
           --color "b60205" \
           --force
         gh label create priority-medium \
@@ -127,9 +142,9 @@ jobs:
 
         ISSUE_URL=$(gh issue create \
           --repo "${{ github.repository }}" \
-          --title "Daily self-assessment ${DATE}" \
-          --label "self-assess" \
-          --body "## Daily Self-Assessment — ${DATE}
+          --title "Daily project assessment ${DATE}" \
+          --label "project" \
+          --body "## Daily Project Assessment — ${DATE}
 
         **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -153,13 +168,13 @@ jobs:
         {
           "assignees": ["copilot-swe-agent[bot]"],
           "agent_assignment": {
-            "custom_agent": "self-assess"
+            "custom_agent": "project"
           }
         }
         EOF
           then
             ASSIGNED=true
-            echo "Assigned Copilot (self-assess agent) to issue #${ISSUE_NUMBER}"
+            echo "Assigned Copilot (project agent) to issue #${ISSUE_NUMBER}"
             break
           else
             echo "WARNING: Assignment attempt $i failed for issue #${ISSUE_NUMBER}"

@@ -21,13 +21,13 @@ excludeAgent: "code-review"
 - **PR builds**: `.github/workflows/build.yml` — runs tests, uploads results + container logs
 - **Deploy**: `.github/workflows/deploy.yml` — tests → Flyway migrations → GHCR push → deployment verification
 - **Test results**: `.github/workflows/test-results.yml` — publishes test report after CI
-- **Self-assess**: `.github/workflows/self-assess.yml` — daily self-assessment, gathers metrics, creates orchestration issue for Copilot
+- **Project**: `.github/workflows/project.yml` — daily project assessment, gathers metrics, creates orchestration issue for Copilot
 - **Product**: `.github/workflows/product.yml` — daily product analysis + feedback triage, gathers usage data
 - **Agent env**: `.github/workflows/copilot-setup-steps.yml` — sets up .NET SDK, VPN, dependencies
 
 ## Agent Roles and PR Authority
 
-The coding agent is the **ONLY** agent that creates branches and pull requests. Other agents (self-assess, product, SRE) produce issues and comments exclusively — they must never create branches, commits, or PRs.
+The coding agent is the **ONLY** agent that creates branches and pull requests. Other agents (project, product, SRE) produce issues and comments exclusively — they must never create branches, commits, or PRs.
 
 ## Issue Label Rules
 
@@ -36,7 +36,7 @@ The coding agent must **NEVER** work on issues with these labels:
 - `product` — product agent orchestration issues
 - `deploy-failure` — SRE agent handles these
 
-Issues labeled `self-assess` are managed by the project manager agent, but the **auto-fix workflow** may assign `self-assess` backlog issues to the coding agent for implementation. Only work on `self-assess` issues if explicitly assigned by `auto-fix.yml` — never pick them up independently.
+Issues labeled `project` are managed by the project manager agent, but the **auto-fix workflow** may assign `project` backlog issues to the coding agent for implementation. Only work on `project` issues if explicitly assigned by `auto-fix.yml` — never pick them up independently.
 
 Only work on refined tickets: `feature-request`, `bug`, `priority-*`, or issues explicitly assigned by a workflow or another agent.
 
@@ -46,7 +46,7 @@ Only work on refined tickets: `feature-request`, `bug`, `priority-*`, or issues 
 
 | Agent | When used |
 |-------|-----------|
-| `self-assess` | Daily self-assessment of codebase and infrastructure, backlog management. No edit tool; analysis and issue management only. |
+| `project` | Daily project assessment of codebase and infrastructure, backlog management. No edit tool; analysis and issue management only. |
 | `sre` | Production incident response — debugs deploy failures, queries ArgoCD/Loki/Prometheus, performs rollbacks. Escalates to coding agent when a code fix is needed. No edit tool. |
 | `product` | Product analysis and user feedback triage. Monitors telemetry, chat themes, and feedback. Creates refined feature/bug tickets. No edit tool. |
 
