@@ -145,7 +145,7 @@ jobs:
           --force
         gh label create priority-high \
           --repo "${{ github.repository }}" \
-          --description "Reserved for user-reported high-priority issues (not used by self-assess)" \
+          --description "Reserved for user-reported high-priority issues (not used by project agent)" \
           --color "b60205" \
           --force
         gh label create infra \

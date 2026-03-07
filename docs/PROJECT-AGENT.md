@@ -1,56 +1,56 @@
-# Self-Assessment
+# Project Agent
 
 ## Overview
 
-The daily self-assessment workflow acts as an **automated project manager**. It runs every day at 04:37 UTC, gathers infrastructure metrics, and creates an orchestration issue. The issue is assigned to a **custom Copilot agent** (`self-assess`) that analyzes the system and maintains a backlog — without making any code changes.
+The daily project assessment workflow acts as an **automated project manager**. It runs every day at 04:37 UTC, gathers infrastructure metrics, and creates an orchestration issue. The issue is assigned to a **custom Copilot agent** (`project`) that analyzes the system and maintains a backlog — without making any code changes.
 
 ## How It Works
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  self-assess.yml (daily at 04:37 UTC)                           │
+│  project.yml (daily at 04:37 UTC)                               │
 │                                                                 │
 │  Job 1: cleanup                                                 │
 │    - Close stale orchestration issues from previous runs        │
 │    - Close & delete Copilot PRs from previous runs (safety net) │
 │                                                                 │
-│  Job 2: self-assess (needs: cleanup)                            │
+│  Job 2: project (needs: cleanup)                                │
 │    1. Connect VPN                                               │
 │    2. Run gather-metrics.sh → Prometheus + Loki + ArgoCD        │
 │    3. Disconnect VPN                                            │
 │    4. Ensure labels exist                                       │
 │    5. Create orchestration issue with metrics in body           │
-│    6. Assign Copilot (self-assess custom agent) via REST API    │
+│    6. Assign Copilot (project custom agent) via REST API        │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  Copilot (self-assess custom agent)                             │
+│  Copilot (project custom agent)                                 │
 │  Tools: read, search, execute (no edit tool)                    │
 │                                                                 │
 │  1. Read metrics snapshot from issue body                       │
 │  2. Deeply analyze the codebase (open-ended, judgment-driven)   │
 │  3. Query live Loki/Prometheus if VPN available                 │
 │  4. Review existing open issues                                 │
-│  5. Create / bump / close self-assess backlog issues            │
+│  5. Create / bump / close project backlog issues                │
 │  6. Close orchestration issue with summary                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Custom Agent Architecture
 
-The self-assess agent is defined in `.github/agents/self-assess.agent.md`. Key properties:
+The project agent is defined in `.github/agents/project.agent.md`. Key properties:
 
 | Property | Value | Why |
 |----------|-------|-----|
 | `tools` | `["read", "search", "execute"]` | No `edit` tool — agent is instructed not to modify files. `execute` is needed for `gh` CLI and `curl` commands. |
-| `name` | `self-assess` | Used in REST API `agent_assignment.custom_agent` field |
+| `name` | `project` | Used in REST API `agent_assignment.custom_agent` field |
 | Prompt | Analytical, open-ended | Agent reads code and reasons about it rather than following a grep checklist |
 
 ### All Custom Agents
 
 | Agent | Role | Triggered by |
 |-------|------|-------------|
-| `self-assess` | Project manager — analyze codebase, manage backlog | Daily workflow (`self-assess.yml`) |
+| `project` | Project manager — analyze codebase, manage technical backlog | Daily workflow (`project.yml`) |
 | `product` | Product manager — triage feedback, analyze usage, create refined tickets | Daily workflow (`product.yml`) + feedback trigger |
 | `sre` | SRE — debug production incidents, rollback, escalate code fixes | Deploy failure (`deploy.yml` notify-failure job) |
 | Default coding agent | Write code, fix bugs, create PRs | Auto-fix workflow, manual assignment, SRE escalation |
@@ -60,12 +60,12 @@ The self-assess agent is defined in `.github/agents/self-assess.agent.md`. Key p
 These workflows assign Copilot using the REST API with `agent_assignment`:
 
 ```bash
-# Self-assess workflow — uses custom agent (no edit tool, analysis only)
+# Project workflow — uses custom agent (no edit tool, analysis only)
 gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
   --input - <<< '{
   "assignees": ["copilot-swe-agent[bot]"],
   "agent_assignment": {
-    "custom_agent": "self-assess"
+    "custom_agent": "project"
   }
 }'
 
@@ -81,10 +81,10 @@ gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
 
 | Component | Path | Purpose |
 |-----------|------|---------|
-| Self-assess workflow | `.github/workflows/self-assess.yml` | Daily trigger, VPN, metrics, issue creation |
+| Project workflow | `.github/workflows/project.yml` | Daily trigger, VPN, metrics, issue creation |
 | Auto-fix workflow | `.github/workflows/auto-fix.yml` | Hourly pickup, mutex check, Copilot assignment |
 | Metrics script | `scripts/gather-metrics.sh` | Queries Prometheus, Loki, ArgoCD; outputs markdown |
-| Custom agent | `.github/agents/self-assess.agent.md` | Agent profile with tools and analysis instructions |
+| Custom agent | `.github/agents/project.agent.md` | Agent profile with tools and analysis instructions |
 
 ## Metrics Gathered
 
@@ -111,15 +111,15 @@ gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
 
 | Label | Color | Purpose |
 |-------|-------|---------|
-| `self-assess` | Purple (#7057ff) | Applied to all backlog issues created by self-assessment |
+| `project` | Purple (#7057ff) | Applied to all backlog issues created by project agent |
 | `infra` | Light purple (#d4c5f9) | Infrastructure issue — cannot be fixed in this repo, skipped by auto-fix |
-| `priority-high` | Red (#b60205) | Reserved for user-reported feedback (not used by self-assess) |
+| `priority-high` | Red (#b60205) | Reserved for user-reported feedback (not used by project agent) |
 | `priority-medium` | Yellow (#fbca04) | Bugs, security, performance, significant tech debt |
 | `priority-low` | Green (#0e8a16) | Nice-to-have improvements |
 
 ## Backlog Management Rules
 
-- **Create**: New issue for a newly discovered problem (labeled `self-assess` + `priority-medium` or `priority-low` + optional `infra`)
+- **Create**: New issue for a newly discovered problem (labeled `project` + `priority-medium` or `priority-low` + optional `infra`)
 - **Bump**: Comment on existing issue if the same problem persists; reassess priority (up to `priority-medium` max)
 - **Close**: Close issue if the underlying problem is resolved
 - **Never assign**: Backlog issues are left unassigned — the auto-fix workflow picks them up
@@ -127,20 +127,20 @@ gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
 ## Issue Lifecycle
 
 ```
-[Discovered] → self-assess issue created (unassigned)
+[Discovered] → project issue created (unassigned)
      ↓
 [Still present next day] → bump comment added
      ↓
 [Bumped multiple times] → high priority (future: auto-implemented)
      ↓
-[Fixed] → closed by self-assessment with resolution comment
+[Fixed] → closed by project assessment with resolution comment
 ```
 
 ## Cleanup Mechanism
 
 1. **Stale orchestration issues**: If Copilot fails to close the orchestration issue (e.g., network timeout), the next day's cleanup job closes it automatically.
 2. **Stale Copilot PRs (safety net)**: The custom agent has no `edit` tool and shouldn't create PRs. The PR cleanup step is kept as a safety net in case platform behavior changes. In normal operation, this step is a no-op.
-3. **False-positive issues**: If a backlog issue was created due to a temporary condition (e.g., Loki briefly unreachable), the next self-assessment should close it when the condition resolves.
+3. **False-positive issues**: If a backlog issue was created due to a temporary condition (e.g., Loki briefly unreachable), the next project assessment should close it when the condition resolves.
 
 ## Schedule
 
@@ -160,7 +160,7 @@ All secrets are configured in the `copilot` environment.
 
 ## Auto-Fix Workflow
 
-The auto-fix workflow (`auto-fix.yml`) is the companion to self-assessment. It picks up backlog issues and assigns Copilot to implement fixes automatically.
+The auto-fix workflow (`auto-fix.yml`) is the companion to the project agent. It picks up backlog issues and assigns Copilot to implement fixes automatically.
 
 ### How It Works
 
@@ -168,13 +168,13 @@ The auto-fix workflow (`auto-fix.yml`) is the companion to self-assessment. It p
 ┌─────────────────────────────────────────────────────────────────┐
 │  auto-fix.yml (hourly at :17)                                   │
 │                                                                 │
-│  1. Mutex check: any draft PRs by Copilot? (excl. self-assess)  │
+│  1. Mutex check: any draft PRs by Copilot? (excl. project)      │
 │     → If yes: skip (Copilot is busy)                            │
 │     → If no: proceed                                            │
 │                                                                 │
 │  2. Pick highest priority issue:                                │
-│     - Has label: self-assess                                    │
-│     - NOT orchestration issue (title contains "self-assessment") │
+│     - Has label: project                                        │
+│     - NOT orchestration issue (title contains "project assess") │
 │     - NOT labeled: infra                                        │
 │     - Sort: priority-high > medium > low > bumps > oldest       │
 │                                                                 │
@@ -190,9 +190,9 @@ The workflow ensures only one Copilot coding session runs at a time by checking 
 
 ### Priority Sorting
 
-Auto-fix only considers issues labeled `self-assess`. Issues are picked in this order (equivalent to `ORDER BY priority DESC, comments DESC, created_at ASC`):
-1. `priority-high` labels first (if a user manually adds both `self-assess` and `priority-high`)
-2. `priority-medium` next (most self-assess issues)
+Auto-fix only considers issues labeled `project`. Issues are picked in this order (equivalent to `ORDER BY priority DESC, comments DESC, created_at ASC`):
+1. `priority-high` labels first (if a user manually adds both `project` and `priority-high`)
+2. `priority-medium` next (most project issues)
 3. `priority-low` / unlabeled last
 4. Within same priority: most comments first (total GitHub comment count is used as a proxy for bump frequency)
 5. Within same comment count: oldest issue first
@@ -200,7 +200,7 @@ Auto-fix only considers issues labeled `self-assess`. Issues are picked in this 
 ### Skipped Issues
 
 - **`infra` label**: Infrastructure issues that belong to a different repo (e.g., `my-infra`). These remain in the backlog for human attention.
-- **Orchestration issues**: Title matching "self-assessment YYYY-MM-DD" — these are workflow artifacts, not fixable issues.
+- **Orchestration issues**: Title matching "project assessment YYYY-MM-DD" — these are workflow artifacts, not fixable issues.
 
 ### Schedule
 
@@ -210,7 +210,7 @@ Auto-fix only considers issues labeled `self-assess`. Issues are picked in this 
 ## Full Feedback Loop
 
 ```
-self-assess (daily 04:37)        auto-fix (hourly :17)
+project (daily 04:37)            auto-fix (hourly :17)
       │                                │
       ▼                                ▼
  Scan codebase ──── creates ────► Backlog issues
@@ -225,6 +225,6 @@ self-assess (daily 04:37)        auto-fix (hourly :17)
                                               Human review
                                                     │
                                                     ▼
-                                              Merge ──► Next self-assess
+                                              Merge ──► Next project run
                                                         detects fix, closes issue
 ```
