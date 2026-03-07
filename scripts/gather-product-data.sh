@@ -45,9 +45,13 @@ prom_query() {
 }
 
 # Helper: query PostgreSQL via psql
+# Stderr is preserved so permission errors are visible in workflow logs.
 db_query() {
     PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-5}" \
-        psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -t -A -F $'\t' -c "$1" 2>/dev/null || echo ""
+        psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -t -A -F $'\t' -c "$1" || {
+        log "ERROR: psql query failed: $1"
+        echo ""
+    }
 }
 
 # ─── Bot usage metrics (Prometheus) ──────────────────────────────────────────
