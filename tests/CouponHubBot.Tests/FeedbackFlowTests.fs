@@ -102,8 +102,8 @@ type FeedbackFlowTests(fixture: DefaultCouponHubTestContainers) =
             let user = Tg.user(id = 3004L, username = "fb_multi", firstName = "FBMulti")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            // Clean any prior feedback for this user (needs admin — service role has no DELETE on user_feedback)
-            let! _ = fixture.ExecuteAsAdmin("DELETE FROM user_feedback WHERE user_id = @uid", {| uid = 3004L |})
+            // Clean any prior feedback for this user
+            do! fixture.TruncateUserFeedback()
 
             // First feedback
             let! _ = fixture.SendUpdate(Tg.dmMessage("/feedback", user))

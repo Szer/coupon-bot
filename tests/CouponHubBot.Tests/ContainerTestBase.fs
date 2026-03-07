@@ -395,10 +395,11 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
             do! conn.ExecuteAsync("TRUNCATE coupon CASCADE") :> Task
         }
 
-    member _.ExecuteAsAdmin(sql: string, param: obj) =
+    member _.TruncateUserFeedback() =
         task {
             use conn = new NpgsqlConnection(adminConnectionString)
-            return! conn.ExecuteAsync(sql, param)
+            do! conn.OpenAsync()
+            do! conn.ExecuteAsync("TRUNCATE user_feedback CASCADE") :> Task
         }
 
 type DefaultCouponHubTestContainers() =
