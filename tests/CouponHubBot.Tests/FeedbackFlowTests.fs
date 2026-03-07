@@ -1,6 +1,7 @@
 namespace CouponHubBot.Tests
 
 open System
+open System.Threading.Tasks
 open Dapper
 open Npgsql
 open Xunit
@@ -101,6 +102,10 @@ type FeedbackFlowTests(fixture: DefaultCouponHubTestContainers) =
             let user = Tg.user(id = 3004L, username = "fb_multi", firstName = "FBMulti")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
+            // Clean any prior feedback for this user
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            do! conn.ExecuteAsync("DELETE FROM user_feedback WHERE user_id = @uid", {| uid = 3004L |}) :> Task
+
             // First feedback
             let! _ = fixture.SendUpdate(Tg.dmMessage("/feedback", user))
             let! _ = fixture.SendUpdate(Tg.dmMessage("First feedback", user))
@@ -109,11 +114,10 @@ type FeedbackFlowTests(fixture: DefaultCouponHubTestContainers) =
             let! _ = fixture.SendUpdate(Tg.dmMessage("/feedback", user))
             let! _ = fixture.SendUpdate(Tg.dmMessage("Second feedback", user))
 
-            // Verify two records
-            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            // Verify exactly two records
             let! count = conn.QuerySingleAsync<int>(
                 "SELECT COUNT(*)::int FROM user_feedback WHERE user_id = @uid",
                 {| uid = 3004L |})
 
-            Assert.True(count >= 2, $"Expected at least 2 feedback records, got {count}")
+            Assert.Equal(2, count)
         }
