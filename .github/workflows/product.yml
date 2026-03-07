@@ -168,7 +168,7 @@ jobs:
         gh label create priority-medium \
           --repo "${{ github.repository }}" \
           --description "Medium priority — default for actionable items" \
-          --color "d93f0b" \
+          --color "fbca04" \
           --force
         gh label create priority-low \
           --repo "${{ github.repository }}" \

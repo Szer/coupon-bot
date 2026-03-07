@@ -6,3 +6,12 @@ GRANT product_agent TO postgres; -- no need for prod DB
 CREATE DATABASE coupon_hub_bot OWNER admin ENCODING 'UTF8';
 GRANT CONNECT ON DATABASE coupon_hub_bot TO coupon_hub_bot_service;
 GRANT CONNECT ON DATABASE coupon_hub_bot TO product_agent;
+
+-- product_agent: read-only access for product data gathering script
+-- In prod, run these GRANTs manually after creating the role.
+\connect coupon_hub_bot
+GRANT USAGE ON SCHEMA public TO product_agent;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO product_agent;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO product_agent;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO product_agent;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO product_agent;

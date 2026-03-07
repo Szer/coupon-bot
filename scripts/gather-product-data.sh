@@ -46,7 +46,8 @@ prom_query() {
 
 # Helper: query PostgreSQL via psql
 db_query() {
-    psql "${DATABASE_URL}" -t -A -F $'\t' -c "$1" 2>/dev/null || echo ""
+    PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-5}" \
+        psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -t -A -F $'\t' -c "$1" 2>/dev/null || echo ""
 }
 
 # ─── Bot usage metrics (Prometheus) ──────────────────────────────────────────
@@ -125,7 +126,7 @@ log "Querying user feedback..."
 FEEDBACK_ENTRIES=$(db_query "
     SELECT uf.id,
            CASE WHEN uf.feedback_text IS NOT NULL
-                THEN LEFT(uf.feedback_text, 200)
+                THEN REPLACE(REPLACE(REPLACE(LEFT(uf.feedback_text, 200), E'\n', ' '), E'\t', ' '), '|', '/')
                 ELSE '(media only)'
            END AS preview,
            uf.has_media,
