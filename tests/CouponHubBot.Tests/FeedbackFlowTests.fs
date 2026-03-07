@@ -102,7 +102,7 @@ type FeedbackFlowTests(fixture: DefaultCouponHubTestContainers) =
             let user = Tg.user(id = 3004L, username = "fb_multi", firstName = "FBMulti")
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            // Clean any prior feedback for this user
+            // Truncate all feedback records to ensure exact count assertion
             do! fixture.TruncateUserFeedback()
 
             // First feedback
