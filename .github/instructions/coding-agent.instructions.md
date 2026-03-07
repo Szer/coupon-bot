@@ -25,6 +25,10 @@ excludeAgent: "code-review"
 - **Product**: `.github/workflows/product.yml` — daily product analysis + feedback triage, gathers usage data
 - **Agent env**: `.github/workflows/copilot-setup-steps.yml` — sets up .NET SDK, VPN, dependencies
 
+## Agent Roles and PR Authority
+
+The coding agent is the **ONLY** agent that creates branches and pull requests. Other agents (self-assess, product, SRE) produce issues and comments exclusively — they must never create branches, commits, or PRs.
+
 ## Issue Label Rules
 
 The coding agent must **NEVER** work on issues with these labels:
