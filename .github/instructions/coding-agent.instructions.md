@@ -30,10 +30,11 @@ excludeAgent: "code-review"
 The coding agent must **NEVER** work on issues with these labels:
 - `user-feedback` — raw, untriaged user input; wait for Product agent triage
 - `product` — product agent orchestration issues
-- `self-assess` — project manager orchestration issues
 - `deploy-failure` — SRE agent handles these
 
-Only work on refined tickets: `feature-request`, `bug`, `priority-*`, or issues explicitly assigned by another agent.
+Issues labeled `self-assess` are managed by the project manager agent, but the **auto-fix workflow** may assign `self-assess` backlog issues to the coding agent for implementation. Only work on `self-assess` issues if explicitly assigned by `auto-fix.yml` — never pick them up independently.
+
+Only work on refined tickets: `feature-request`, `bug`, `priority-*`, or issues explicitly assigned by a workflow or another agent.
 
 ## Agent Skills and Agents
 

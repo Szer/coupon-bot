@@ -164,9 +164,9 @@ fi
 if [ -n "${LOKI_URL:-}" ]; then
     log "Querying Loki for user-facing errors..."
 
-    START_7D=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-7d +%Y-%m-%dT%H:%M:%SZ)
-
-    ERROR_COUNT_JSON=$(curl -sf -G "${LOKI_URL}/loki/api/v1/query" \
+    ERROR_COUNT_JSON=$(curl -sf -G \
+        --connect-timeout 5 --max-time 20 \
+        "${LOKI_URL}/loki/api/v1/query" \
         --data-urlencode "query=sum(count_over_time({container=\"${CONTAINER}\"} | json | level=~\"Error|Fatal\"[7d]))" \
         2>/dev/null || echo '{"data":{"result":[]}}')
     ERROR_COUNT_7D=$(echo "$ERROR_COUNT_JSON" | jq -r '[.data.result[].value[1] | tonumber | floor] | add // 0' 2>/dev/null || echo "0")
