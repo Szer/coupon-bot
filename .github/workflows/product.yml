@@ -197,17 +197,17 @@ jobs:
           --force
         gh label create priority-high \
           --repo "${{ github.repository }}" \
-          --description "High priority — severe bugs affecting all users" \
+          --description "Reserved for user-reported high-priority issues (not used by self-assess)" \
           --color "b60205" \
           --force
         gh label create priority-medium \
           --repo "${{ github.repository }}" \
-          --description "Medium priority — default for actionable items" \
+          --description "Medium priority" \
           --color "fbca04" \
           --force
         gh label create priority-low \
           --repo "${{ github.repository }}" \
-          --description "Low priority — nice-to-have improvements" \
+          --description "Low priority — nice to have" \
           --color "0e8a16" \
           --force
 

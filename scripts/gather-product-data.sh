@@ -64,7 +64,7 @@ CMD_7D=$(echo "$CMD_7D_JSON" | jq -r '
     [.data.result[] | {cmd: .metric.command, count: (.value[1] | tonumber | floor)}]
     | sort_by(-.count)
     | .[] | "| \(.cmd) | \(.count) |"
-' 2>/dev/null)
+' 2>/dev/null || true)
 [ -z "$CMD_7D" ] && CMD_7D="| (no data) | - |"
 
 # Callback actions (7 days)
@@ -73,7 +73,7 @@ CB_7D=$(echo "$CB_7D_JSON" | jq -r '
     [.data.result[] | {action: .metric.action, count: (.value[1] | tonumber | floor)}]
     | sort_by(-.count)
     | .[] | "| \(.action) | \(.count) |"
-' 2>/dev/null)
+' 2>/dev/null || true)
 [ -z "$CB_7D" ] && CB_7D="| (no data) | - |"
 
 # Feedback count (30 days)
