@@ -1,0 +1,265 @@
+name: Product Analysis
+
+on:
+  schedule:
+    - cron: '15 10 * * *'
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+
+  # ── Trigger: user-feedback label applied ─────────────────────────────────────
+
+  triage-feedback:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.label.name == 'user-feedback'
+    runs-on: ubuntu-latest
+    environment: copilot
+
+    steps:
+    - name: Ensure labels exist
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        gh label create user-feedback \
+          --repo "${{ github.repository }}" \
+          --description "Raw user feedback — triaged by product agent only" \
+          --color "0075ca" \
+          --force
+        gh label create feature-request \
+          --repo "${{ github.repository }}" \
+          --description "Validated feature request from product agent triage" \
+          --color "a2eeef" \
+          --force
+        gh label create bug \
+          --repo "${{ github.repository }}" \
+          --description "Bug report" \
+          --color "d73a4a" \
+          --force
+        gh label create priority-high \
+          --repo "${{ github.repository }}" \
+          --description "Reserved for user-reported high-priority issues (not used by self-assess)" \
+          --color "b60205" \
+          --force
+        gh label create priority-medium \
+          --repo "${{ github.repository }}" \
+          --description "Medium priority" \
+          --color "fbca04" \
+          --force
+        gh label create priority-low \
+          --repo "${{ github.repository }}" \
+          --description "Low priority — nice to have" \
+          --color "0e8a16" \
+          --force
+
+    - name: Assign product agent to feedback issue
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        set -euo pipefail
+        ISSUE_NUMBER="${{ github.event.issue.number }}"
+        echo "Assigning product agent to feedback issue #${ISSUE_NUMBER}"
+
+        ASSIGNED=false
+        for i in 1 2 3; do
+          if gh api --method POST \
+            "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
+            --input - <<EOF
+        {
+          "assignees": ["copilot-swe-agent[bot]"],
+          "agent_assignment": {
+            "custom_agent": "product"
+          }
+        }
+        EOF
+          then
+            ASSIGNED=true
+            echo "Assigned product agent to issue #${ISSUE_NUMBER}"
+            break
+          else
+            echo "WARNING: Assignment attempt $i failed"
+            sleep 5
+          fi
+        done
+        if [ "$ASSIGNED" = false ]; then
+          echo "ERROR: All 3 assignment attempts failed for issue #${ISSUE_NUMBER}"
+          exit 1
+        fi
+
+  # ── Trigger: daily schedule or manual ────────────────────────────────────────
+
+  cleanup:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Close stale product orchestration issues
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        gh issue list \
+          --repo "${{ github.repository }}" \
+          --label "product" \
+          --state open \
+          --json number,title \
+          --jq '.[] | select(.title | test("Product analysis \\d{4}-\\d{2}-\\d{2}"; "i")) | .number' \
+        | while read -r NUM; do
+          echo "Closing stale product orchestration issue #${NUM}"
+          gh issue close "$NUM" \
+            --repo "${{ github.repository }}" \
+            --comment "🧹 **Auto-closed by cleanup.** Product agent did not close this issue in time." \
+            || echo "WARNING: Failed to close orchestration issue #${NUM}, continuing"
+        done
+
+    - name: Close stale Copilot PRs
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        # Safety net — product agent has no edit tool and shouldn't create PRs
+        gh pr list \
+          --repo "${{ github.repository }}" \
+          --state open \
+          --author "app/copilot-swe-agent" \
+          --json number,headRefName,title \
+          --jq '.[] | select(.title | test("Product analysis \\d{4}-\\d{2}-\\d{2}"; "i")) | "\(.number) \(.headRefName)"' \
+        | while read -r NUM BRANCH; do
+          echo "Closing PR #${NUM} (branch: ${BRANCH})"
+          gh pr close "$NUM" \
+            --repo "${{ github.repository }}" \
+            --comment "🧹 **Auto-closed.** Product analysis PRs are not expected." \
+            --delete-branch \
+            || echo "WARNING: Failed to close PR #${NUM}, continuing"
+        done
+
+  product-analysis:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: cleanup
+    runs-on: ubuntu-latest
+    environment: copilot
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup WireGuard VPN
+      run: |
+        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
+        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
+        sudo chmod 600 /etc/wireguard/wg0.conf
+        sudo wg-quick up wg0
+
+    - name: Install PostgreSQL client
+      run: sudo apt-get install -y postgresql-client
+
+    - name: Gather product data
+      run: |
+        chmod +x scripts/gather-product-data.sh
+        REPORT=$(./scripts/gather-product-data.sh)
+        echo "$REPORT" > /tmp/product-report.md
+      env:
+        PROMETHEUS_URL: http://prometheus.internal:9090
+        LOKI_URL: http://loki.internal
+        CONTAINER_NAME: coupon-bot
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+
+    - name: Disconnect VPN
+      if: always()
+      run: sudo wg-quick down wg0 || true
+
+    - name: Ensure labels exist
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        gh label create product \
+          --repo "${{ github.repository }}" \
+          --description "Product agent orchestration issue" \
+          --color "d876e3" \
+          --force
+        gh label create user-feedback \
+          --repo "${{ github.repository }}" \
+          --description "Raw user feedback — triaged by product agent only" \
+          --color "0075ca" \
+          --force
+        gh label create feature-request \
+          --repo "${{ github.repository }}" \
+          --description "Validated feature request from product agent triage" \
+          --color "a2eeef" \
+          --force
+        gh label create bug \
+          --repo "${{ github.repository }}" \
+          --description "Bug report" \
+          --color "d73a4a" \
+          --force
+        gh label create priority-high \
+          --repo "${{ github.repository }}" \
+          --description "Reserved for user-reported high-priority issues (not used by self-assess)" \
+          --color "b60205" \
+          --force
+        gh label create priority-medium \
+          --repo "${{ github.repository }}" \
+          --description "Medium priority" \
+          --color "fbca04" \
+          --force
+        gh label create priority-low \
+          --repo "${{ github.repository }}" \
+          --description "Low priority — nice to have" \
+          --color "0e8a16" \
+          --force
+
+    - name: Create orchestration issue
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        set -euo pipefail
+        DATE=$(date -u +%Y-%m-%d)
+        REPORT=$(cat /tmp/product-report.md)
+
+        ISSUE_URL=$(gh issue create \
+          --repo "${{ github.repository }}" \
+          --title "Product analysis ${DATE}" \
+          --label "product" \
+          --body "## Product Analysis — ${DATE}
+
+        **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+        ---
+
+        ${REPORT}")
+
+        ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -Eo '[0-9]+$')
+        if [ -z "$ISSUE_NUMBER" ]; then
+          echo "ERROR: Failed to parse issue number from: $ISSUE_URL"
+          exit 1
+        fi
+        echo "Created issue #${ISSUE_NUMBER}"
+
+        ASSIGNED=false
+        for i in 1 2 3; do
+          if gh api --method POST \
+            "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
+            --input - <<EOF
+        {
+          "assignees": ["copilot-swe-agent[bot]"],
+          "agent_assignment": {
+            "custom_agent": "product"
+          }
+        }
+        EOF
+          then
+            ASSIGNED=true
+            echo "Assigned product agent to issue #${ISSUE_NUMBER}"
+            break
+          else
+            echo "WARNING: Assignment attempt $i failed for issue #${ISSUE_NUMBER}"
+            sleep 5
+          fi
+        done
+        if [ "$ASSIGNED" = false ]; then
+          echo "ERROR: All 3 assignment attempts failed for issue #${ISSUE_NUMBER}"
+          exit 1
+        fi

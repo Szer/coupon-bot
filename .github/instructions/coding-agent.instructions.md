@@ -22,7 +22,19 @@ excludeAgent: "code-review"
 - **Deploy**: `.github/workflows/deploy.yml` — tests → Flyway migrations → GHCR push → deployment verification
 - **Test results**: `.github/workflows/test-results.yml` — publishes test report after CI
 - **Self-assess**: `.github/workflows/self-assess.yml` — daily self-assessment, gathers metrics, creates orchestration issue for Copilot
+- **Product**: `.github/workflows/product.yml` — daily product analysis + feedback triage, gathers usage data
 - **Agent env**: `.github/workflows/copilot-setup-steps.yml` — sets up .NET SDK, VPN, dependencies
+
+## Issue Label Rules
+
+The coding agent must **NEVER** work on issues with these labels:
+- `user-feedback` — raw, untriaged user input; wait for Product agent triage
+- `product` — product agent orchestration issues
+- `deploy-failure` — SRE agent handles these
+
+Issues labeled `self-assess` are managed by the project manager agent, but the **auto-fix workflow** may assign `self-assess` backlog issues to the coding agent for implementation. Only work on `self-assess` issues if explicitly assigned by `auto-fix.yml` — never pick them up independently.
+
+Only work on refined tickets: `feature-request`, `bug`, `priority-*`, or issues explicitly assigned by a workflow or another agent.
 
 ## Agent Skills and Agents
 
@@ -32,6 +44,7 @@ excludeAgent: "code-review"
 |-------|-----------|
 | `self-assess` | Daily self-assessment of codebase and infrastructure, backlog management. No edit tool; analysis and issue management only. |
 | `sre` | Production incident response — debugs deploy failures, queries ArgoCD/Loki/Prometheus, performs rollbacks. Escalates to coding agent when a code fix is needed. No edit tool. |
+| `product` | Product analysis and user feedback triage. Monitors telemetry, chat themes, and feedback. Creates refined feature/bug tickets. No edit tool. |
 
 ### Skills (`.github/skills/`)
 
