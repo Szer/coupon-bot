@@ -25,7 +25,7 @@ jobs:
           --limit 200 \
           --author "app/copilot-swe-agent" \
           --json number,title,isDraft \
-          --jq '[.[] | select(.isDraft == true) | select(.title | test("(Daily self-assessment|Daily project assessment|Project assessment|Product analysis) \\d{4}-\\d{2}-\\d{2}"; "i") | not)] | length')
+          --jq '[.[] | select(.isDraft == true) | select(.title | test("^(Daily self-assessment|Daily project assessment|Project assessment|Product analysis) \\d{4}-\\d{2}-\\d{2}"; "i") | not)] | length')
 
         echo "Active Copilot sessions: $ACTIVE"
         if [ "$ACTIVE" -gt 0 ]; then
@@ -51,7 +51,7 @@ jobs:
           --json number,title,labels,comments,createdAt,assignees \
           --jq '
             [.[]
-              | select(.title | test("(Daily self-assessment|Daily project assessment|Project assessment|Product analysis) \\d{4}-\\d{2}-\\d{2}"; "i") | not)
+              | select(.title | test("^(Daily self-assessment|Daily project assessment|Project assessment|Product analysis) \\d{4}-\\d{2}-\\d{2}"; "i") | not)
               | select(.labels | map(.name) | any(. == "infra") | not)
               | select(.assignees | length == 0)
               | .priority = (
