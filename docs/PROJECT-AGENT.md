@@ -168,13 +168,14 @@ The auto-fix workflow (`auto-fix.yml`) is the companion to the project agent. It
 ┌─────────────────────────────────────────────────────────────────┐
 │  auto-fix.yml (hourly at :17)                                   │
 │                                                                 │
-│  1. Mutex check: any draft PRs by Copilot? (excl. project)      │
+│  1. Mutex check: any draft PRs by Copilot?                      │
+│     (excl. non-coding agent PRs: project/product/self-assess)   │
 │     → If yes: skip (Copilot is busy)                            │
 │     → If no: proceed                                            │
 │                                                                 │
 │  2. Pick highest priority issue:                                │
 │     - Has label: project                                        │
-│     - NOT orchestration issue (title contains "project assess") │
+│     - NOT orchestration issue (project/product/self-assess)     │
 │     - NOT labeled: infra                                        │
 │     - Sort: priority-high > medium > low > bumps > oldest       │
 │                                                                 │
