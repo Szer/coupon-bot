@@ -168,7 +168,7 @@ The auto-fix workflow (`auto-fix.yml`) is the companion to the project agent. It
 ┌─────────────────────────────────────────────────────────────────┐
 │  auto-fix.yml (hourly at :17)                                   │
 │                                                                 │
-│  1. Mutex check: any draft PRs by Copilot? (excl. project)      │
+│  1. Mutex check: any draft PRs by Copilot? (excl. non-coder)    │
 │     → If yes: skip (Copilot is busy)                            │
 │     → If no: proceed                                            │
 │                                                                 │
