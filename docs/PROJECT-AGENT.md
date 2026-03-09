@@ -42,7 +42,7 @@ The project agent is defined in `.github/agents/project.agent.md`. Key propertie
 
 | Property | Value | Why |
 |----------|-------|-----|
-| `tools` | `["read", "search", "execute"]` | No `edit` tool — agent cannot modify files. `execute` is restricted via a **command allowlist** in the prompt (see below). |
+| `tools` | `["read", "search", "execute"]` | No `edit` tool; file modifications are prevented by **command allowlist** (prompt-level) and **guard workflow** (platform-level). `execute` is restricted to read-only and issue management commands (see below). |
 | `name` | `project` | Used in REST API `agent_assignment.custom_agent` field |
 | Prompt | Analytical, open-ended | Agent reads code and reasons about it rather than following a grep checklist |
 
