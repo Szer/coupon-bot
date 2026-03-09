@@ -2,6 +2,7 @@ namespace CouponHubBot.Services
 
 open System
 open System.Collections.Generic
+open System.Runtime.ExceptionServices
 open Telegram.Bot
 open Telegram.Bot.Types
 open Telegram.Bot.Types.Enums
@@ -27,7 +28,9 @@ type CallbackHandler(
             use a = botActivity.StartActivity("handleCallbackQuery")
             %a.SetTag("callbackQueryId", cq.Id)
             if not (isNull a) then %a.SetTag("callbackData", cq.Data)
-            if cq.Message <> null && cq.From <> null then
+            let mutable caughtExn = ValueNone
+            try
+             if cq.Message <> null && cq.From <> null then
                 %a.SetTag("chatId", cq.Message.Chat.Id)
                 %a.SetTag("fromId", cq.From.Id)
                 let! ok = ensureCommunityMember cq.From.Id cq.Message.Chat.Id
@@ -242,6 +245,10 @@ type CallbackHandler(
                 elif isPrivateChat && hasData && cq.Data = "myAdded" then
                     Metrics.callbackTotal.Add(1L, KeyValuePair("action", box "myAdded"))
                     do! commandHandler.HandleAdded user cq.Message.Chat.Id
-
+            with ex ->
+                caughtExn <- ValueSome (ExceptionDispatchInfo.Capture(ex))
             do! botClient.AnswerCallbackQuery(cq.Id)
+            match caughtExn with
+            | ValueSome edi -> edi.Throw()
+            | ValueNone -> ()
         }
