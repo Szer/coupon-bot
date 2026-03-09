@@ -1,0 +1,43 @@
+name: Guard Non-Coding Agent PRs
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'copilot-swe-agent[bot]'
+    steps:
+    - name: Auto-close PRs from non-coding agent branches
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        BRANCH="${{ github.head_ref }}"
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+
+        # Non-coding agents (project, product) should never produce PRs.
+        # The Copilot platform may create draft PRs when these agents push
+        # commits — this workflow catches and closes them immediately.
+        if [[ "$BRANCH" =~ ^copilot/(daily-project-assessment|daily-self-assessment|project-assessment|product-analysis) ]]; then
+          echo "🛑 Detected non-coding agent PR from branch: $BRANCH"
+          COMMENT=$(cat <<'EOF'
+🛑 **Auto-closed by guard workflow.**
+
+Non-coding agents (project, product) must not create PRs. Their only deliverables are GitHub issues and comments. This PR was likely created by the Copilot platform after the agent violated its command allowlist by pushing commits.
+
+The branch has been deleted. If the agent identified real issues, they should exist as GitHub issues in the backlog.
+EOF
+          )
+          gh pr close "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --comment "$COMMENT" \
+            --delete-branch \
+            || echo "WARNING: Failed to close PR #${PR_NUMBER}"
+        else
+          echo "✅ Branch '$BRANCH' does not match non-coding agent patterns — allowing."
+        fi
