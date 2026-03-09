@@ -56,6 +56,7 @@ ls PATH
 git status
 git branch         (no arguments — list only)
 git log --oneline  (read-only history inspection)
+git --no-pager show COMMIT -- FILE   (read a file at a specific commit)
 ```
 
 ### Allowed: Utilities
