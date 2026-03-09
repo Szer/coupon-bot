@@ -251,4 +251,4 @@ The guard workflow (`guard-agent-prs.yml`) is a safety net that auto-closes PRs 
 1. The PR author is `copilot-swe-agent[bot]` (checked via `github.event.pull_request.user.login`)
 2. The branch name matches a non-coding agent pattern (e.g., `copilot/daily-project-assessment-*`, `copilot/product-analysis-*`)
 
-If both conditions are true, the PR is immediately closed and the branch deleted. This provides a **hard platform-level boundary** that cannot be bypassed by prompt engineering — even if the agent ignores its command allowlist and pushes code, the resulting PR will be caught and closed.
+If both conditions are true, the PR is immediately closed and the branch deleted. This catches PRs whose branches match known non-coding agent patterns — even if the agent ignores its command allowlist and pushes code, the resulting PR will be auto-closed as long as the branch name follows the platform's naming convention.
