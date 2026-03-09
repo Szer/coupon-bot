@@ -171,9 +171,7 @@ type BotService(
             try
                 logger.LogInformation("BotService.OnUpdate: UpdateId={UpdateId}, Message={HasMessage}, CallbackQuery={HasCallback}",
                     update.Id, not (isNull update.Message), not (isNull update.CallbackQuery))
-                if isNull update then
-                    ()
-                elif update.ChatMember <> null then
+                if update.ChatMember <> null then
                     membership.OnChatMemberUpdated(update.ChatMember)
                 elif not (isNull update.CallbackQuery) then
                     do! callbackHandler.HandleCallbackQuery update.CallbackQuery
