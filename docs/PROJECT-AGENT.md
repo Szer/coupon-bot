@@ -42,9 +42,23 @@ The project agent is defined in `.github/agents/project.agent.md`. Key propertie
 
 | Property | Value | Why |
 |----------|-------|-----|
-| `tools` | `["read", "search", "execute"]` | No `edit` tool — agent is instructed not to modify files. `execute` is needed for `gh` CLI and `curl` commands. |
+| `tools` | `["read", "search", "execute"]` | No `edit` tool — agent cannot modify files. `execute` is restricted via a **command allowlist** in the prompt (see below). |
 | `name` | `project` | Used in REST API `agent_assignment.custom_agent` field |
 | Prompt | Analytical, open-ended | Agent reads code and reasons about it rather than following a grep checklist |
+
+### Command Allowlist (Guardrails)
+
+Non-coding agents (project, product) have access to the `execute` tool but are restricted to a **command allowlist** defined in their agent prompt. Only these commands are permitted:
+
+- **Issue management:** `gh issue create/edit/close/list/view/comment`, `gh api` (issues endpoints only)
+- **External queries:** `curl` (Loki, Prometheus, ArgoCD)
+- **Read-only inspection:** `cat`, `grep`, `head`, `tail`, `wc`, `jq`, `sort`, `uniq`, `find`, `ls`
+- **Read-only git:** `git status`, `git branch` (list only), `git log --oneline`, `git show`
+- **Utilities:** `date`, `echo` (piping only, not file writing)
+
+Everything else is **FORBIDDEN** — including `git add/commit/push`, `sed`, `gh pr create`, `dotnet build/test`, and any file-modifying command.
+
+Additionally, a **guard workflow** (`guard-agent-prs.yml`) provides a hard platform-level boundary: any PR created from a non-coding agent branch pattern is automatically closed and its branch deleted.
 
 ### All Custom Agents
 
@@ -229,3 +243,12 @@ project (daily 04:37)            auto-fix (hourly :17)
                                               Merge ──► Next project run
                                                         detects fix, closes issue
 ```
+
+## Guard Workflow
+
+The guard workflow (`guard-agent-prs.yml`) is a safety net that auto-closes PRs created by non-coding agents. It triggers on `pull_request: [opened, reopened]` and checks if:
+
+1. The PR was created by `copilot-swe-agent[bot]`
+2. The branch name matches a non-coding agent pattern (e.g., `copilot/daily-project-assessment-*`, `copilot/product-analysis-*`)
+
+If both conditions are true, the PR is immediately closed and the branch deleted. This provides a **hard platform-level boundary** that cannot be bypassed by prompt engineering — even if the agent ignores its command allowlist and pushes code, the resulting PR will be caught and closed.

@@ -44,8 +44,8 @@ Three AI agents automate different aspects of the project lifecycle:
 
 | Agent | Role | Trigger | Tools |
 |-------|------|---------|-------|
-| **project** (project manager) | Backlog management, codebase quality analysis | Daily schedule (`project.yml`) | Read-only: search, execute, GitHub CLI |
-| **product** (product manager) | User feedback triage, feature prioritization | Daily schedule + `user-feedback` label (`product.yml`) | Read-only: search, execute, GitHub CLI, Prometheus, Loki |
+| **project** (project manager) | Backlog management, codebase quality analysis | Daily schedule (`project.yml`) | Read-only: search, execute (command allowlist), GitHub CLI |
+| **product** (product manager) | User feedback triage, feature prioritization | Daily schedule + `user-feedback` label (`product.yml`) | Read-only: search, execute (command allowlist), GitHub CLI, Prometheus, Loki |
 | **sre** | Production incident response, deploy failure debugging | `deploy-failure` label (`deploy.yml`) | Read-only: ArgoCD, Loki, Prometheus, GitHub CLI |
 
 ### Product Agent Data Flow
@@ -69,3 +69,7 @@ Output:
 ### Agent Isolation
 
 The coding agent is guardrailed from raw user signals — it only sees refined tickets (`bug`, `feature-request`). Labels `user-feedback`, `product`, `project`, and `deploy-failure` are reserved for their respective agents.
+
+Non-coding agents (project, product) are restricted by two layers of defense:
+1. **Command allowlist** in their agent prompts — only `gh issue`, `curl`, and read-only commands are permitted
+2. **Guard workflow** (`guard-agent-prs.yml`) — auto-closes any PR from non-coding agent branch patterns as a hard platform-level boundary
