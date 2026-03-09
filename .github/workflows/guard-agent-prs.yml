@@ -11,7 +11,7 @@ permissions:
 jobs:
   guard:
     runs-on: ubuntu-latest
-    if: github.actor == 'copilot-swe-agent[bot]'
+    if: github.event.pull_request.user.login == 'copilot-swe-agent[bot]'
     steps:
     - name: Auto-close PRs from non-coding agent branches
       env:
@@ -25,13 +25,17 @@ jobs:
         # commits — this workflow catches and closes them immediately.
         if [[ "$BRANCH" =~ ^copilot/(daily-project-assessment|daily-self-assessment|project-assessment|product-analysis) ]]; then
           echo "🛑 Detected non-coding agent PR from branch: $BRANCH"
+          COMMENT=$(cat <<'EOF'
+🛑 **Auto-closed by guard workflow.**
+
+Non-coding agents (project, product) must not create PRs. Their only deliverables are GitHub issues and comments. This PR was likely created by the Copilot platform after the agent violated its command allowlist by pushing commits.
+
+The branch has been deleted. If the agent identified real issues, they should exist as GitHub issues in the backlog.
+EOF
+          )
           gh pr close "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
-            --comment "🛑 **Auto-closed by guard workflow.**
-
-        Non-coding agents (project, product) must not create PRs. Their only deliverables are GitHub issues and comments. This PR was likely created by the Copilot platform after the agent violated its command allowlist by pushing commits.
-
-        The branch has been deleted. If the agent identified real issues, they should exist as GitHub issues in the backlog." \
+            --comment "$COMMENT" \
             --delete-branch \
             || echo "WARNING: Failed to close PR #${PR_NUMBER}"
         else
