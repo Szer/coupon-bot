@@ -347,13 +347,16 @@ If you identify a strong, evidence-backed insight:
 If nothing warrants action:
 - That's fine. Most days should produce no new tickets.
 
-### Step 6: Close Orchestration Issue
+### Step 6: Close the Orchestration Issue
 
-Always close the orchestration issue with a summary:
+After completing all steps, you **MUST** close the orchestration issue (the one you were assigned to) with a summary. This is not optional — the orchestration issue is a transient trigger, not a permanent record.
 
 ```bash
-gh issue close ISSUE_NUMBER --repo OWNER/REPO \
-  --comment "## Product Analysis Summary
+# Retry up to 3 times in case of network issues
+for i in 1 2 3; do
+  gh issue close ISSUE_NUMBER \
+    --repo OWNER/REPO \
+    --comment "## Product Analysis Summary
 
 ### Data Reviewed
 - Usage metrics: [brief summary]
@@ -368,7 +371,9 @@ gh issue close ISSUE_NUMBER --repo OWNER/REPO \
 - [Any notable trends worth monitoring but not acting on yet]
 
 ---
-*Product analysis completed by product agent*"
+*Product analysis completed by product agent*" \
+  && break || sleep 10
+done
 ```
 
 ---
