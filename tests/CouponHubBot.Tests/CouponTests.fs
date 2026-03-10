@@ -1923,14 +1923,25 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 do! fixture.ClearFakeCalls()
                 // take:99999999 → coupon not found → sendText → sendMessage fails → ApiRequestException thrown
                 let! _ = fixture.SendUpdate(Tg.dmCallback("take:99999999", user))
+
+                // Verify that sendMessage was attempted (i.e., the failure path was actually exercised)
+                let! sendMsgCalls = fixture.GetFakeCalls("sendMessage")
+                Assert.True(
+                    sendMsgCalls.Length >= 1,
+                    "Expected sendMessage to be attempted so the error path was exercised")
+
+                // Verify answerCallbackQuery was still called despite the sendMessage failure
                 let! calls = fixture.GetFakeCalls("answerCallbackQuery")
                 Assert.True(
                     calls.Length >= 1,
                     "Expected answerCallbackQuery to be called even when an exception occurred during callback handling")
             with ex ->
                 capturedEx <- ex
-            // Always restore sendMessage so other tests are not affected
-            do! fixture.SetMethodError("sendMessage", false)
+            // Best-effort cleanup: restore sendMessage so other tests are not affected.
+            // Wrapped so a cleanup failure cannot mask a primary assertion failure.
+            try
+                do! fixture.SetMethodError("sendMessage", false)
+            with _ -> ()
             if not (isNull capturedEx) then raise capturedEx
         }
 
