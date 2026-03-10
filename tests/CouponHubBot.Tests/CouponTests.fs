@@ -1918,6 +1918,10 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
 
             // Force sendMessage to fail so callback handling throws an exception inside HandleTake
             do! fixture.SetMethodError("sendMessage", true)
+            // Sanity check: verify the mock is actually active before proceeding
+            let! errorStatus = fixture.CheckMethodErrorActive("sendMessage")
+            Assert.Equal(HttpStatusCode.BadRequest, errorStatus)
+
             let mutable capturedEx: exn = null
             try
                 do! fixture.ClearFakeCalls()

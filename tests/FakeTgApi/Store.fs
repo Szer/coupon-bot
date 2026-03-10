@@ -22,4 +22,5 @@ module Store =
         let mutable item = Unchecked.defaultof<ApiCallLog>
         while calls.TryDequeue(&item) do
             ()
+        methodErrors.Clear()
 
