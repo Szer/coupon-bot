@@ -7,6 +7,7 @@ module Store =
     let calls = ConcurrentQueue<ApiCallLog>()
     let chatMemberStatus = ConcurrentDictionary<int64, string>()
     let files = ConcurrentDictionary<string, byte[]>()
+    let methodErrors = ConcurrentDictionary<string, bool>()
 
     let logCall (methodName: string) (url: string) (body: string) =
         calls.Enqueue(

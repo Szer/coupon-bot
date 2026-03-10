@@ -36,6 +36,11 @@ type AzureResponseMock =
     { status: int
       body: string }
 
+[<CLIMutable>]
+type MethodErrorMock =
+    { methodName: string
+      enabled: bool }
+
 [<AbstractClass>]
 type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
     let solutionDir = CommonDirectoryPath.GetSolutionDirectory()
@@ -349,6 +354,13 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
                 { fileId = fileId
                   contentBase64 = Convert.ToBase64String(bytes) }
             let! _ = fakeHttp.PostAsJsonAsync("/test/mock/file", payload)
+            return ()
+        }
+
+    member _.SetMethodError(methodName: string, enabled: bool) =
+        task {
+            let payload: MethodErrorMock = { methodName = methodName; enabled = enabled }
+            let! _ = fakeHttp.PostAsJsonAsync("/test/mock/methodError", payload)
             return ()
         }
 

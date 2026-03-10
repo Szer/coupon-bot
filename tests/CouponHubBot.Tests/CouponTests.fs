@@ -1909,5 +1909,28 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 "Expected user confirmation after forwarding")
         }
 
+    [<Fact>]
+    let ``AnswerCallbackQuery is sent even when exception occurs during callback handling`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let user = Tg.user(id = 9001L, username = "answer_exc_test", firstName = "Test")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
 
+            // Force sendMessage to fail so callback handling throws an exception inside HandleTake
+            do! fixture.SetMethodError("sendMessage", true)
+            let mutable capturedEx: exn = null
+            try
+                do! fixture.ClearFakeCalls()
+                // take:99999999 → coupon not found → sendText → sendMessage fails → ApiRequestException thrown
+                let! _ = fixture.SendUpdate(Tg.dmCallback("take:99999999", user))
+                let! calls = fixture.GetFakeCalls("answerCallbackQuery")
+                Assert.True(
+                    calls.Length >= 1,
+                    "Expected answerCallbackQuery to be called even when an exception occurred during callback handling")
+            with ex ->
+                capturedEx <- ex
+            // Always restore sendMessage so other tests are not affected
+            do! fixture.SetMethodError("sendMessage", false)
+            if not (isNull capturedEx) then raise capturedEx
+        }
 
