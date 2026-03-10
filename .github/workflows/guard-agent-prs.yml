@@ -11,7 +11,6 @@ permissions:
 jobs:
   guard:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'copilot-swe-agent[bot]'
     steps:
     - name: Auto-close PRs from non-coding agent branches
       env:
@@ -23,8 +22,23 @@ jobs:
 
           The branch has been deleted. If the agent identified real issues, they should exist as GitHub issues in the backlog.
       run: |
+        PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+        PR_AUTHOR_ID="${{ github.event.pull_request.user.id }}"
         BRANCH="${{ github.head_ref }}"
         PR_NUMBER="${{ github.event.pull_request.number }}"
+
+        echo "::group::Debug info"
+        echo "PR author login: '$PR_AUTHOR'"
+        echo "PR author ID: '$PR_AUTHOR_ID'"
+        echo "Branch: '$BRANCH'"
+        echo "PR number: '$PR_NUMBER'"
+        echo "::endgroup::"
+
+        # Only act on PRs created by Copilot coding agent
+        if [[ "$PR_AUTHOR" != "copilot-swe-agent[bot]" && "$PR_AUTHOR" != "Copilot" ]]; then
+          echo "✅ PR author '$PR_AUTHOR' is not a Copilot agent — skipping."
+          exit 0
+        fi
 
         # Non-coding agents (project, product) should never produce PRs.
         # The Copilot platform may create draft PRs when these agents push
