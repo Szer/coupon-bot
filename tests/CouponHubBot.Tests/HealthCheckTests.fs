@@ -1,6 +1,8 @@
 namespace CouponHubBot.Tests
 
 open System.Net
+open System.Net.Http
+open System.Text
 open Xunit
 
 type HealthCheckTests(fixture: DefaultCouponHubTestContainers) =
@@ -21,5 +23,13 @@ type HealthCheckTests(fixture: DefaultCouponHubTestContainers) =
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
             let! body = resp.Content.ReadAsStringAsync()
             Assert.Equal("OK", body)
+        }
+
+    [<Fact>]
+    let ``POST /bot with null body returns 400`` () =
+        task {
+            use content = new StringContent("null", Encoding.UTF8, "application/json")
+            let! resp = fixture.Bot.PostAsync("/bot", content)
+            Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode)
         }
 
