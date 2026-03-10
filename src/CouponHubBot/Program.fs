@@ -212,6 +212,10 @@ let app = builder.Build()
             // Deserialize Update from request body
             let! update = JsonSerializer.DeserializeAsync<Update>(ctx.Request.Body, jsonOptions)
 
+            if isNull update then
+                return Results.BadRequest()
+            else
+
             try
                 let bot = ctx.RequestServices.GetRequiredService<BotService>()
                 do! bot.OnUpdate(update)
