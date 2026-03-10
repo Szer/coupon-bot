@@ -8,7 +8,7 @@ open System.Text.Json
 open Microsoft.Extensions.Logging
 open CouponHubBot
 
-type GitHubService(httpClient: HttpClient, botConfig: BotConfiguration, logger: ILogger<GitHubService>) =
+type GitHubService(httpClient: HttpClient, botConfig: BotConfiguration, logger: ILogger<GitHubService>, time: TimeProvider) =
 
     do
         httpClient.BaseAddress <- Uri("https://api.github.com")
@@ -66,7 +66,7 @@ type GitHubService(httpClient: HttpClient, botConfig: BotConfiguration, logger: 
                 let title = $"[Feedback] {titlePreview}"
 
                 let bodyParts = ResizeArray<string>()
-                let dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm")
+                let dateStr = time.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd HH:mm")
                 bodyParts.Add($"**Date:** {dateStr} UTC")
                 if hasMedia then bodyParts.Add("**Attachments:** media content (see Telegram)")
                 bodyParts.Add("")
