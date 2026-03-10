@@ -1924,7 +1924,6 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
 
             let mutable capturedEx: exn = null
             try
-                do! fixture.ClearFakeCalls()
                 // take:99999999 → coupon not found → sendText → sendMessage fails → ApiRequestException thrown
                 let! _ = fixture.SendUpdate(Tg.dmCallback("take:99999999", user))
 
