@@ -48,6 +48,8 @@ module Handlers =
                 Store.logCall methodName url body
 
                 match methodName with
+                | m when Store.methodErrors.TryGetValue(m) |> fst ->
+                    do! respondJson ctx 400 """{"ok":false,"error_code":400,"description":"Simulated error by test"}"""
                 | "sendMessage" ->
                     let chatId =
                         try
@@ -241,6 +243,23 @@ module Handlers =
                 else
                     let bytes = Convert.FromBase64String(payload.contentBase64)
                     Store.files[payload.fileId] <- bytes
+                    do! respondJson ctx 200 (okResult "true")
+            with _ ->
+                do! respondJson ctx 400 (okResult "false")
+        }
+
+    let setMethodError (ctx: HttpContext) =
+        task {
+            let! body = readBody ctx
+            try
+                let payload = JsonSerializer.Deserialize<MethodErrorMock>(body, JsonSerializerOptions(JsonSerializerDefaults.Web))
+                if Object.ReferenceEquals(payload, null) || String.IsNullOrWhiteSpace payload.methodName then
+                    do! respondJson ctx 400 (okResult "false")
+                elif payload.enabled then
+                    Store.methodErrors[payload.methodName] <- true
+                    do! respondJson ctx 200 (okResult "true")
+                else
+                    Store.methodErrors.TryRemove(payload.methodName) |> ignore
                     do! respondJson ctx 200 (okResult "true")
             with _ ->
                 do! respondJson ctx 400 (okResult "false")

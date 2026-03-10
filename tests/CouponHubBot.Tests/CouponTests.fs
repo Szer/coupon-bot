@@ -1909,5 +1909,42 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
                 "Expected user confirmation after forwarding")
         }
 
+    [<Fact>]
+    let ``AnswerCallbackQuery is sent even when exception occurs during callback handling`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let user = Tg.user(id = 9001L, username = "answer_exc_test", firstName = "Test")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
 
+            // Force sendMessage to fail so callback handling throws an exception inside HandleTake
+            do! fixture.SetMethodError("sendMessage", true)
+            // Sanity check: verify the mock is actually active before proceeding
+            let! errorStatus = fixture.CheckMethodErrorActive("sendMessage")
+            Assert.Equal(HttpStatusCode.BadRequest, errorStatus)
+
+            let mutable capturedEx: exn = null
+            try
+                // take:99999999 → coupon not found → sendText → sendMessage fails → ApiRequestException thrown
+                let! _ = fixture.SendUpdate(Tg.dmCallback("take:99999999", user))
+
+                // Verify that sendMessage was attempted (i.e., the failure path was actually exercised)
+                let! sendMsgCalls = fixture.GetFakeCalls("sendMessage")
+                Assert.True(
+                    sendMsgCalls.Length >= 1,
+                    "Expected sendMessage to be attempted so the error path was exercised")
+
+                // Verify answerCallbackQuery was still called despite the sendMessage failure
+                let! calls = fixture.GetFakeCalls("answerCallbackQuery")
+                Assert.True(
+                    calls.Length >= 1,
+                    "Expected answerCallbackQuery to be called even when an exception occurred during callback handling")
+            with ex ->
+                capturedEx <- ex
+            // Best-effort cleanup: restore sendMessage so other tests are not affected.
+            // Wrapped so a cleanup failure cannot mask a primary assertion failure.
+            try
+                do! fixture.SetMethodError("sendMessage", false)
+            with _ -> ()
+            if not (isNull capturedEx) then raise capturedEx
+        }
 

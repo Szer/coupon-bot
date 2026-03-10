@@ -19,3 +19,8 @@ type FileMock =
     { fileId: string
       contentBase64: string }
 
+[<CLIMutable>]
+type MethodErrorMock =
+    { methodName: string
+      enabled: bool }
+

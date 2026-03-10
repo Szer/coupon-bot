@@ -36,6 +36,11 @@ type AzureResponseMock =
     { status: int
       body: string }
 
+[<CLIMutable>]
+type MethodErrorMock =
+    { methodName: string
+      enabled: bool }
+
 [<AbstractClass>]
 type CouponHubTestContainers(seedExpiringToday: bool, ocrEnabled: bool) =
     let solutionDir = CommonDirectoryPath.GetSolutionDirectory()
@@ -350,6 +355,22 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
                   contentBase64 = Convert.ToBase64String(bytes) }
             let! _ = fakeHttp.PostAsJsonAsync("/test/mock/file", payload)
             return ()
+        }
+
+    member _.SetMethodError(methodName: string, enabled: bool) =
+        task {
+            let payload: MethodErrorMock = { methodName = methodName; enabled = enabled }
+            let! resp = fakeHttp.PostAsJsonAsync("/test/mock/methodError", payload)
+            resp.EnsureSuccessStatusCode() |> ignore
+        }
+
+    /// Makes a direct call to FakeTgApi for the given Telegram method and returns the HTTP status code.
+    /// Use this to verify that a method error mock is actually active before relying on it in a test.
+    member _.CheckMethodErrorActive(methodName: string) =
+        task {
+            use content = new StringContent("{}", Encoding.UTF8, "application/json")
+            let! resp = fakeHttp.PostAsync($"/bottest/{methodName}", content)
+            return resp.StatusCode
         }
 
     member _.SetAzureOcrResponse(status: int, body: string) =
