@@ -80,12 +80,3 @@ type UserFeedbackRow =
       telegram_message_id: Nullable<int>
       github_issue_number: Nullable<int>
       created_at: DateTime }
-
-/// Used by FakeTgApi test endpoints (serialize minimal info)
-[<CLIMutable>]
-type ApiCallLog =
-    { Method: string
-      RequestBody: string
-      Timestamp: DateTime
-      CorrelationId: string | null }
-
