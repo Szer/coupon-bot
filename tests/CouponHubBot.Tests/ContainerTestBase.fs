@@ -253,8 +253,8 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
                             try
                                 do! buildTask()
                             with ex ->
-                                let errorFile = Path.Combine(solutionDirPath, "test-artifacts", fixtureName, $"{name}-build-error.txt")
-                                Directory.CreateDirectory(Path.GetDirectoryName(errorFile)) |> ignore
+                                let errorFile = Path.Combine(testArtifactsDir, $"{name}-build-error.txt")
+                                Directory.CreateDirectory(testArtifactsDir) |> ignore
                                 let msg = $"Docker image build failed for {name}\n\nException: {ex.GetType().FullName}\nMessage: {ex.Message}\n\nFull:\n{ex}"
                                 File.WriteAllText(errorFile, msg)
                                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
