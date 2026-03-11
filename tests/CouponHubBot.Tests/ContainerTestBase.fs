@@ -248,11 +248,23 @@ VALUES (100, 'seed-photo', 10.00, 50.00, @expires_at::date, 'available');
                     do! seedDb ()
 
                     // build images & start fake + bot
-                    let fakeImageTask = fakeImage.CreateAsync()
+                    let buildImage (name: string) (buildTask: unit -> Task) =
+                        task {
+                            try
+                                do! buildTask()
+                            with ex ->
+                                let errorFile = Path.Combine(testArtifactsDir, $"{name}-build-error.txt")
+                                Directory.CreateDirectory(testArtifactsDir) |> ignore
+                                let msg = $"Docker image build failed for {name}\n\nException: {ex.GetType().FullName}\nMessage: {ex.Message}\n\nFull:\n{ex}"
+                                File.WriteAllText(errorFile, msg)
+                                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                        } :> Task
+
+                    let fakeImageTask = buildImage "fake-tg-api" (fun () -> fakeImage.CreateAsync())
                     let fakeAzureImageTask =
-                        if ocrEnabled then fakeAzureImage.CreateAsync() else Task.CompletedTask
-                    let botImageTask = botImage.CreateAsync()
-                    do! Task.WhenAll(fakeImageTask, fakeAzureImageTask, botImageTask)
+                        if ocrEnabled then buildImage "fake-azure-ocr" (fun () -> fakeAzureImage.CreateAsync()) else Task.CompletedTask
+                    let botImageTask = buildImage "bot" (fun () -> botImage.CreateAsync())
+                    do! Task.WhenAll([| fakeImageTask; fakeAzureImageTask; botImageTask |])
                     
                     do! fakeContainer.StartAsync()
                     if ocrEnabled then
