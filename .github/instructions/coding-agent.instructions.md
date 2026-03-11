@@ -22,7 +22,8 @@ excludeAgent: "code-review"
 - **Deploy**: `.github/workflows/deploy.yml` — tests → Flyway migrations → GHCR push → deployment verification
 - **Test results**: `.github/workflows/test-results.yml` — publishes test report after CI
 - **Project**: `.github/workflows/project.yml` — daily project assessment, gathers metrics, creates orchestration issue for Copilot
-- **Product**: `.github/workflows/product.yml` — daily product analysis + feedback triage, gathers usage data
+- **Product**: `.github/workflows/product.yml` — daily product analysis, gathers usage data
+- **Feedback triage**: `.github/workflows/feedback-triage.yml` — assigns product agent when `user-feedback` label is applied
 - **Agent env**: `.github/workflows/copilot-setup-steps.yml` — sets up .NET SDK, VPN, dependencies
 
 ## Agent Roles and PR Authority

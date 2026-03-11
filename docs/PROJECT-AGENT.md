@@ -65,7 +65,7 @@ Additionally, a **guard workflow** (`guard-agent-prs.yml`) provides a hard platf
 | Agent | Role | Triggered by |
 |-------|------|-------------|
 | `project` | Project manager — analyze codebase, manage technical backlog | Daily workflow (`project.yml`) |
-| `product` | Product manager — triage feedback, analyze usage, create refined tickets | Daily workflow (`product.yml`) + feedback trigger |
+| `product` | Product manager — triage feedback, analyze usage, create refined tickets | Daily workflow (`product.yml`) + feedback trigger (`feedback-triage.yml`) |
 | `sre` | SRE — debug production incidents, rollback, escalate code fixes | Deploy failure (`deploy.yml` notify-failure job) |
 | Default coding agent | Write code, fix bugs, create PRs | Auto-fix workflow, manual assignment, SRE escalation |
 
