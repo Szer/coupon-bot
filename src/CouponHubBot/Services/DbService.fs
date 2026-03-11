@@ -170,20 +170,35 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_tex
 RETURNING *;
 """
 
-                        let! coupon =
-                            conn.QuerySingleAsync<Coupon>(
-                                insertSql,
-                                {| owner_id = ownerId
-                                   photo_file_id = photoFileId
-                                   value = value
-                                   min_check = minCheck
-                                   expires_at = expiresAt
-                                   barcode_text = barcodeText |},
-                                tx
-                            )
-                        do! insertEvent conn tx coupon.id ownerId "added"
-                        do! tx.CommitAsync()
-                        return AddCouponResult.Added coupon
+                        try
+                            let! coupon =
+                                conn.QuerySingleAsync<Coupon>(
+                                    insertSql,
+                                    {| owner_id = ownerId
+                                       photo_file_id = photoFileId
+                                       value = value
+                                       min_check = minCheck
+                                       expires_at = expiresAt
+                                       barcode_text = barcodeText |},
+                                    tx
+                                )
+                            do! insertEvent conn tx coupon.id ownerId "added"
+                            do! tx.CommitAsync()
+                            return AddCouponResult.Added coupon
+                        with
+                        | :? PostgresException as pgEx
+                            when pgEx.SqlState = "23505"
+                                 && pgEx.ConstraintName = "coupon_barcode_active_uniq" ->
+                            do! tx.RollbackAsync()
+                            // Race condition: another transaction inserted the same barcode concurrently.
+                            // Look up the winning coupon to return its ID.
+                            let! existingId =
+                                conn.QuerySingleOrDefaultAsync<int>(
+                                    dupBarcodeSql,
+                                    {| barcode_text = barcodeText
+                                       today = todayUtc |}
+                                )
+                            return AddCouponResult.DuplicateBarcode existingId
         }
 
     member _.GetAvailableCoupons() =
