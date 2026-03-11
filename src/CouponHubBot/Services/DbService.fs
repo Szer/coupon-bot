@@ -191,14 +191,47 @@ RETURNING *;
                                  && pgEx.ConstraintName = "coupon_barcode_active_uniq" ->
                             do! tx.RollbackAsync()
                             // Race condition: another transaction inserted the same barcode concurrently.
+                            // Look up the winning coupon by the exact constraint key to return its ID.
+                            //language=postgresql
+                            let dupBarcodeByKeySql =
+                                """
+SELECT id
+FROM coupon
+WHERE barcode_text = @barcode_text
+  AND expires_at = @expires_at
+  AND status IN ('available', 'taken')
+ORDER BY id
+LIMIT 1;
+"""
+                            let! existingId =
+                                conn.QuerySingleOrDefaultAsync<int>(
+                                    dupBarcodeByKeySql,
+                                    {| barcode_text = barcodeText
+                                       expires_at = expiresAt |}
+                                )
+                            if existingId = 0 then
+                                // The winning row was not found — the concurrent transaction may have
+                                // rolled back by the time we looked. Re-raise to avoid masking the error.
+                                return raise pgEx
+                            else
+                                return AddCouponResult.DuplicateBarcode existingId
+                        | :? PostgresException as pgEx
+                            when pgEx.SqlState = "23505"
+                                 && pgEx.ConstraintName = "coupon_photo_file_id_uniq" ->
+                            do! tx.RollbackAsync()
+                            // Race condition: another transaction inserted the same photo concurrently.
                             // Look up the winning coupon to return its ID.
                             let! existingId =
                                 conn.QuerySingleOrDefaultAsync<int>(
-                                    dupBarcodeSql,
-                                    {| barcode_text = barcodeText
-                                       today = todayUtc |}
+                                    dupPhotoSql,
+                                    {| photo_file_id = photoFileId |}
                                 )
-                            return AddCouponResult.DuplicateBarcode existingId
+                            if existingId = 0 then
+                                // The winning row was not found — the concurrent transaction may have
+                                // rolled back by the time we looked. Re-raise to avoid masking the error.
+                                return raise pgEx
+                            else
+                                return AddCouponResult.DuplicatePhoto existingId
         }
 
     member _.GetAvailableCoupons() =
