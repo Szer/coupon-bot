@@ -22,6 +22,7 @@ jobs:
 
           The branch has been deleted. If the agent identified real issues, they should exist as GitHub issues in the backlog.
       run: |
+        set -euo pipefail
         REPO="${{ github.repository }}"
         COPILOT_USER_ID="198982749"
 
@@ -79,6 +80,11 @@ jobs:
             RUN_BRANCH=$(echo "$RUN" | jq -r '.head_branch')
             RUN_NAME=$(echo "$RUN" | jq -r '.name')
             RUN_EVENT=$(echo "$RUN" | jq -r '.event')
+
+            # Only approve pull_request runs (skip schedule, workflow_dispatch, etc.)
+            if [ "$RUN_EVENT" != "pull_request" ]; then
+              continue
+            fi
 
             # Approve runs that belong to open Copilot PR branches
             IS_COPILOT_BRANCH=$(echo "$OPEN_COPILOT_BRANCHES" | jq --arg b "$RUN_BRANCH" 'any(. == $b)')
