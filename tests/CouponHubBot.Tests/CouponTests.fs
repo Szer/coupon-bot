@@ -137,6 +137,56 @@ VALUES (99901, 'constraint-test-photo-2', 10, 50, '2026-06-01', 'BARCODE-CONSTRA
         }
 
     [<Fact>]
+    let ``DB constraint coupon_photo_file_id_uniq enforces photo uniqueness`` () =
+        task {
+            do! fixture.TruncateCoupons()
+
+            // Insert a seed user row needed for the FK on coupon.owner_id.
+            let! _ =
+                fixture.Execute(
+                    """
+INSERT INTO "user" (id, username, first_name, last_name, updated_at)
+VALUES (99902, 'photo_constraint_user', 'Test', NULL, now())
+ON CONFLICT (id) DO NOTHING
+""",
+                    null
+                )
+
+            // Insert a coupon with a known photo_file_id.
+            let! _ =
+                fixture.Execute(
+                    """
+INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (99902, 'photo-constraint-test-file-id', 10, 50, '2026-06-01', 'available')
+""",
+                    null
+                )
+
+            // Attempting to insert a second coupon with the same photo_file_id
+            // must raise a unique-violation exception from coupon_photo_file_id_uniq.
+            let mutable threw = false
+            try
+                let! _ =
+                    fixture.Execute(
+                        """
+INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (99902, 'photo-constraint-test-file-id', 15, 75, '2026-07-01', 'available')
+""",
+                        null
+                    )
+                ()
+            with
+            | :? PostgresException as pgEx
+                when pgEx.SqlState = "23505"
+                     && pgEx.ConstraintName = "coupon_photo_file_id_uniq" ->
+                threw <- true
+            | :? PostgresException as pgEx when pgEx.SqlState = "23505" ->
+                Assert.Fail($"Expected unique violation from 'coupon_photo_file_id_uniq', but got '{pgEx.ConstraintName}'")
+
+            Assert.True(threw, "Expected PostgresException 23505 from coupon_photo_file_id_uniq")
+        }
+
+    [<Fact>]
     let ``User can add coupon and group gets notification`` () =
         task {
             do! fixture.ClearFakeCalls()
