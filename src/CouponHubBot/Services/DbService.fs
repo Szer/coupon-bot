@@ -634,10 +634,21 @@ SET created_at = EXCLUDED.created_at;
             return ()
         }
 
-    /// Deletes pending flag and returns true if it existed.
+    /// Deletes pending flag and returns true if it existed and was not expired.
     member _.TryConsumePendingFeedback(userId: int64) =
         task {
             use! conn = openConn()
+            let nowUtc = utcNow ()
+            // Expire after 24 hours of inactivity.
+            //language=postgresql
+            let expireSql =
+                """
+DELETE FROM pending_feedback
+WHERE user_id = @user_id
+  AND created_at < (@now_utc - interval '24 hours');
+"""
+            let! _ = conn.ExecuteAsync(expireSql, {| user_id = userId; now_utc = nowUtc |})
+
             //language=postgresql
             let sql =
                 """
