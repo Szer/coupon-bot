@@ -137,53 +137,57 @@ VALUES (99901, 'constraint-test-photo-2', 10, 50, '2026-06-01', 'BARCODE-CONSTRA
         }
 
     [<Fact>]
-    let ``DB constraint coupon_photo_file_id_uniq enforces photo uniqueness`` () =
+    let ``Concurrent adds with same photo_file_id: exactly one succeeds and all get a response`` () =
         task {
+            do! fixture.ClearFakeCalls()
             do! fixture.TruncateCoupons()
 
-            // Insert a seed user row needed for the FK on coupon.owner_id.
-            let! _ =
-                fixture.Execute(
-                    """
-INSERT INTO "user" (id, username, first_name, last_name, updated_at)
-VALUES (99902, 'photo_constraint_user', 'Test', NULL, now())
-ON CONFLICT (id) DO NOTHING
-""",
-                    null
-                )
+            let user = Tg.user(id = 912L, username = "concurrent_photo", firstName = "Concurrent")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
 
-            // Insert a coupon with a known photo_file_id.
-            let! _ =
-                fixture.Execute(
-                    """
-INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, status)
-VALUES (99902, 'photo-constraint-test-file-id', 10, 50, '2026-06-01', 'available')
-""",
-                    null
-                )
+            let fileId = "concurrent-photo-race-1"
+            let concurrentRequestCount = 10
 
-            // Attempting to insert a second coupon with the same photo_file_id
-            // must raise a unique-violation exception from coupon_photo_file_id_uniq.
-            let mutable threw = false
-            try
-                let! _ =
-                    fixture.Execute(
-                        """
-INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, status)
-VALUES (99902, 'photo-constraint-test-file-id', 15, 75, '2026-07-01', 'available')
-""",
-                        null
-                    )
-                ()
-            with
-            | :? PostgresException as pgEx
-                when pgEx.SqlState = "23505"
-                     && pgEx.ConstraintName = "coupon_photo_file_id_uniq" ->
-                threw <- true
-            | :? PostgresException as pgEx when pgEx.SqlState = "23505" ->
-                Assert.Fail($"Expected unique violation from 'coupon_photo_file_id_uniq', but got '{pgEx.ConstraintName}'")
+            // Fire many concurrent add requests with the same photo_file_id.
+            // Under ReadCommitted, some will both pass the SELECT dup-check and race to INSERT,
+            // hitting coupon_photo_file_id_uniq. The handler must catch that and return DuplicatePhoto
+            // so the user always gets a message — never a silent failure.
+            let tasks =
+                Array.init concurrentRequestCount (fun _ ->
+                    fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", user, fileId = fileId))
+                    :> Task)
 
-            Assert.True(threw, "Expected PostgresException 23505 from coupon_photo_file_id_uniq")
+            do! Task.WhenAll tasks
+
+            // Exactly one coupon must have been inserted.
+            let! count = getCouponCount ()
+            Assert.Equal(1L, count)
+
+            // Every request must have received a user-facing message — no silent failures.
+            // Valid outcomes are: success confirmation or duplicate-photo error.
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let isSuccessMsg (call: FakeCall) =
+                match FakeCallHelpers.parseCallBody call.Body with
+                | Some parsed when parsed.ChatId = Some user.Id ->
+                    match parsed.Text with
+                    | Some text -> text.Contains("Добавил купон")
+                    | _ -> false
+                | _ -> false
+
+            let isDupMsg (call: FakeCall) =
+                match FakeCallHelpers.parseCallBody call.Body with
+                | Some parsed when parsed.ChatId = Some user.Id ->
+                    match parsed.Text with
+                    | Some text -> text.Contains("уже был добавлен") || text.Contains("та же фотография")
+                    | _ -> false
+                | _ -> false
+
+            let successCount = calls |> Array.filter isSuccessMsg |> Array.length
+            let dupCount = calls |> Array.filter isDupMsg |> Array.length
+
+            Assert.Equal(1, successCount)
+            Assert.Equal(concurrentRequestCount - 1, dupCount)
         }
 
     [<Fact>]
