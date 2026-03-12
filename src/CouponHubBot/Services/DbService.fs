@@ -2,6 +2,7 @@ namespace CouponHubBot.Services
 
 open System
 open System.Data
+open System.Runtime.ExceptionServices
 open System.Threading.Tasks
 open Dapper
 open Npgsql
@@ -170,20 +171,70 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_tex
 RETURNING *;
 """
 
-                        let! coupon =
-                            conn.QuerySingleAsync<Coupon>(
-                                insertSql,
-                                {| owner_id = ownerId
-                                   photo_file_id = photoFileId
-                                   value = value
-                                   min_check = minCheck
-                                   expires_at = expiresAt
-                                   barcode_text = barcodeText |},
-                                tx
-                            )
-                        do! insertEvent conn tx coupon.id ownerId "added"
-                        do! tx.CommitAsync()
-                        return AddCouponResult.Added coupon
+                        try
+                            let! coupon =
+                                conn.QuerySingleAsync<Coupon>(
+                                    insertSql,
+                                    {| owner_id = ownerId
+                                       photo_file_id = photoFileId
+                                       value = value
+                                       min_check = minCheck
+                                       expires_at = expiresAt
+                                       barcode_text = barcodeText |},
+                                    tx
+                                )
+                            do! insertEvent conn tx coupon.id ownerId "added"
+                            do! tx.CommitAsync()
+                            return AddCouponResult.Added coupon
+                        with
+                        | :? PostgresException as pgEx
+                            when pgEx.SqlState = "23505"
+                                 && pgEx.ConstraintName = "coupon_barcode_active_uniq" ->
+                            do! tx.RollbackAsync()
+                            // Race condition: another transaction inserted the same barcode concurrently.
+                            // Look up the winning coupon by the exact constraint key to return its ID.
+                            //language=postgresql
+                            let dupBarcodeByKeySql =
+                                """
+SELECT id
+FROM coupon
+WHERE barcode_text = @barcode_text
+  AND expires_at = @expires_at
+  AND status IN ('available', 'taken')
+ORDER BY id
+LIMIT 1;
+"""
+                            let! existingId =
+                                conn.QuerySingleOrDefaultAsync<int>(
+                                    dupBarcodeByKeySql,
+                                    {| barcode_text = barcodeText
+                                       expires_at = expiresAt |}
+                                )
+                            if existingId = 0 then
+                                // The winning row was not found — the concurrent transaction may have
+                                // rolled back by the time we looked. Re-raise preserving the stack trace.
+                                ExceptionDispatchInfo.Throw pgEx
+                                return Unchecked.defaultof<AddCouponResult>
+                            else
+                                return AddCouponResult.DuplicateBarcode existingId
+                        | :? PostgresException as pgEx
+                            when pgEx.SqlState = "23505"
+                                 && pgEx.ConstraintName = "coupon_photo_file_id_uniq" ->
+                            do! tx.RollbackAsync()
+                            // Race condition: another transaction inserted the same photo concurrently.
+                            // Look up the winning coupon to return its ID.
+                            let! existingId =
+                                conn.QuerySingleOrDefaultAsync<int>(
+                                    dupPhotoSql,
+                                    {| photo_file_id = photoFileId |}
+                                )
+                            if existingId = 0 then
+                                // The winning row was not found — the concurrent transaction may have
+                                // rolled back by the time we looked. Re-raise preserving the stack trace.
+                                ExceptionDispatchInfo.Throw pgEx
+                                return Unchecked.defaultof<AddCouponResult>
+                            else
+                                return AddCouponResult.DuplicatePhoto existingId
         }
 
     member _.GetAvailableCoupons() =

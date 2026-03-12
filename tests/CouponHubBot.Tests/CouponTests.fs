@@ -87,6 +87,56 @@ type CouponTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
+    let ``DB constraint coupon_barcode_active_uniq enforces barcode uniqueness among active coupons`` () =
+        task {
+            do! fixture.TruncateCoupons()
+
+            // Insert a seed user row needed for the FK on coupon.owner_id.
+            let! _ =
+                fixture.Execute(
+                    """
+INSERT INTO "user" (id, username, first_name, last_name, updated_at)
+VALUES (99901, 'constraint_test_user', 'Test', NULL, now())
+ON CONFLICT (id) DO NOTHING
+""",
+                    null
+                )
+
+            // Insert a coupon with a known barcode.
+            let! _ =
+                fixture.Execute(
+                    """
+INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, barcode_text, status)
+VALUES (99901, 'constraint-test-photo-1', 10, 50, '2026-06-01', 'BARCODE-CONSTRAINT-TEST', 'available')
+""",
+                    null
+                )
+
+            // Attempting to insert a second active coupon with the same barcode and expires_at
+            // must raise a unique-violation exception from coupon_barcode_active_uniq.
+            let mutable threw = false
+            try
+                let! _ =
+                    fixture.Execute(
+                        """
+INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, barcode_text, status)
+VALUES (99901, 'constraint-test-photo-2', 10, 50, '2026-06-01', 'BARCODE-CONSTRAINT-TEST', 'available')
+""",
+                        null
+                    )
+                ()
+            with
+            | :? PostgresException as pgEx
+                when pgEx.SqlState = "23505"
+                     && pgEx.ConstraintName = "coupon_barcode_active_uniq" ->
+                threw <- true
+            | :? PostgresException as pgEx when pgEx.SqlState = "23505" ->
+                Assert.Fail($"Expected unique violation from 'coupon_barcode_active_uniq', but got '{pgEx.ConstraintName}'")
+
+            Assert.True(threw, "Expected PostgresException 23505 from coupon_barcode_active_uniq")
+        }
+
+    [<Fact>]
     let ``User can add coupon and group gets notification`` () =
         task {
             do! fixture.ClearFakeCalls()
