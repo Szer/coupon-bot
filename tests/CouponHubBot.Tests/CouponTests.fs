@@ -126,8 +126,12 @@ VALUES (99901, 'constraint-test-photo-2', 10, 50, '2026-06-01', 'BARCODE-CONSTRA
                     )
                 ()
             with
-            | :? PostgresException as pgEx when pgEx.SqlState = "23505" ->
+            | :? PostgresException as pgEx
+                when pgEx.SqlState = "23505"
+                     && pgEx.ConstraintName = "coupon_barcode_active_uniq" ->
                 threw <- true
+            | :? PostgresException as pgEx when pgEx.SqlState = "23505" ->
+                Assert.Fail($"Expected unique violation from 'coupon_barcode_active_uniq', but got '{pgEx.ConstraintName}'")
 
             Assert.True(threw, "Expected PostgresException 23505 from coupon_barcode_active_uniq")
         }

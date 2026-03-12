@@ -2,6 +2,7 @@ namespace CouponHubBot.Services
 
 open System
 open System.Data
+open System.Runtime.ExceptionServices
 open System.Threading.Tasks
 open Dapper
 open Npgsql
@@ -211,8 +212,9 @@ LIMIT 1;
                                 )
                             if existingId = 0 then
                                 // The winning row was not found — the concurrent transaction may have
-                                // rolled back by the time we looked. Re-raise to avoid masking the error.
-                                return raise pgEx
+                                // rolled back by the time we looked. Re-raise preserving the stack trace.
+                                ExceptionDispatchInfo.Throw pgEx
+                                return Unchecked.defaultof<AddCouponResult>
                             else
                                 return AddCouponResult.DuplicateBarcode existingId
                         | :? PostgresException as pgEx
@@ -228,8 +230,9 @@ LIMIT 1;
                                 )
                             if existingId = 0 then
                                 // The winning row was not found — the concurrent transaction may have
-                                // rolled back by the time we looked. Re-raise to avoid masking the error.
-                                return raise pgEx
+                                // rolled back by the time we looked. Re-raise preserving the stack trace.
+                                ExceptionDispatchInfo.Throw pgEx
+                                return Unchecked.defaultof<AddCouponResult>
                             else
                                 return AddCouponResult.DuplicatePhoto existingId
         }
