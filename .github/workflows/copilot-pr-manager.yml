@@ -1,0 +1,95 @@
+name: Copilot PR Manager
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manage-copilot-prs:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Manage Copilot PRs
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_PR_MANAGER_TOKEN }}
+        GUARD_COMMENT: |
+          🛑 **Auto-closed by Copilot PR Manager.**
+
+          Non-coding agents (project, product) must not create PRs. Their only deliverables are GitHub issues and comments. This PR was likely created by the Copilot platform after the agent pushed commits.
+
+          The branch has been deleted. If the agent identified real issues, they should exist as GitHub issues in the backlog.
+      run: |
+        REPO="${{ github.repository }}"
+        COPILOT_USER_ID="198982749"
+
+        echo "::group::Scanning for Copilot PRs"
+
+        # List open PRs by Copilot
+        COPILOT_PRS=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" \
+          --jq "[.[] | select(.user.id == ${COPILOT_USER_ID})]")
+
+        PR_COUNT=$(echo "$COPILOT_PRS" | jq 'length')
+        echo "Found ${PR_COUNT} open Copilot PR(s)"
+
+        if [ "$PR_COUNT" -eq 0 ]; then
+          echo "No Copilot PRs to process."
+          echo "::endgroup::"
+        else
+          echo "$COPILOT_PRS" | jq -r '.[] | "#\(.number) [\(.head.ref)] \(.title)"'
+          echo "::endgroup::"
+
+          # Process each Copilot PR
+          echo "$COPILOT_PRS" | jq -c '.[]' | while read -r PR; do
+            PR_NUMBER=$(echo "$PR" | jq -r '.number')
+            BRANCH=$(echo "$PR" | jq -r '.head.ref')
+            BODY=$(echo "$PR" | jq -r '.body // ""')
+
+            # Detect non-coding agent PRs by checking for "Custom agent used: project/product"
+            if echo "$BODY" | grep -qiP 'Custom agent used:\s*(project|product)'; then
+              echo "🛑 PR #${PR_NUMBER} is from a non-coding agent (branch: ${BRANCH}) — closing."
+              gh pr close "$PR_NUMBER" \
+                --repo "$REPO" \
+                --comment "$GUARD_COMMENT" \
+                --delete-branch \
+                || echo "WARNING: Failed to close PR #${PR_NUMBER}"
+            else
+              echo "✅ PR #${PR_NUMBER} is from coding agent (branch: ${BRANCH}) — keeping."
+            fi
+          done
+        fi
+
+        # Approve pending workflow runs for Copilot PRs
+        echo "::group::Approving pending workflow runs"
+
+        ACTION_REQUIRED=$(gh api "repos/${REPO}/actions/runs?status=action_required&per_page=100" \
+          --jq '.workflow_runs')
+        PENDING_COUNT=$(echo "$ACTION_REQUIRED" | jq 'length')
+        echo "Found ${PENDING_COUNT} action_required workflow run(s)"
+
+        if [ "$PENDING_COUNT" -gt 0 ]; then
+          # Get branches of remaining open Copilot PRs (after closing non-coding ones)
+          OPEN_COPILOT_BRANCHES=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" \
+            --jq "[.[] | select(.user.id == ${COPILOT_USER_ID}) | .head.ref]")
+
+          echo "$ACTION_REQUIRED" | jq -c '.[]' | while read -r RUN; do
+            RUN_ID=$(echo "$RUN" | jq -r '.id')
+            RUN_BRANCH=$(echo "$RUN" | jq -r '.head_branch')
+            RUN_NAME=$(echo "$RUN" | jq -r '.name')
+            RUN_EVENT=$(echo "$RUN" | jq -r '.event')
+
+            # Approve runs that belong to open Copilot PR branches
+            IS_COPILOT_BRANCH=$(echo "$OPEN_COPILOT_BRANCHES" | jq --arg b "$RUN_BRANCH" 'any(. == $b)')
+
+            if [ "$IS_COPILOT_BRANCH" = "true" ]; then
+              echo "Approving run ${RUN_ID} (${RUN_NAME}) for branch ${RUN_BRANCH}..."
+              gh api "repos/${REPO}/actions/runs/${RUN_ID}/approve" --method POST \
+                || echo "WARNING: Failed to approve run ${RUN_ID}"
+            fi
+          done
+        fi
+
+        echo "::endgroup::"
+        echo "Done."

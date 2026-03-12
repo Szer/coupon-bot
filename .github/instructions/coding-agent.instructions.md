@@ -24,6 +24,7 @@ excludeAgent: "code-review"
 - **Project**: `.github/workflows/project.yml` — daily project assessment, gathers metrics, creates orchestration issue for Copilot
 - **Product**: `.github/workflows/product.yml` — daily product analysis, gathers usage data
 - **Feedback triage**: `.github/workflows/feedback-triage.yml` — assigns product agent when `user-feedback` label is applied
+- **Copilot PR Manager**: `.github/workflows/copilot-pr-manager.yml` — cron (every 5 min): auto-closes non-coding agent PRs, auto-approves pending workflow runs for Copilot PRs
 - **Agent env**: `.github/workflows/copilot-setup-steps.yml` — sets up .NET SDK, VPN, dependencies
 
 ## Agent Roles and PR Authority

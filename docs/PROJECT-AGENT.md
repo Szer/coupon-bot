@@ -42,7 +42,7 @@ The project agent is defined in `.github/agents/project.agent.md`. Key propertie
 
 | Property | Value | Why |
 |----------|-------|-----|
-| `tools` | `["read", "search", "execute"]` | No `edit` tool; file modifications are prevented by **command allowlist** (prompt-level) and **guard workflow** (platform-level). `execute` is restricted to read-only and issue management commands (see below). |
+| `tools` | `["read", "search", "execute"]` | No `edit` tool; file modifications are prevented by **command allowlist** (prompt-level) and **Copilot PR Manager** (platform-level). `execute` is restricted to read-only and issue management commands (see below). |
 | `name` | `project` | Used in REST API `agent_assignment.custom_agent` field |
 | Prompt | Analytical, open-ended | Agent reads code and reasons about it rather than following a grep checklist |
 
@@ -58,7 +58,7 @@ Non-coding agents (project, product) have access to the `execute` tool but are r
 
 Everything else is **FORBIDDEN** — including `git add/commit/push`, `sed`, `gh pr create`, `dotnet build/test`, and any file-modifying command.
 
-Additionally, a **guard workflow** (`guard-agent-prs.yml`) provides a hard platform-level boundary: any PR created from a non-coding agent branch pattern is automatically closed and its branch deleted.
+Additionally, **Copilot PR Manager** (`copilot-pr-manager.yml`) provides a hard platform-level boundary: a cron workflow runs every 5 minutes and auto-closes PRs created by non-coding agents by detecting `Custom agent used: project` or `Custom agent used: product` in the PR body. It also auto-approves pending workflow runs for legitimate Copilot coding agent PRs.
 
 ### All Custom Agents
 
@@ -244,11 +244,11 @@ project (daily 04:37)            auto-fix (hourly :17)
                                                         detects fix, closes issue
 ```
 
-## Guard Workflow
+## Copilot PR Manager
 
-The guard workflow (`guard-agent-prs.yml`) is a safety net that auto-closes PRs created by non-coding agents. It triggers on `pull_request: [opened, reopened]` and checks if:
+The Copilot PR Manager (`copilot-pr-manager.yml`) is a scheduled workflow (cron every 5 minutes) that replaces the old event-driven guard workflow. It performs two functions:
 
-1. The PR author is `copilot-swe-agent[bot]` (checked via `github.event.pull_request.user.login`)
-2. The branch name matches a non-coding agent pattern (e.g., `copilot/daily-project-assessment-*`, `copilot/product-analysis-*`)
+1. **Close non-coding agent PRs**: Lists all open PRs authored by `Copilot` (user ID `198982749`) and checks the PR body for `Custom agent used: project` or `Custom agent used: product`. If found, the PR is immediately closed with a comment and the branch deleted.
+2. **Approve pending workflow runs**: Lists `action_required` workflow runs and approves those belonging to open Copilot PR branches. This solves the problem where Copilot-created PRs always require manual workflow approval (GitHub treats them as "first-time contributors").
 
-If both conditions are true, the PR is immediately closed and the branch deleted. This catches PRs whose branches match known non-coding agent patterns — even if the agent ignores its command allowlist and pushes code, the resulting PR will be auto-closed as long as the branch name follows the platform's naming convention.
+The cron approach is necessary because event-driven workflows (`pull_request: opened`) themselves require manual approval for Copilot PRs — creating a chicken-and-egg problem. A scheduled workflow runs as the repo owner and requires no approval. Uses a PAT (`COPILOT_PR_MANAGER_TOKEN` secret) since `GITHUB_TOKEN` cannot approve other workflow runs.
