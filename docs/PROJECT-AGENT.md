@@ -58,7 +58,7 @@ Non-coding agents (project, product) have access to the `execute` tool but are r
 
 Everything else is **FORBIDDEN** — including `git add/commit/push`, `sed`, `gh pr create`, `dotnet build/test`, and any file-modifying command.
 
-Additionally, **Copilot PR Manager** (`copilot-pr-manager.yml`) provides a hard platform-level boundary: a cron workflow runs every 5 minutes and auto-closes PRs created by non-coding agents by detecting `Custom agent used: project` or `Custom agent used: product` in the PR body. It also auto-approves pending workflow runs for legitimate Copilot coding agent PRs.
+Additionally, **Copilot PR Manager** (`copilot-pr-manager.yml`) provides a hard platform-level boundary when the `COPILOT_PR_MANAGER_TOKEN` secret is configured: a cron workflow runs every 5 minutes and auto-closes PRs created by non-coding agents by detecting `Custom agent used: project` or `Custom agent used: product` in the PR body. It also auto-approves pending workflow runs for legitimate Copilot coding agent PRs. If the secret is not configured, the workflow exits early with a warning and no protection is active.
 
 ### All Custom Agents
 
