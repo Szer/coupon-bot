@@ -70,9 +70,10 @@ jobs:
 
         # Re-run pending workflow runs for Copilot PRs
         # The /approve API is fork-only. For first-time contributor runs, we re-run
-        # via PAT so the triggering_actor becomes the repo owner (trusted).
+        # via PAT so the triggering_actor becomes the PAT owner (trusted).
         echo "::group::Re-running pending workflow runs"
 
+        NOW_EPOCH=$(date -u +%s)
         CUTOFF=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
           || date -u -v-30M +%Y-%m-%dT%H:%M:%SZ)
 
@@ -89,12 +90,17 @@ jobs:
           PROCESSED=0
           SKIPPED=0
 
-          echo "$ACTION_REQUIRED" | jq -c '.[]' | while read -r RUN; do
+          while read -r RUN; do
             RUN_ID=$(echo "$RUN" | jq -r '.id')
             RUN_BRANCH=$(echo "$RUN" | jq -r '.head_branch')
             RUN_NAME=$(echo "$RUN" | jq -r '.name')
             RUN_EVENT=$(echo "$RUN" | jq -r '.event')
             RUN_CREATED=$(echo "$RUN" | jq -r '.created_at')
+
+            # Compute age in minutes
+            RUN_EPOCH=$(date -u -d "$RUN_CREATED" +%s 2>/dev/null \
+              || date -u -jf "%Y-%m-%dT%H:%M:%SZ" "$RUN_CREATED" +%s)
+            AGE_MIN=$(( (NOW_EPOCH - RUN_EPOCH) / 60 ))
 
             # Only process pull_request runs
             if [ "$RUN_EVENT" != "pull_request" ]; then
@@ -103,7 +109,7 @@ jobs:
 
             # Skip stale runs (older than 30 minutes)
             if [[ "$RUN_CREATED" < "$CUTOFF" ]]; then
-              echo "⏭️ Skipping stale run ${RUN_ID} (${RUN_NAME}) created ${RUN_CREATED}"
+              echo "⏭️ Skipping stale run ${RUN_ID} (${RUN_NAME}) — ${AGE_MIN}m old"
               SKIPPED=$((SKIPPED + 1))
               continue
             fi
@@ -112,12 +118,12 @@ jobs:
             IS_COPILOT_BRANCH=$(echo "$OPEN_COPILOT_BRANCHES" | jq --arg b "$RUN_BRANCH" 'any(. == $b)')
 
             if [ "$IS_COPILOT_BRANCH" = "true" ]; then
-              echo "🔄 Re-running ${RUN_ID} (${RUN_NAME}) for branch ${RUN_BRANCH} (created ${RUN_CREATED})..."
+              echo "🔄 Re-running ${RUN_ID} (${RUN_NAME}) for branch ${RUN_BRANCH} — ${AGE_MIN}m old..."
               gh api "repos/${REPO}/actions/runs/${RUN_ID}/rerun" --method POST \
                 || echo "WARNING: Failed to re-run ${RUN_ID}"
               PROCESSED=$((PROCESSED + 1))
             fi
-          done
+          done < <(echo "$ACTION_REQUIRED" | jq -c '.[]')
 
           echo "Processed: ${PROCESSED}, Skipped (stale): ${SKIPPED}"
         fi
