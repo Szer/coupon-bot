@@ -89,6 +89,7 @@ jobs:
 
           PROCESSED=0
           SKIPPED=0
+          FAILED=0
 
           while read -r RUN; do
             RUN_ID=$(echo "$RUN" | jq -r '.id')
@@ -104,6 +105,7 @@ jobs:
 
             # Only process pull_request runs
             if [ "$RUN_EVENT" != "pull_request" ]; then
+              echo "⏭️ Skipping run ${RUN_ID} (${RUN_NAME}) — event '${RUN_EVENT}', not pull_request"
               continue
             fi
 
@@ -119,13 +121,18 @@ jobs:
 
             if [ "$IS_COPILOT_BRANCH" = "true" ]; then
               echo "🔄 Re-running ${RUN_ID} (${RUN_NAME}) for branch ${RUN_BRANCH} — ${AGE_MIN}m old..."
-              gh api "repos/${REPO}/actions/runs/${RUN_ID}/rerun" --method POST \
-                || echo "WARNING: Failed to re-run ${RUN_ID}"
-              PROCESSED=$((PROCESSED + 1))
+              if gh api "repos/${REPO}/actions/runs/${RUN_ID}/rerun" --method POST 2>&1; then
+                PROCESSED=$((PROCESSED + 1))
+              else
+                FAILED=$((FAILED + 1))
+                echo "WARNING: Failed to re-run ${RUN_ID}"
+              fi
+            else
+              echo "⏭️ Skipping run ${RUN_ID} (${RUN_NAME}) — branch '${RUN_BRANCH}' not an open Copilot PR"
             fi
           done < <(echo "$ACTION_REQUIRED" | jq -c '.[]')
 
-          echo "Processed: ${PROCESSED}, Skipped (stale): ${SKIPPED}"
+          echo "Processed: ${PROCESSED}, Skipped (stale): ${SKIPPED}, Failed: ${FAILED}"
         fi
 
         echo "::endgroup::"
