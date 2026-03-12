@@ -79,7 +79,10 @@ jobs:
         ONE_WEEK_AGO=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
           || date -u -v-7d +%Y-%m-%dT%H:%M:%SZ)
 
-        ACTION_REQUIRED=$(gh api "repos/${REPO}/actions/runs?status=action_required&per_page=100&created=>=${ONE_WEEK_AGO}" \
+        ACTION_REQUIRED=$(gh api "repos/${REPO}/actions/runs" \
+          -f status=action_required \
+          -f per_page=100 \
+          -f created=">=${ONE_WEEK_AGO}" \
           --jq '.workflow_runs')
         TOTAL_COUNT=$(echo "$ACTION_REQUIRED" | jq 'length')
         echo "Found ${TOTAL_COUNT} action_required workflow run(s) from the last 7 days"
