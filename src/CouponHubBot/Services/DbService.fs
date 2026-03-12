@@ -170,20 +170,27 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_tex
 RETURNING *;
 """
 
-                        let! coupon =
-                            conn.QuerySingleAsync<Coupon>(
-                                insertSql,
-                                {| owner_id = ownerId
-                                   photo_file_id = photoFileId
-                                   value = value
-                                   min_check = minCheck
-                                   expires_at = expiresAt
-                                   barcode_text = barcodeText |},
-                                tx
-                            )
-                        do! insertEvent conn tx coupon.id ownerId "added"
-                        do! tx.CommitAsync()
-                        return AddCouponResult.Added coupon
+                        try
+                            let! coupon =
+                                conn.QuerySingleAsync<Coupon>(
+                                    insertSql,
+                                    {| owner_id = ownerId
+                                       photo_file_id = photoFileId
+                                       value = value
+                                       min_check = minCheck
+                                       expires_at = expiresAt
+                                       barcode_text = barcodeText |},
+                                    tx
+                                )
+                            do! insertEvent conn tx coupon.id ownerId "added"
+                            do! tx.CommitAsync()
+                            return AddCouponResult.Added coupon
+                        with :? PostgresException as ex when ex.SqlState = PostgresErrorCodes.UniqueViolation ->
+                            do! tx.RollbackAsync()
+                            if ex.ConstraintName = "coupon_photo_file_id_uniq" then
+                                return AddCouponResult.DuplicatePhoto 0
+                            else
+                                return AddCouponResult.DuplicateBarcode 0
         }
 
     member _.GetAvailableCoupons() =
