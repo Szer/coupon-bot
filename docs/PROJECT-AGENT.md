@@ -249,6 +249,6 @@ project (daily 04:37)            auto-fix (hourly :17)
 The Copilot PR Manager (`copilot-pr-manager.yml`) is a scheduled workflow (cron every 5 minutes) that replaces the old event-driven guard workflow. It performs two functions:
 
 1. **Close non-coding agent PRs**: Lists all open PRs authored by the Copilot GitHub App and checks the PR body for `Custom agent used: project` or `Custom agent used: product`. If found, the PR is immediately closed with a comment and the branch deleted.
-2. **Approve pending workflow runs**: Lists `action_required` workflow runs and approves those belonging to open Copilot PR branches. This solves the problem where Copilot-created PRs always require manual workflow approval (GitHub treats them as "first-time contributors").
+2. **Re-run pending workflow runs**: Lists `action_required` workflow runs (created within the last 30 minutes) and re-runs those belonging to open Copilot PR branches. GitHub's `/approve` API only works for fork PRs, so we use `/rerun` via PAT instead — this changes the `triggering_actor` to the repo owner (trusted contributor), bypassing the first-time contributor check.
 
 The cron approach is necessary because event-driven workflows (`pull_request: opened`) themselves require manual approval for Copilot PRs — creating a chicken-and-egg problem. A scheduled workflow runs as the repo owner and requires no approval. Uses a PAT (`COPILOT_PR_MANAGER_TOKEN` secret) since `GITHUB_TOKEN` cannot approve other workflow runs.

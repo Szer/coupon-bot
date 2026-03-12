@@ -68,39 +68,58 @@ jobs:
           done
         fi
 
-        # Approve pending workflow runs for Copilot PRs
-        echo "::group::Approving pending workflow runs"
+        # Re-run pending workflow runs for Copilot PRs
+        # The /approve API is fork-only. For first-time contributor runs, we re-run
+        # via PAT so the triggering_actor becomes the repo owner (trusted).
+        echo "::group::Re-running pending workflow runs"
+
+        CUTOFF=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+          || date -u -v-30M +%Y-%m-%dT%H:%M:%SZ)
 
         ACTION_REQUIRED=$(gh api "repos/${REPO}/actions/runs?status=action_required&per_page=100" \
           --jq '.workflow_runs')
-        PENDING_COUNT=$(echo "$ACTION_REQUIRED" | jq 'length')
-        echo "Found ${PENDING_COUNT} action_required workflow run(s)"
+        TOTAL_COUNT=$(echo "$ACTION_REQUIRED" | jq 'length')
+        echo "Found ${TOTAL_COUNT} action_required workflow run(s) total"
 
-        if [ "$PENDING_COUNT" -gt 0 ]; then
+        if [ "$TOTAL_COUNT" -gt 0 ]; then
           # Get branches of remaining open Copilot PRs (after closing non-coding ones)
           OPEN_COPILOT_BRANCHES=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" \
             --jq "[.[] | select(.user.id == ${COPILOT_USER_ID}) | .head.ref]")
+
+          PROCESSED=0
+          SKIPPED=0
 
           echo "$ACTION_REQUIRED" | jq -c '.[]' | while read -r RUN; do
             RUN_ID=$(echo "$RUN" | jq -r '.id')
             RUN_BRANCH=$(echo "$RUN" | jq -r '.head_branch')
             RUN_NAME=$(echo "$RUN" | jq -r '.name')
             RUN_EVENT=$(echo "$RUN" | jq -r '.event')
+            RUN_CREATED=$(echo "$RUN" | jq -r '.created_at')
 
-            # Only approve pull_request runs (skip schedule, workflow_dispatch, etc.)
+            # Only process pull_request runs
             if [ "$RUN_EVENT" != "pull_request" ]; then
               continue
             fi
 
-            # Approve runs that belong to open Copilot PR branches
+            # Skip stale runs (older than 30 minutes)
+            if [[ "$RUN_CREATED" < "$CUTOFF" ]]; then
+              echo "⏭️ Skipping stale run ${RUN_ID} (${RUN_NAME}) created ${RUN_CREATED}"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            # Only re-run for open Copilot PR branches
             IS_COPILOT_BRANCH=$(echo "$OPEN_COPILOT_BRANCHES" | jq --arg b "$RUN_BRANCH" 'any(. == $b)')
 
             if [ "$IS_COPILOT_BRANCH" = "true" ]; then
-              echo "Approving run ${RUN_ID} (${RUN_NAME}) for branch ${RUN_BRANCH}..."
-              gh api "repos/${REPO}/actions/runs/${RUN_ID}/approve" --method POST \
-                || echo "WARNING: Failed to approve run ${RUN_ID}"
+              echo "🔄 Re-running ${RUN_ID} (${RUN_NAME}) for branch ${RUN_BRANCH} (created ${RUN_CREATED})..."
+              gh api "repos/${REPO}/actions/runs/${RUN_ID}/rerun" --method POST \
+                || echo "WARNING: Failed to re-run ${RUN_ID}"
+              PROCESSED=$((PROCESSED + 1))
             fi
           done
+
+          echo "Processed: ${PROCESSED}, Skipped (stale): ${SKIPPED}"
         fi
 
         echo "::endgroup::"
