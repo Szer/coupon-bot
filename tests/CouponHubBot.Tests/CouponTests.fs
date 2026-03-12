@@ -137,6 +137,57 @@ VALUES (99901, 'constraint-test-photo-2', 10, 50, '2026-06-01', 'BARCODE-CONSTRA
         }
 
     [<Fact>]
+    let ``Concurrent adds with same photo_file_id: exactly one succeeds and all get a response`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 912L, username = "concurrent_photo", firstName = "Concurrent")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let fileId = "concurrent-photo-race-1"
+            let concurrentRequestCount = 10
+
+            // Fire many concurrent add requests with the same photo_file_id.
+            // Under ReadCommitted, some will both pass the SELECT dup-check and race to INSERT,
+            // hitting coupon_photo_file_id_uniq. The handler must catch that and return DuplicatePhoto
+            // so the user always gets a message — never a silent failure.
+            let tasks =
+                Array.init concurrentRequestCount (fun _ ->
+                    fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", user, fileId = fileId)))
+
+            let! responses = Task.WhenAll tasks
+            responses |> Array.iter (fun resp -> Assert.Equal(HttpStatusCode.OK, resp.StatusCode))
+
+            // Exactly one coupon must have been inserted.
+            let! count = getCouponCount ()
+            Assert.Equal(1L, count)
+
+            // Every request must have received a user-facing message — no silent failures.
+            // Valid outcomes are: success confirmation or duplicate-photo error.
+            let! calls = fixture.GetFakeCalls("sendMessage")
+
+            let successCount, dupCount =
+                calls
+                |> Array.fold
+                    (fun (successes, dups) (call: FakeCall) ->
+                        match FakeCallHelpers.parseCallBody call.Body with
+                        | Some parsed when parsed.ChatId = Some user.Id ->
+                            match parsed.Text with
+                            | Some text when text.Contains("Добавил купон") -> successes + 1, dups
+                            | Some text when
+                                text.Contains("уже был добавлен") || text.Contains("та же фотография")
+                                ->
+                                successes, dups + 1
+                            | _ -> successes, dups
+                        | _ -> successes, dups)
+                    (0, 0)
+
+            Assert.Equal(1, successCount)
+            Assert.Equal(concurrentRequestCount - 1, dupCount)
+        }
+
+    [<Fact>]
     let ``User can add coupon and group gets notification`` () =
         task {
             do! fixture.ClearFakeCalls()
