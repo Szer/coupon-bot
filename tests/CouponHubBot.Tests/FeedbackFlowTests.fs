@@ -96,6 +96,39 @@ type FeedbackFlowTests(fixture: DefaultCouponHubTestContainers) =
         }
 
     [<Fact>]
+    let ``Stale pending_feedback older than 24 hours is not consumed`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            let user = Tg.user(id = 3005L, username = "fb_stale", firstName = "FBStale")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            // Trigger /feedback to register the user and create a pending_feedback row.
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/feedback", user))
+
+            // Back-date the pending_feedback row to 25 hours before the fixed bot time.
+            let staleTime = fixture.FixedUtcNow.UtcDateTime.AddHours(-25.0)
+            do! fixture.Execute(
+                "UPDATE pending_feedback SET created_at = @t WHERE user_id = @uid",
+                {| t = staleTime; uid = user.Id |}) :> Task
+
+            do! fixture.ClearFakeCalls()
+
+            // Send a non-command message — should NOT be consumed as feedback.
+            let! _ = fixture.SendUpdate(Tg.dmMessage("This should not become feedback", user))
+
+            // Verify no user_feedback row was created.
+            let! count =
+                fixture.QuerySingle<int>(
+                    "SELECT COUNT(*)::int FROM user_feedback WHERE user_id = @uid",
+                    {| uid = 3005L |})
+            Assert.Equal(0, count)
+
+            // Verify no forwardMessage was made.
+            let! fwCalls = fixture.GetFakeCalls("forwardMessage")
+            Assert.Equal(0, fwCalls.Length)
+        }
+
+    [<Fact>]
     let ``Multiple feedback submissions create separate records`` () =
         task {
             do! fixture.ClearFakeCalls()
