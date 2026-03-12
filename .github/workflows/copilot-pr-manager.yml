@@ -54,8 +54,8 @@ jobs:
             BRANCH=$(echo "$PR" | jq -r '.head.ref')
             BODY=$(echo "$PR" | jq -r '.body // ""')
 
-            # Detect non-coding agent PRs by checking for "Custom agent used: project/product" as a standalone line
-            if echo "$BODY" | grep -qiE '^[[:space:]]*Custom agent used:[[:space:]]*(project|product)[[:space:]]*$'; then
+            # Match the platform-injected markdown marker: > **Custom agent used: project**
+            if echo "$BODY" | grep -qiE '^[[:space:]]*>[[:space:]]*\*{0,2}Custom agent used:[[:space:]]*(project|product)\b'; then
               echo "🛑 PR #${PR_NUMBER} is from a non-coding agent (branch: ${BRANCH}) — closing."
               gh pr close "$PR_NUMBER" \
                 --repo "$REPO" \
