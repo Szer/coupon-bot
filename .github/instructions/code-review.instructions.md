@@ -1,6 +1,10 @@
 ---
 applyTo: "**"
-excludeAgent: "coding-agent, project, product, sre"
+excludeAgent:
+  - "coding-agent"
+  - "project"
+  - "product"
+  - "sre"
 ---
 
 # Code Review Instructions for coupon-hub-bot

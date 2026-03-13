@@ -1,6 +1,10 @@
 ---
 applyTo: "**"
-excludeAgent: "code-review, project, product, sre"
+excludeAgent:
+  - "code-review"
+  - "project"
+  - "product"
+  - "sre"
 ---
 
 # Coding Agent Instructions
