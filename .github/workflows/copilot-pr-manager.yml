@@ -57,7 +57,7 @@ jobs:
             BODY=$(echo "$PR" | jq -r '.body // ""')
 
             # Match the platform-injected markdown marker: > **Custom agent used: project**
-            if echo "$BODY" | grep -qiE '^[[:space:]]*>[[:space:]]*\*{0,2}Custom agent used:[[:space:]]*(project|product)\b'; then
+            if printf '%s\n' "$BODY" | grep -qiE '^[[:space:]]*>[[:space:]]*\*{0,2}Custom agent used:[[:space:]]*(project|product)\b'; then
               # Skip in-flight agent PRs — [WIP] in the title means the agent session is still active
               # Fail-safe: close [WIP] PRs not updated in the last 2 hours (agent likely crashed)
               UPDATED_AT=$(echo "$PR" | jq -r '.updated_at')
