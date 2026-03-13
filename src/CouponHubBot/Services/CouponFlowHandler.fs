@@ -14,7 +14,8 @@ type CouponFlowHandler(
     botConfig: BotConfiguration,
     db: DbService,
     couponOcr: CouponOcrEngine,
-    time: TimeProvider
+    time: TimeProvider,
+    logger: ILogger<CouponFlowHandler>
 ) =
     let sendText = BotHelpers.sendText botClient
 
@@ -110,8 +111,134 @@ type CouponFlowHandler(
                     |> taskIgnore
             else
                 // Attempt OCR prefill (optional). Download photo into memory, then run OCR engine.
-                let! file = botClient.GetFile(photoFileId)
-                if String.IsNullOrWhiteSpace(file.FilePath) then
+                try
+                    let! file = botClient.GetFile(photoFileId)
+                    if String.IsNullOrWhiteSpace(file.FilePath) then
+                        do!
+                            botClient.SendMessage(
+                                ChatId chatId,
+                                "Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\".",
+                                replyMarkup = BotHelpers.addWizardDiscountKeyboard()
+                            )
+                            |> taskIgnore
+                    else
+                        use ms = new System.IO.MemoryStream()
+                        do! botClient.DownloadFile(file.FilePath, ms)
+                        let bytes = ms.ToArray()
+    
+                        if int64 bytes.Length > botConfig.OcrMaxFileSizeBytes then
+                            do!
+                                botClient.SendMessage(
+                                    ChatId chatId,
+                                    "Картинка слишком большая для распознавания. Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\".",
+                                    replyMarkup = BotHelpers.addWizardDiscountKeyboard()
+                                )
+                                |> taskIgnore
+                        else
+                            let! ocr = couponOcr.Recognize(ReadOnlyMemory<byte>(bytes))
+    
+                            let valueOpt =
+                                if ocr.couponValue.HasValue then
+                                    Some ocr.couponValue.Value
+                                else None
+                            let minCheckOpt =
+                                if ocr.minCheck.HasValue then
+                                    Some ocr.minCheck.Value
+                                else None
+                            let validToOpt =
+                                if ocr.validTo.HasValue then
+                                    Some (DateOnly.FromDateTime(ocr.validTo.Value))
+                                else None
+                            let barcodeText =
+                                if String.IsNullOrWhiteSpace ocr.barcode then null else ocr.barcode
+    
+                            if isNull barcodeText then
+                                // Barcode not recognized — photo quality is insufficient.
+                                do! db.UpsertPendingAddFlow(
+                                        { user_id = user.id
+                                          stage = "awaiting_photo"
+                                          photo_file_id = null
+                                          value = Nullable()
+                                          min_check = Nullable()
+                                          expires_at = Nullable()
+                                          barcode_text = null
+                                          updated_at = time.GetUtcNow().UtcDateTime }
+                                    )
+                                do! sendText chatId "Не удалось распознать штрихкод на фото. Пожалуйста, пришли фото в лучшем качестве или скадрируй картинку ближе к штрихкоду, дате и сумме."
+                            else
+    
+                            // Persist whatever we managed to recognize, and continue the wizard from the first missing step.
+                            match valueOpt, minCheckOpt, validToOpt with
+                            | Some value, Some minCheck, Some expiresAt ->
+                                do! db.UpsertPendingAddFlow(
+                                        { user_id = user.id
+                                          stage = "awaiting_ocr_confirm"
+                                          photo_file_id = photoFileId
+                                          value = Nullable(value)
+                                          min_check = Nullable(minCheck)
+                                          expires_at = Nullable(expiresAt)
+                                          barcode_text = barcodeText
+                                          updated_at = time.GetUtcNow().UtcDateTime }
+                                    )
+                                let v = value.ToString("0.##")
+                                let mc = minCheck.ToString("0.##")
+                                let d = BotHelpers.formatUiDate expiresAt
+                                do!
+                                    botClient.SendMessage(
+                                        ChatId chatId,
+                                        $"Я распознал: {v}€ из {mc}€, до {d}, штрихкод: {barcodeText}. Всё верно?",
+                                        replyMarkup = BotHelpers.addWizardOcrKeyboard()
+                                    )
+                                    |> taskIgnore
+                            | Some value, Some minCheck, None ->
+                                do! db.UpsertPendingAddFlow(
+                                        { user_id = user.id
+                                          stage = "awaiting_date_choice"
+                                          photo_file_id = photoFileId
+                                          value = Nullable(value)
+                                          min_check = Nullable(minCheck)
+                                          expires_at = Nullable()
+                                          barcode_text = barcodeText
+                                          updated_at = time.GetUtcNow().UtcDateTime }
+                                    )
+                                let v = value.ToString("0.##")
+                                let mc = minCheck.ToString("0.##")
+                                do!
+                                    botClient.SendMessage(
+                                        ChatId chatId,
+                                        $"Я распознал скидку: {v}€ из {mc}€. Теперь выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):",
+                                        replyMarkup = BotHelpers.addWizardDateKeyboard()
+                                    )
+                                    |> taskIgnore
+                            | _ ->
+                                do! db.UpsertPendingAddFlow(
+                                        { user_id = user.id
+                                          stage = "awaiting_discount_choice"
+                                          photo_file_id = photoFileId
+                                          value = Nullable()
+                                          min_check = Nullable()
+                                          expires_at =
+                                            match validToOpt with
+                                            | Some d -> Nullable(d)
+                                            | None -> Nullable()
+                                          barcode_text = barcodeText
+                                          updated_at = time.GetUtcNow().UtcDateTime }
+                                    )
+                                let text =
+                                    match validToOpt with
+                                    | Some expiresAt ->
+                                        let d = BotHelpers.formatUiDate expiresAt
+                                        $"Я распознал дату истечения {d}. Теперь выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\"."
+                                    | None -> "Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\"."
+                                do!
+                                    botClient.SendMessage(
+                                        ChatId chatId,
+                                        text,
+                                        replyMarkup = BotHelpers.addWizardDiscountKeyboard()
+                                    )
+                                    |> taskIgnore
+                with ex ->
+                    logger.LogError(ex, "OCR prefill failed for photo {PhotoFileId}", photoFileId)
                     do!
                         botClient.SendMessage(
                             ChatId chatId,
@@ -119,122 +246,6 @@ type CouponFlowHandler(
                             replyMarkup = BotHelpers.addWizardDiscountKeyboard()
                         )
                         |> taskIgnore
-                else
-                    use ms = new System.IO.MemoryStream()
-                    do! botClient.DownloadFile(file.FilePath, ms)
-                    let bytes = ms.ToArray()
-
-                    if int64 bytes.Length > botConfig.OcrMaxFileSizeBytes then
-                        do!
-                            botClient.SendMessage(
-                                ChatId chatId,
-                                "Картинка слишком большая для распознавания. Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\".",
-                                replyMarkup = BotHelpers.addWizardDiscountKeyboard()
-                            )
-                            |> taskIgnore
-                    else
-                        let! ocr = couponOcr.Recognize(ReadOnlyMemory<byte>(bytes))
-
-                        let valueOpt =
-                            if ocr.couponValue.HasValue then
-                                Some ocr.couponValue.Value
-                            else None
-                        let minCheckOpt =
-                            if ocr.minCheck.HasValue then
-                                Some ocr.minCheck.Value
-                            else None
-                        let validToOpt =
-                            if ocr.validTo.HasValue then
-                                Some (DateOnly.FromDateTime(ocr.validTo.Value))
-                            else None
-                        let barcodeText =
-                            if String.IsNullOrWhiteSpace ocr.barcode then null else ocr.barcode
-
-                        if isNull barcodeText then
-                            // Barcode not recognized — photo quality is insufficient.
-                            do! db.UpsertPendingAddFlow(
-                                    { user_id = user.id
-                                      stage = "awaiting_photo"
-                                      photo_file_id = null
-                                      value = Nullable()
-                                      min_check = Nullable()
-                                      expires_at = Nullable()
-                                      barcode_text = null
-                                      updated_at = time.GetUtcNow().UtcDateTime }
-                                )
-                            do! sendText chatId "Не удалось распознать штрихкод на фото. Пожалуйста, пришли фото в лучшем качестве или скадрируй картинку ближе к штрихкоду, дате и сумме."
-                        else
-
-                        // Persist whatever we managed to recognize, and continue the wizard from the first missing step.
-                        match valueOpt, minCheckOpt, validToOpt with
-                        | Some value, Some minCheck, Some expiresAt ->
-                            do! db.UpsertPendingAddFlow(
-                                    { user_id = user.id
-                                      stage = "awaiting_ocr_confirm"
-                                      photo_file_id = photoFileId
-                                      value = Nullable(value)
-                                      min_check = Nullable(minCheck)
-                                      expires_at = Nullable(expiresAt)
-                                      barcode_text = barcodeText
-                                      updated_at = time.GetUtcNow().UtcDateTime }
-                                )
-                            let v = value.ToString("0.##")
-                            let mc = minCheck.ToString("0.##")
-                            let d = BotHelpers.formatUiDate expiresAt
-                            do!
-                                botClient.SendMessage(
-                                    ChatId chatId,
-                                    $"Я распознал: {v}€ из {mc}€, до {d}, штрихкод: {barcodeText}. Всё верно?",
-                                    replyMarkup = BotHelpers.addWizardOcrKeyboard()
-                                )
-                                |> taskIgnore
-                        | Some value, Some minCheck, None ->
-                            do! db.UpsertPendingAddFlow(
-                                    { user_id = user.id
-                                      stage = "awaiting_date_choice"
-                                      photo_file_id = photoFileId
-                                      value = Nullable(value)
-                                      min_check = Nullable(minCheck)
-                                      expires_at = Nullable()
-                                      barcode_text = barcodeText
-                                      updated_at = time.GetUtcNow().UtcDateTime }
-                                )
-                            let v = value.ToString("0.##")
-                            let mc = minCheck.ToString("0.##")
-                            do!
-                                botClient.SendMessage(
-                                    ChatId chatId,
-                                    $"Я распознал скидку: {v}€ из {mc}€. Теперь выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):",
-                                    replyMarkup = BotHelpers.addWizardDateKeyboard()
-                                )
-                                |> taskIgnore
-                        | _ ->
-                            do! db.UpsertPendingAddFlow(
-                                    { user_id = user.id
-                                      stage = "awaiting_discount_choice"
-                                      photo_file_id = photoFileId
-                                      value = Nullable()
-                                      min_check = Nullable()
-                                      expires_at =
-                                        match validToOpt with
-                                        | Some d -> Nullable(d)
-                                        | None -> Nullable()
-                                      barcode_text = barcodeText
-                                      updated_at = time.GetUtcNow().UtcDateTime }
-                                )
-                            let text =
-                                match validToOpt with
-                                | Some expiresAt ->
-                                    let d = BotHelpers.formatUiDate expiresAt
-                                    $"Я распознал дату истечения {d}. Теперь выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\"."
-                                | None -> "Выбери скидку и минимальный чек.\nИли просто напиши следующим сообщением: \"10 50\" или \"10/50\"."
-                            do!
-                                botClient.SendMessage(
-                                    ChatId chatId,
-                                    text,
-                                    replyMarkup = BotHelpers.addWizardDiscountKeyboard()
-                                )
-                                |> taskIgnore
         }
 
     member _.HandleAddWizardAskDate (chatId: int64) =
