@@ -719,7 +719,7 @@ WHERE id = @coupon_id;
 """
                 let! _ = conn.ExecuteAsync(updateSql, {| coupon_id = couponId |}, tx)
 
-                do! insertEvent conn tx couponId original.owner_id "voided"
+                do! insertEvent conn tx couponId userId "voided"
                 do! tx.CommitAsync()
                 return VoidCouponResult.Voided ({ original with status = "voided"; taken_by = Nullable(); taken_at = Nullable() }, takenBy)
         }

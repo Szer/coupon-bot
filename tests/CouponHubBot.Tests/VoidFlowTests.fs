@@ -341,3 +341,43 @@ VALUES (@owner_id, @photo_file_id, 5.00, 25.00, '2025-12-01'::date, 'available')
             Assert.False(findCallWithText calls owner.Id "5€",
                 "Expected expired coupon NOT to be listed in /added")
         }
+
+    [<Fact>]
+    let ``Admin void records event with admin user_id, not owner_id`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+            let owner = Tg.user(id = 715L, username = "void_audit_owner", firstName = "AuditOwner")
+            // Admin user ID 900 is configured in FEEDBACK_ADMINS
+            let admin = Tg.user(id = 900L, username = "admin_audit", firstName = "AdminAudit")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(admin.Id, "member")
+
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("/add 10 50 2026-01-25", owner))
+            let! couponId = getLatestCouponId ()
+
+            // Admin voids the owner's coupon
+            let! _ = fixture.SendUpdate(Tg.dmMessage($"/void {couponId}", admin))
+
+            // Verify the voided event is recorded with admin's user_id
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            let! voidedUserId =
+                conn.QuerySingleAsync<int64>(
+                    "SELECT user_id FROM coupon_event WHERE coupon_id = @couponId AND event_type = 'voided'",
+                    {| couponId = couponId |})
+            Assert.Equal(admin.Id, voidedUserId)
+
+            // Owner's voided count should be 0 (admin voided it, not the owner)
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/stats", owner))
+            let! ownerStatsCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText ownerStatsCalls owner.Id "Аннулировано: 0",
+                "Expected owner's voided count to be 0 since admin performed the void")
+
+            // Admin's voided count should be 1
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/stats", admin))
+            let! adminStatsCalls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText adminStatsCalls admin.Id "Аннулировано: 1",
+                "Expected admin's voided count to be 1")
+        }
