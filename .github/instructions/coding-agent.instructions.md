@@ -1,6 +1,6 @@
 ---
 applyTo: "**"
-excludeAgent: "code-review"
+excludeAgent: "code-review, project, product, sre"
 ---
 
 # Coding Agent Instructions
@@ -30,6 +30,8 @@ excludeAgent: "code-review"
 ## Agent Roles and PR Authority
 
 The coding agent is the **ONLY** agent that creates branches, commits, and pull requests. Other agents (project, product, SRE) must never create branches, commits, or PRs, but may perform other actions defined in their runbooks (such as creating issues, comments, or triggering rollbacks).
+
+> **⚠️ Instruction file exclusions**: Files in `.github/instructions/` use `excludeAgent` frontmatter to prevent cross-contamination. Both `coding-agent.instructions.md` and `code-review.instructions.md` MUST exclude all custom agents (`project, product, sre`). If a new custom agent is added, it MUST be added to the `excludeAgent` list in both files — otherwise the agent will receive conflicting coding/review instructions and may break character.
 
 ## Issue Label Rules
 

@@ -70,6 +70,7 @@ Output:
 
 The coding agent is guardrailed from raw user signals — it only sees refined tickets (`bug`, `feature-request`). Labels `user-feedback`, `product`, `project`, and `deploy-failure` are reserved for their respective agents.
 
-Non-coding agents (project, product) are restricted by two layers of defense:
+Non-coding agents (project, product) are restricted by three layers of defense:
 1. **Command allowlist** in their agent prompts — only `gh issue`, `curl`, and read-only commands are permitted
-2. **Copilot PR Manager** (`copilot-pr-manager.yml`) — a cron workflow (every 5 min) that auto-closes any PR from non-coding agents by detecting `Custom agent used: project/product` in the PR body (skipping in-flight `[WIP]` PRs), and re-runs pending workflow runs for legitimate Copilot coding agent PRs
+2. **Instruction file exclusions** — `coding-agent.instructions.md` and `code-review.instructions.md` use `excludeAgent` frontmatter to exclude all custom agents (`project, product, sre`). Without this, custom agents receive conflicting coding instructions and may break character. **When adding a new custom agent, always add it to `excludeAgent` in both files.**
+3. **Copilot PR Manager** (`copilot-pr-manager.yml`) — a cron workflow (every 5 min) that auto-closes any PR from non-coding agents by detecting `Custom agent used: project/product` in the PR body (skipping in-flight `[WIP]` PRs), and re-runs pending workflow runs for legitimate Copilot coding agent PRs
