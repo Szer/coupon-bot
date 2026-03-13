@@ -61,8 +61,7 @@ jobs:
               # Skip in-flight agent PRs — [WIP] in the title means the agent session is still active
               # Fail-safe: close [WIP] PRs not updated in the last 2 hours (agent likely crashed)
               UPDATED_AT=$(echo "$PR" | jq -r '.updated_at')
-              UPDATED_EPOCH=$(date -u -d "$UPDATED_AT" +%s 2>/dev/null \
-                || date -u -jf "%Y-%m-%dT%H:%M:%SZ" "$UPDATED_AT" +%s)
+              UPDATED_EPOCH=$(date -u -d "$UPDATED_AT" +%s 2>/dev/null || echo 0)
               STALE_HOURS=$(( (NOW_EPOCH - UPDATED_EPOCH) / 3600 ))
 
               if printf '%s\n' "$TITLE" | grep -qiF '[WIP]' && [ "$STALE_HOURS" -lt 2 ]; then
