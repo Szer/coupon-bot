@@ -72,4 +72,4 @@ The coding agent is guardrailed from raw user signals — it only sees refined t
 
 Non-coding agents (project, product) are restricted by two layers of defense:
 1. **Command allowlist** in their agent prompts — only `gh issue`, `curl`, and read-only commands are permitted
-2. **Copilot PR Manager** (`copilot-pr-manager.yml`) — a cron workflow (every 5 min) that auto-closes any PR from non-coding agents by detecting `Custom agent used: project/product` in the PR body (skipping in-flight `[WIP]` PRs), and auto-approves pending workflow runs for legitimate Copilot coding agent PRs
+2. **Copilot PR Manager** (`copilot-pr-manager.yml`) — a cron workflow (every 5 min) that auto-closes any PR from non-coding agents by detecting `Custom agent used: project/product` in the PR body (skipping in-flight `[WIP]` PRs), and re-runs pending workflow runs for legitimate Copilot coding agent PRs
