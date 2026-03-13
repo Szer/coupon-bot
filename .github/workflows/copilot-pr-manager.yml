@@ -31,6 +31,7 @@ jobs:
 
         REPO="${{ github.repository }}"
         COPILOT_USER_ID="198982749"
+        NOW_EPOCH=$(date -u +%s)
 
         echo "::group::Scanning for Copilot PRs"
 
@@ -52,16 +53,31 @@ jobs:
           echo "$COPILOT_PRS" | jq -c '.[]' | while read -r PR; do
             PR_NUMBER=$(echo "$PR" | jq -r '.number')
             BRANCH=$(echo "$PR" | jq -r '.head.ref')
+            TITLE=$(echo "$PR" | jq -r '.title // ""')
             BODY=$(echo "$PR" | jq -r '.body // ""')
 
             # Match the platform-injected markdown marker: > **Custom agent used: project**
-            if echo "$BODY" | grep -qiE '^[[:space:]]*>[[:space:]]*\*{0,2}Custom agent used:[[:space:]]*(project|product)\b'; then
-              echo "🛑 PR #${PR_NUMBER} is from a non-coding agent (branch: ${BRANCH}) — closing."
-              gh pr close "$PR_NUMBER" \
-                --repo "$REPO" \
-                --comment "$GUARD_COMMENT" \
-                --delete-branch \
-                || echo "WARNING: Failed to close PR #${PR_NUMBER}"
+            if printf '%s\n' "$BODY" | grep -qiE '^[[:space:]]*>[[:space:]]*\*{0,2}Custom agent used:[[:space:]]*(project|product)\b'; then
+              # Skip in-flight agent PRs — [WIP] in the title means the agent session is still active
+              # Fail-safe: close [WIP] PRs not updated in the last 2 hours (agent likely crashed)
+              UPDATED_AT=$(echo "$PR" | jq -r '.updated_at')
+              UPDATED_EPOCH=$(date -u -d "$UPDATED_AT" +%s 2>/dev/null || echo 0)
+              STALE_HOURS=$(( (NOW_EPOCH - UPDATED_EPOCH) / 3600 ))
+
+              if printf '%s\n' "$TITLE" | grep -qiF '[WIP]' && [ "$STALE_HOURS" -lt 2 ]; then
+                echo "⏳ PR #${PR_NUMBER} is from a non-coding agent but still in-flight ([WIP], updated ${STALE_HOURS}h ago) — skipping."
+              else
+                if printf '%s\n' "$TITLE" | grep -qiF '[WIP]'; then
+                  echo "🛑 PR #${PR_NUMBER} is a stale [WIP] (not updated for ${STALE_HOURS}h) — closing."
+                else
+                  echo "🛑 PR #${PR_NUMBER} is from a non-coding agent (branch: ${BRANCH}) — closing."
+                fi
+                gh pr close "$PR_NUMBER" \
+                  --repo "$REPO" \
+                  --comment "$GUARD_COMMENT" \
+                  --delete-branch \
+                  || echo "WARNING: Failed to close PR #${PR_NUMBER}"
+              fi
             else
               echo "✅ PR #${PR_NUMBER} is from coding agent (branch: ${BRANCH}) — keeping."
             fi
@@ -73,7 +89,6 @@ jobs:
         # via PAT so the triggering_actor becomes the PAT owner (trusted).
         echo "::group::Re-running pending workflow runs"
 
-        NOW_EPOCH=$(date -u +%s)
         CUTOFF=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
           || date -u -v-30M +%Y-%m-%dT%H:%M:%SZ)
         ONE_WEEK_AGO=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
