@@ -52,16 +52,22 @@ jobs:
           echo "$COPILOT_PRS" | jq -c '.[]' | while read -r PR; do
             PR_NUMBER=$(echo "$PR" | jq -r '.number')
             BRANCH=$(echo "$PR" | jq -r '.head.ref')
+            TITLE=$(echo "$PR" | jq -r '.title // ""')
             BODY=$(echo "$PR" | jq -r '.body // ""')
 
             # Match the platform-injected markdown marker: > **Custom agent used: project**
             if echo "$BODY" | grep -qiE '^[[:space:]]*>[[:space:]]*\*{0,2}Custom agent used:[[:space:]]*(project|product)\b'; then
-              echo "🛑 PR #${PR_NUMBER} is from a non-coding agent (branch: ${BRANCH}) — closing."
-              gh pr close "$PR_NUMBER" \
-                --repo "$REPO" \
-                --comment "$GUARD_COMMENT" \
-                --delete-branch \
-                || echo "WARNING: Failed to close PR #${PR_NUMBER}"
+              # Skip in-flight agent PRs — [WIP] in the title means the agent session is still active
+              if echo "$TITLE" | grep -qiF '[WIP]'; then
+                echo "⏳ PR #${PR_NUMBER} is from a non-coding agent but still in-flight ([WIP]) — skipping."
+              else
+                echo "🛑 PR #${PR_NUMBER} is from a non-coding agent (branch: ${BRANCH}) — closing."
+                gh pr close "$PR_NUMBER" \
+                  --repo "$REPO" \
+                  --comment "$GUARD_COMMENT" \
+                  --delete-branch \
+                  || echo "WARNING: Failed to close PR #${PR_NUMBER}"
+              fi
             else
               echo "✅ PR #${PR_NUMBER} is from coding agent (branch: ${BRANCH}) — keeping."
             fi
