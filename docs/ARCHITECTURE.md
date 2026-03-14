@@ -13,14 +13,19 @@ src/CouponHubBot/
 ├── Utils.fs              # Shared utilities (date parsing, pluralization)
 ├── Telemetry.fs          # OpenTelemetry configuration
 └── Services/
-    ├── DbService.fs      # PostgreSQL access via Dapper
-    ├── TelegramService.fs # Telegram API wrapper
-    ├── CouponService.fs  # Coupon CRUD operations
-    ├── AddFlowService.fs # /add wizard state machine
-    ├── ReminderService.fs # Scheduled reminders (expiring coupons, weekly stats)
-    ├── GitHubService.fs  # GitHub API client (feedback issues, agent assignment)
-    ├── AzureOcrService.fs # Azure Computer Vision OCR client
-    └── CouponOcrEngine.fs # Barcode + text OCR processing
+    ├── BotCommandsSetup.fs   # Registers bot command menu with Telegram
+    ├── BotHelpers.fs         # UI helpers, keyboards, formatting utilities
+    ├── BotService.fs         # Main update dispatcher (messages, callbacks)
+    ├── CallbackHandler.fs    # Inline button callback query handling
+    ├── CommandHandler.fs     # Bot command routing and handling
+    ├── CouponFlowHandler.fs  # /add wizard state machine
+    ├── CouponOcrEngine.fs    # Barcode + text OCR processing
+    ├── DbService.fs          # PostgreSQL access via Dapper
+    ├── GitHubService.fs      # GitHub API client (feedback issues, agent assignment)
+    ├── MembershipService.fs  # Community membership verification and caching
+    ├── NotificationService.fs # Notifications to community group chat
+    ├── OcrService.fs         # Azure Computer Vision OCR client
+    └── ReminderService.fs    # Scheduled reminders (expiring coupons, weekly stats)
 ```
 
 ## Data Flow
