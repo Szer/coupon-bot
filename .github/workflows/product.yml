@@ -154,7 +154,7 @@ jobs:
           The orchestration issue is #${{ steps.create-issue.outputs.issue_number }}.
         claude_args: |
           --allowedTools "Read,Grep,Glob,Bash(gh:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
-          --max-turns 50
+          --max-turns 30
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
 

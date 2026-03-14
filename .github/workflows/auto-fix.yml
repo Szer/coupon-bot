@@ -92,7 +92,7 @@ jobs:
 
           Fix issue #${{ steps.pick.outputs.issue }}.
           Read the issue, implement the fix, run tests with `dotnet test -c Release`, and create a PR.
-        claude_args: "--max-turns 80"
+        claude_args: "--max-turns 40"
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
         ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
