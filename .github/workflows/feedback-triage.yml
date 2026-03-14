@@ -83,8 +83,9 @@ jobs:
           The feedback issue to triage is #${{ github.event.issue.number }}.
           Read the issue, analyze the feedback, and make a triage decision.
         claude_args: |
+          --model claude-haiku-4-5-20251001
           --allowedTools "Read,Grep,Glob,Bash(gh issue:*),Bash(gh api:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
-          --max-turns 20
+          --max-turns 15
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
 

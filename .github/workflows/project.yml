@@ -145,11 +145,21 @@ jobs:
           You have been triggered for the daily project assessment.
           The orchestration issue is #${{ steps.create-issue.outputs.issue_number }}.
         claude_args: |
+          --model claude-haiku-4-5-20251001
           --allowedTools "Read,Grep,Glob,Bash(gh issue:*),Bash(gh api:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
-          --max-turns 30
+          --max-turns 20
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
         ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+
+    - name: Close orchestration issue
+      if: always() && steps.create-issue.outputs.issue_number
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+      run: |
+        gh issue close "${{ steps.create-issue.outputs.issue_number }}" \
+          --repo "${{ github.repository }}" \
+          --comment "Orchestration issue auto-closed after agent run. See workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
     - name: Disconnect VPN
       if: always()

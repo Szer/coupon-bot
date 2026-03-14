@@ -34,4 +34,4 @@ jobs:
             Review this PR using the code review rules in CLAUDE.md.
             Focus on: bugs, security, F# convention violations, missing tests.
             Do NOT flag style preferences or minor formatting.
-          claude_args: "--allowedTools \"Read,Grep,Glob,Bash(dotnet build:*),Bash(dotnet test:*)\""
+          claude_args: "--allowedTools \"Read,Grep,Glob,Bash(dotnet build:*),Bash(dotnet test:*)\" --max-turns 10"
