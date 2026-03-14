@@ -11,6 +11,10 @@ permissions:
   pull-requests: write
   id-token: write
 
+concurrency:
+  group: auto-fix
+  cancel-in-progress: false
+
 jobs:
   auto-fix:
     runs-on: ubuntu-latest
