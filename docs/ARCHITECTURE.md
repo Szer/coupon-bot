@@ -70,7 +70,6 @@ Output:
 
 The coding agent is guardrailed from raw user signals — it only sees refined tickets (`bug`, `feature-request`). Labels `user-feedback`, `product`, `project`, and `deploy-failure` are reserved for their respective agents.
 
-Non-coding agents (project, product) are restricted by three layers of defense:
-1. **Command allowlist** in their agent prompts — only `gh issue`, `curl`, and read-only commands are permitted
-2. **No path-specific instruction files** — `.github/instructions/` must NOT contain behavioral instructions (workflow steps, branch creation, test commands) because `excludeAgent` only supports `"code-review"` and `"coding-agent"` values, not custom agent names. Any instructions placed there will leak into custom agents and cause them to break character. Coding-agent-specific instructions belong in `.github/copilot-instructions.md` (which custom agents receive too, but their own `.agent.md` prompt overrides it).
-3. **Copilot PR Manager** (`copilot-pr-manager.yml`) — a cron workflow (every 5 min) that auto-closes any PR from non-coding agents by detecting `Custom agent used: project/product` in the PR body (skipping in-flight `[WIP]` PRs), and re-runs pending workflow runs for legitimate Copilot coding agent PRs
+Non-coding agents (project, product, SRE) are restricted by two layers of defense:
+1. **`--allowedTools` sandboxing** in Claude Code Action — non-coding agents are restricted to `Read`, `Grep`, `Glob`, and specific `Bash` prefixes (`gh issue`, `gh api`, `curl`, read-only commands). The `Write` and `Edit` tools are excluded, and `gh pr` commands are blocked at the tool level.
+2. **Command allowlist** in agent prompt files (`.github/prompts/*.md`) — defense-in-depth listing of permitted commands, with explicit FORBIDDEN sections

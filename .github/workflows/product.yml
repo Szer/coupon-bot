@@ -7,6 +7,9 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
+  id-token: write
 
 jobs:
 
@@ -27,34 +30,13 @@ jobs:
           echo "Closing stale product orchestration issue #${NUM}"
           gh issue close "$NUM" \
             --repo "${{ github.repository }}" \
-            --comment "🧹 **Auto-closed by cleanup.** Product agent did not close this issue in time." \
+            --comment "**Auto-closed by cleanup.** Product agent did not close this issue in time." \
             || echo "WARNING: Failed to close orchestration issue #${NUM}, continuing"
-        done
-
-    - name: Close stale Copilot PRs
-      env:
-        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
-      run: |
-        # Safety net — product agent has no edit tool and shouldn't create PRs
-        gh pr list \
-          --repo "${{ github.repository }}" \
-          --state open \
-          --author "app/copilot-swe-agent" \
-          --json number,headRefName,title \
-          --jq '.[] | select(.title | test("Product analysis \\d{4}-\\d{2}-\\d{2}"; "i")) | "\(.number) \(.headRefName)"' \
-        | while read -r NUM BRANCH; do
-          echo "Closing PR #${NUM} (branch: ${BRANCH})"
-          gh pr close "$NUM" \
-            --repo "${{ github.repository }}" \
-            --comment "🧹 **Auto-closed.** Product analysis PRs are not expected." \
-            --delete-branch \
-            || echo "WARNING: Failed to close PR #${NUM}, continuing"
         done
 
   product-analysis:
     needs: cleanup
     runs-on: ubuntu-latest
-    environment: copilot
 
     steps:
     - name: Checkout
@@ -81,10 +63,6 @@ jobs:
         CONTAINER_NAME: coupon-bot
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
-
-    - name: Disconnect VPN
-      if: always()
-      run: sudo wg-quick down wg0 || true
 
     - name: Ensure labels exist
       env:
@@ -127,6 +105,7 @@ jobs:
           --force
 
     - name: Create orchestration issue
+      id: create-issue
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
@@ -152,29 +131,33 @@ jobs:
           exit 1
         fi
         echo "Created issue #${ISSUE_NUMBER}"
+        echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
 
-        ASSIGNED=false
-        for i in 1 2 3; do
-          if gh api --method POST \
-            "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
-            --input - <<EOF
+    - name: Read product agent prompt
+      run: |
         {
-          "assignees": ["copilot-swe-agent[bot]"],
-          "agent_assignment": {
-            "custom_agent": "product"
-          }
-        }
-        EOF
-          then
-            ASSIGNED=true
-            echo "Assigned product agent to issue #${ISSUE_NUMBER}"
-            break
-          else
-            echo "WARNING: Assignment attempt $i failed for issue #${ISSUE_NUMBER}"
-            sleep 5
-          fi
-        done
-        if [ "$ASSIGNED" = false ]; then
-          echo "ERROR: All 3 assignment attempts failed for issue #${ISSUE_NUMBER}"
-          exit 1
-        fi
+          echo "AGENT_PROMPT<<PROMPT_EOF"
+          cat .github/prompts/product.md
+          echo "PROMPT_EOF"
+        } >> "$GITHUB_ENV"
+
+    - name: Run product agent
+      uses: anthropics/claude-code-action@v1
+      with:
+        anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+        prompt: |
+          <instructions>
+          ${{ env.AGENT_PROMPT }}
+          </instructions>
+
+          You have been triggered for the scheduled daily product analysis.
+          The orchestration issue is #${{ steps.create-issue.outputs.issue_number }}.
+        claude_args: |
+          --allowedTools "Read,Grep,Glob,Bash(gh issue:*),Bash(gh api:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
+          --max-turns 30
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+
+    - name: Disconnect VPN
+      if: always()
+      run: sudo wg-quick down wg0 || true
