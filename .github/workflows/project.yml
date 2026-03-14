@@ -65,36 +65,6 @@ jobs:
         ARGOCD_APP_NAME: coupon-bot
         CONTAINER_NAME: coupon-bot
 
-    - name: Ensure labels exist
-      env:
-        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
-      run: |
-        gh label create project \
-          --repo "${{ github.repository }}" \
-          --description "Managed by project agent — technical backlog" \
-          --color "7057ff" \
-          --force
-        gh label create infra \
-          --repo "${{ github.repository }}" \
-          --description "Infrastructure issue — cannot be fixed in this repo" \
-          --color "d4c5f9" \
-          --force
-        gh label create priority-high \
-          --repo "${{ github.repository }}" \
-          --description "Reserved for user-reported high-priority issues (not used by project agent)" \
-          --color "b60205" \
-          --force
-        gh label create priority-medium \
-          --repo "${{ github.repository }}" \
-          --description "Medium priority" \
-          --color "fbca04" \
-          --force
-        gh label create priority-low \
-          --repo "${{ github.repository }}" \
-          --description "Low priority — nice to have" \
-          --color "0e8a16" \
-          --force
-
     - name: Create orchestration issue
       id: create-issue
       env:
