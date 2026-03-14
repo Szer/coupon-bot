@@ -7,6 +7,9 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
+  id-token: write
 
 jobs:
   cleanup:
@@ -28,49 +31,13 @@ jobs:
           echo "Closing orchestration issue #${NUM}"
           gh issue close "$NUM" \
             --repo "${{ github.repository }}" \
-            --comment "🧹 **Auto-closed by cleanup.** Copilot did not close this issue in time. Check the linked PR (if any) for Copilot's analysis summary." \
+            --comment "**Auto-closed by cleanup.** Agent did not close this issue in time. Check the workflow run for the agent's analysis summary." \
             || echo "WARNING: Failed to close orchestration issue #${NUM}, continuing"
-        done
-
-        # Also close legacy "self-assessment" orchestration issues (from before rename)
-        gh issue list \
-          --repo "${{ github.repository }}" \
-          --label "self-assess" \
-          --state open \
-          --json number,title \
-          --jq '.[] | select(.title | test("self-assessment \\d{4}-\\d{2}-\\d{2}"; "i")) | .number' \
-        | while read -r NUM; do
-          echo "Closing legacy orchestration issue #${NUM}"
-          gh issue close "$NUM" \
-            --repo "${{ github.repository }}" \
-            --comment "🧹 **Auto-closed by cleanup.** Legacy self-assessment issue." \
-            || echo "WARNING: Failed to close orchestration issue #${NUM}, continuing"
-        done
-
-    - name: Close stale Copilot PRs
-      env:
-        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
-      run: |
-        # Close any open PRs created by Copilot for project assessment
-        gh pr list \
-          --repo "${{ github.repository }}" \
-          --state open \
-          --author "app/copilot-swe-agent" \
-          --json number,headRefName,title \
-          --jq '.[] | select(.title | test("(self-assessment|project assessment) \\d{4}-\\d{2}-\\d{2}"; "i")) | "\(.number) \(.headRefName)"' \
-        | while read -r NUM BRANCH; do
-          echo "Closing PR #${NUM} (branch: ${BRANCH})"
-          gh pr close "$NUM" \
-            --repo "${{ github.repository }}" \
-            --comment "🧹 **Auto-closed.** Project assessment PRs are not meant to be merged — the real output is the backlog issues." \
-            --delete-branch \
-            || echo "WARNING: Failed to close PR #${NUM}, continuing"
         done
 
   project:
     needs: cleanup
     runs-on: ubuntu-latest
-    environment: copilot
 
     steps:
     - name: Checkout
@@ -87,7 +54,7 @@ jobs:
       run: |
         chmod +x scripts/gather-metrics.sh
         REPORT=$(./scripts/gather-metrics.sh)
-        
+
         # Save to file for the next step (avoids shell escaping issues)
         echo "$REPORT" > /tmp/metrics-report.md
       env:
@@ -97,10 +64,6 @@ jobs:
         ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         ARGOCD_APP_NAME: coupon-bot
         CONTAINER_NAME: coupon-bot
-
-    - name: Disconnect VPN
-      if: always()
-      run: sudo wg-quick down wg0 || true
 
     - name: Ensure labels exist
       env:
@@ -133,6 +96,7 @@ jobs:
           --force
 
     - name: Create orchestration issue
+      id: create-issue
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
@@ -158,30 +122,34 @@ jobs:
           exit 1
         fi
         echo "Created issue #${ISSUE_NUMBER}"
+        echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
 
-        # Assign Copilot with custom agent via REST API (retry up to 3 times)
-        ASSIGNED=false
-        for i in 1 2 3; do
-          if gh api --method POST \
-            "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
-            --input - <<EOF
+    - name: Read project agent prompt
+      run: |
         {
-          "assignees": ["copilot-swe-agent[bot]"],
-          "agent_assignment": {
-            "custom_agent": "project"
-          }
-        }
-        EOF
-          then
-            ASSIGNED=true
-            echo "Assigned Copilot (project agent) to issue #${ISSUE_NUMBER}"
-            break
-          else
-            echo "WARNING: Assignment attempt $i failed for issue #${ISSUE_NUMBER}"
-            sleep 5
-          fi
-        done
-        if [ "$ASSIGNED" = false ]; then
-          echo "ERROR: All 3 assignment attempts failed for issue #${ISSUE_NUMBER}"
-          exit 1
-        fi
+          echo "AGENT_PROMPT<<PROMPT_EOF"
+          cat .github/prompts/project.md
+          echo "PROMPT_EOF"
+        } >> "$GITHUB_ENV"
+
+    - name: Run project agent
+      uses: anthropics/claude-code-action@v1
+      with:
+        anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+        prompt: |
+          <instructions>
+          ${{ env.AGENT_PROMPT }}
+          </instructions>
+
+          You have been triggered for the daily project assessment.
+          The orchestration issue is #${{ steps.create-issue.outputs.issue_number }}.
+        claude_args: |
+          --allowedTools "Read,Grep,Glob,Bash(gh:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
+          --max-turns 50
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+        ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+
+    - name: Disconnect VPN
+      if: always()
+      run: sudo wg-quick down wg0 || true

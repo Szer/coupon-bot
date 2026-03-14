@@ -14,15 +14,15 @@ Telegram bot for collaborative coupon management in a private community. Written
 
 | Topic | File |
 |-------|------|
-| Architecture | [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) |
-| Bot Logic | [docs/TELEGRAM-BOT-LOGIC.md](../docs/TELEGRAM-BOT-LOGIC.md) |
-| Testing | [docs/TESTING.md](../docs/TESTING.md) |
-| Database | [docs/DATABASE.md](../docs/DATABASE.md) |
-| OCR | [docs/OCR.md](../docs/OCR.md) |
-| Deployment | [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) |
-| Observability | [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) |
-| Project Agent | [docs/PROJECT-AGENT.md](../docs/PROJECT-AGENT.md) |
-| Product Vision | [docs/PRODUCT-VISION.md](../docs/PRODUCT-VISION.md) |
+| Architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Bot Logic | [docs/TELEGRAM-BOT-LOGIC.md](docs/TELEGRAM-BOT-LOGIC.md) |
+| Testing | [docs/TESTING.md](docs/TESTING.md) |
+| Database | [docs/DATABASE.md](docs/DATABASE.md) |
+| OCR | [docs/OCR.md](docs/OCR.md) |
+| Deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Observability | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| Project Agent | [docs/PROJECT-AGENT.md](docs/PROJECT-AGENT.md) |
+| Product Vision | [docs/PRODUCT-VISION.md](docs/PRODUCT-VISION.md) |
 
 ## Key Conventions
 

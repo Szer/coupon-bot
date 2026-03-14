@@ -6,14 +6,26 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
+  id-token: write
 
 jobs:
   triage-feedback:
     if: github.event.label.name == 'user-feedback'
     runs-on: ubuntu-latest
-    environment: copilot
 
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup WireGuard VPN
+      run: |
+        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
+        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
+        sudo chmod 600 /etc/wireguard/wg0.conf
+        sudo wg-quick up wg0
+
     - name: Ensure labels exist
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
@@ -49,36 +61,32 @@ jobs:
           --color "0e8a16" \
           --force
 
-    - name: Assign product agent to feedback issue
+    - name: Read product agent prompt
+      run: |
+        {
+          echo "AGENT_PROMPT<<PROMPT_EOF"
+          cat .github/prompts/product.md
+          echo "PROMPT_EOF"
+        } >> "$GITHUB_ENV"
+
+    - name: Run product agent for feedback triage
+      uses: anthropics/claude-code-action@v1
+      with:
+        anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+        prompt: |
+          <instructions>
+          ${{ env.AGENT_PROMPT }}
+          </instructions>
+
+          You have been triggered for user feedback triage.
+          The feedback issue to triage is #${{ github.event.issue.number }}.
+          Read the issue, analyze the feedback, and make a triage decision.
+        claude_args: |
+          --allowedTools "Read,Grep,Glob,Bash(gh:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
+          --max-turns 50
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
-      run: |
-        set -euo pipefail
-        ISSUE_NUMBER="${{ github.event.issue.number }}"
-        echo "Assigning product agent to feedback issue #${ISSUE_NUMBER}"
 
-        ASSIGNED=false
-        for i in 1 2 3; do
-          if gh api --method POST \
-            "/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/assignees" \
-            --input - <<EOF
-        {
-          "assignees": ["copilot-swe-agent[bot]"],
-          "agent_assignment": {
-            "custom_agent": "product"
-          }
-        }
-        EOF
-          then
-            ASSIGNED=true
-            echo "Assigned product agent to issue #${ISSUE_NUMBER}"
-            break
-          else
-            echo "WARNING: Assignment attempt $i failed"
-            sleep 5
-          fi
-        done
-        if [ "$ASSIGNED" = false ]; then
-          echo "ERROR: All 3 assignment attempts failed for issue #${ISSUE_NUMBER}"
-          exit 1
-        fi
+    - name: Disconnect VPN
+      if: always()
+      run: sudo wg-quick down wg0 || true
