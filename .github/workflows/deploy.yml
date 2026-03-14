@@ -146,26 +146,6 @@ jobs:
         sudo chmod 600 /etc/wireguard/wg0.conf
         sudo wg-quick up wg0
 
-    - name: Ensure required labels exist
-      env:
-        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
-      run: |
-        gh label create deploy-failure \
-          --repo "${{ github.repository }}" \
-          --description "Automated deploy pipeline failure" \
-          --color "d93f0b" \
-          --force
-        gh label create priority-high \
-          --repo "${{ github.repository }}" \
-          --description "Reserved for user-reported high-priority issues (not used by project agent)" \
-          --color "b60205" \
-          --force
-        gh label create infra \
-          --repo "${{ github.repository }}" \
-          --description "Infrastructure issue — cannot be fixed in this repo" \
-          --color "d4c5f9" \
-          --force
-
     - name: Create debugging issue
       id: create-issue
       env:
