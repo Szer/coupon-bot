@@ -50,12 +50,10 @@ jobs:
 
     - name: Setup WireGuard VPN
       run: |
-        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
-        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
-        sudo chmod 600 /etc/wireguard/wg0.conf
-        sudo wg-quick up wg0
-        # Verify VPN is up
-        sudo wg show
+        chmod +x scripts/setup-vpn.sh
+        ./scripts/setup-vpn.sh
+      env:
+        WIREGUARD_CONFIG: ${{ secrets.WIREGUARD_CONFIG }}
 
     # if tests are ok, deploy to production
     - name: Apply migrations to production DB
@@ -108,11 +106,10 @@ jobs:
 
     - name: Setup WireGuard VPN
       run: |
-        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
-        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
-        sudo chmod 600 /etc/wireguard/wg0.conf
-        sudo wg-quick up wg0
-        sudo wg show
+        chmod +x scripts/setup-vpn.sh
+        ./scripts/setup-vpn.sh
+      env:
+        WIREGUARD_CONFIG: ${{ secrets.WIREGUARD_CONFIG }}
 
     - name: Verify deployment
       run: ./scripts/verify-deploy.sh
@@ -141,10 +138,10 @@ jobs:
 
     - name: Setup WireGuard VPN
       run: |
-        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
-        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
-        sudo chmod 600 /etc/wireguard/wg0.conf
-        sudo wg-quick up wg0
+        chmod +x scripts/setup-vpn.sh
+        ./scripts/setup-vpn.sh
+      env:
+        WIREGUARD_CONFIG: ${{ secrets.WIREGUARD_CONFIG }}
 
     - name: Create debugging issue
       id: create-issue

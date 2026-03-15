@@ -9,3 +9,4 @@ TestResults
 test-artifacts/
 tmp/
 test-output.txt
+.claude/
