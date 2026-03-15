@@ -94,12 +94,18 @@ jobs:
         echo "Created issue #${ISSUE_NUMBER}"
         echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
 
-    - name: Read project agent prompt
+    - name: Load agent prompt and metrics
       run: |
         {
           echo "AGENT_PROMPT<<PROMPT_EOF"
           cat .github/prompts/project.md
           echo "PROMPT_EOF"
+        } >> "$GITHUB_ENV"
+        {
+          METRICS_DELIM="METRICS_EOF_$(openssl rand -hex 16)"
+          echo "METRICS_REPORT<<${METRICS_DELIM}"
+          cat /tmp/metrics-report.md
+          echo "${METRICS_DELIM}"
         } >> "$GITHUB_ENV"
 
     - name: Run project agent
@@ -112,12 +118,16 @@ jobs:
           ${{ env.AGENT_PROMPT }}
           </instructions>
 
+          <metrics-snapshot>
+          ${{ env.METRICS_REPORT }}
+          </metrics-snapshot>
+
           You have been triggered for the daily project assessment.
           The orchestration issue is #${{ steps.create-issue.outputs.issue_number }}.
         claude_args: |
           --model claude-haiku-4-5-20251001
           --allowedTools "Read,Grep,Glob,Bash(gh issue:*),Bash(gh api:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
-          --max-turns 20
+          --max-turns 25
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
         ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
