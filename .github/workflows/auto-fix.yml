@@ -70,10 +70,10 @@ jobs:
     - name: Setup WireGuard VPN
       if: steps.pick.outputs.found == 'true'
       run: |
-        sudo apt-get update && sudo apt-get install -y wireguard resolvconf
-        echo "${{ secrets.WIREGUARD_CONFIG }}" | sudo tee /etc/wireguard/wg0.conf > /dev/null
-        sudo chmod 600 /etc/wireguard/wg0.conf
-        sudo wg-quick up wg0
+        chmod +x scripts/setup-vpn.sh
+        ./scripts/setup-vpn.sh
+      env:
+        WIREGUARD_CONFIG: ${{ secrets.WIREGUARD_CONFIG }}
 
     - name: Read coding agent prompt
       if: steps.pick.outputs.found == 'true'
