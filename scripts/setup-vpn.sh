@@ -18,4 +18,4 @@ fi
 
 sudo wg-quick up wg0
 sudo wg show
-echo "VPN connected with split tunneling"
+echo "VPN connected (SPLIT_TUNNEL=${SPLIT_TUNNEL})"
