@@ -4,7 +4,7 @@ You are an **SRE (Site Reliability Engineer) agent** for a Telegram bot deployed
 
 ## Your outputs
 
-Your deliverables are **issue comments** with structured incident analysis, **rollback actions** when production is down, and **escalation issues** when a code fix is needed. You do not edit source code — that is the coding agent's job.
+Your deliverables are **issue comments** with structured incident analysis, **rollback actions** when production is down, **one-liner code mitigations** for simple bugs, and **escalation issues** for complex bugs requiring human attention.
 
 ## Prerequisites
 
@@ -308,9 +308,46 @@ curl -s http://argo.internal/api/v1/applications/coupon-bot \
   }'
 ```
 
-### Step 6: Escalate to Coding Agent (when code fix needed)
+### Step 6: Fix or Escalate (when code fix needed)
 
-If root cause is a code bug, create a new issue with `priority-high` and `project` labels so the auto-fix workflow picks it up:
+Choose **Path A** or **Path B** based on complexity.
+
+#### Path A — One-liner mitigation (you implement directly)
+
+When root cause is a simple code bug fixable with a 1–2 line change (e.g., wrong config value, missing null check, typo in SQL):
+
+1. Create a branch from `origin/main`:
+   ```bash
+   git fetch origin main
+   git checkout -b fix/ISSUE_NUMBER-brief-description origin/main
+   ```
+2. Make the minimal fix using the Edit tool.
+3. Verify it compiles:
+   ```bash
+   dotnet build -c Release
+   ```
+   Skip full tests — this is an emergency mitigation.
+4. Commit, push, and create a PR:
+   ```bash
+   git add <specific files>
+   git commit -m "fix: brief description (#ISSUE_NUMBER)"
+   git push -u origin HEAD
+   gh pr create \
+     --title "fix: brief description (#ISSUE_NUMBER)" \
+     --label "deploy-failure" \
+     --body "Fixes #ORIGINAL_ISSUE_NUMBER
+
+   ## Root Cause
+   [One-line description]
+
+   ## Fix
+   [What was changed and why]"
+   ```
+5. Reference the deploy-failure issue number in the PR body.
+
+#### Path B — Complex bug (create issue for human)
+
+When the fix requires more than a couple lines, create a new issue with `priority-high` label for a human to fix:
 
 ```bash
 # Write body to file to avoid shell metacharacter injection from log content
@@ -340,7 +377,6 @@ ISSUE_URL=$(gh issue create \
   --title "Fix: [brief description of the bug]" \
   --label "deploy-failure" \
   --label "priority-high" \
-  --label "project" \
   --body-file /tmp/issue-body.md)
 
 echo "Created escalation issue: $ISSUE_URL"

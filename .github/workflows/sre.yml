@@ -5,7 +5,8 @@ on:
     types: [labeled]
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   issues: write
   id-token: write
 
@@ -51,7 +52,7 @@ jobs:
           Investigate the incident following the runbook.
         claude_args: |
           --model claude-haiku-4-5-20251001
-          --allowedTools "Read,Grep,Glob,Bash(gh issue:*),Bash(gh api:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(sleep:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
+          --allowedTools "Read,Edit,Write,Grep,Glob,Bash(gh issue:*),Bash(gh api:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(sleep:*),Bash(git:*),Bash(dotnet build:*),Bash(dotnet test:*)"
           --max-turns 25
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
