@@ -1,0 +1,64 @@
+name: Claude Implement Issue
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  implement:
+    if: >
+      !github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: claude-implement-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Setup WireGuard VPN
+        run: |
+          chmod +x scripts/setup-vpn.sh
+          ./scripts/setup-vpn.sh
+        env:
+          WIREGUARD_CONFIG: ${{ secrets.WIREGUARD_CONFIG }}
+
+      - name: Read coding agent prompt
+        run: |
+          {
+            echo "AGENT_PROMPT<<PROMPT_EOF"
+            cat .github/prompts/coding.md
+            echo "PROMPT_EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Run coding agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          show_full_output: "true"
+          prompt: |
+            <instructions>
+            ${{ env.AGENT_PROMPT }}
+            </instructions>
+
+            Fix issue #${{ github.event.issue.number }}.
+            Read the issue (including all comments — the latest comments contain the implementation plan),
+            implement the fix, run tests with `dotnet test -c Release`, and create a PR.
+          claude_args: "--max-turns 30"
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+
+      - name: Disconnect VPN
+        if: always()
+        run: sudo wg-quick down wg0 || true
