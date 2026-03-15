@@ -11,7 +11,10 @@ permissions:
 
 jobs:
   investigate:
-    if: github.event.label.name == 'deploy-failure' && github.event.issue.user.login == 'Szer'
+    if: >-
+      github.event.label.name == 'deploy-failure' &&
+      github.event.sender.login == 'Szer' &&
+      github.event.issue.user.login == 'Szer'
     runs-on: ubuntu-latest
 
     steps:
