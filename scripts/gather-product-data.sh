@@ -125,7 +125,7 @@ CHATTERS_7D=$(db_query "SELECT COUNT(DISTINCT user_id) FROM chat_message WHERE c
 # Recent chat messages with text (last 7 days, for product signal analysis)
 MSG_TEXT_ENTRIES=$(db_query "
     SELECT to_char(created_at, 'YYYY-MM-DD HH24:MI') AS ts,
-           user_id,
+           LEFT(md5(user_id::text), 8) AS user_hash,
            CASE WHEN text IS NOT NULL
                 THEN REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LEFT(text, 200), E'\n', ' '), E'\t', ' '), '|', '/'), '<', '('), '>', ')')
                 ELSE '(media only)'
@@ -139,14 +139,14 @@ MSG_TEXT_ENTRIES=$(db_query "
 
 MSG_TEXT_TABLE=""
 if [ -n "$MSG_TEXT_ENTRIES" ]; then
-    while IFS=$'\t' read -r ts uid preview reply_to; do
+    while IFS=$'\t' read -r ts user_hash preview reply_to; do
         reply_ref=""
         if [ -n "$reply_to" ] && [ "$reply_to" != "\\N" ]; then
             reply_ref="→${reply_to}"
         else
             reply_ref="—"
         fi
-        MSG_TEXT_TABLE="${MSG_TEXT_TABLE}| ${ts} | ${uid} | ${preview} | ${reply_ref} |
+        MSG_TEXT_TABLE="${MSG_TEXT_TABLE}| ${ts} | ${user_hash} | ${preview} | ${reply_ref} |
 "
     done <<< "$MSG_TEXT_ENTRIES"
 else
@@ -268,8 +268,8 @@ ${MSG_DAILY_TABLE}
 
 ### Recent Messages (text preview)
 
-| Date | User ID | Text Preview | Reply To |
-|------|---------|-------------|----------|
+| Date | User | Text Preview | Reply To |
+|------|------|-------------|----------|
 ${MSG_TEXT_TABLE}
 
 ## User Feedback (last 30 days)

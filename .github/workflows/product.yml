@@ -94,9 +94,10 @@ jobs:
     - name: Load agent prompt and product data
       run: |
         {
-          echo "AGENT_PROMPT<<PROMPT_EOF"
+          PROMPT_DELIM="PROMPT_EOF_$(openssl rand -hex 16)"
+          echo "AGENT_PROMPT<<${PROMPT_DELIM}"
           cat .github/prompts/product.md
-          echo "PROMPT_EOF"
+          echo "${PROMPT_DELIM}"
         } >> "$GITHUB_ENV"
         {
           REPORT_DELIM="REPORT_EOF_$(openssl rand -hex 16)"
