@@ -2049,3 +2049,145 @@ VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at::date, 'avail
             if not (isNull capturedEx) then raise capturedEx
         }
 
+    [<Fact>]
+    let ``/list hides coupons with future valid_from`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 260L, username = "valid_from_future")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            // Seed a coupon with valid_from in the future (tomorrow relative to bot's fixed time)
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            let tomorrowIso = fixture.FixedToday.AddDays(1).ToString("yyyy-MM-dd")
+            let expiresIso = fixture.FixedToday.AddDays(10).ToString("yyyy-MM-dd")
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (260, 'valid_from_future', 'Future', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, valid_from, status)
+VALUES (260, 'seed-future-vf', 10.00, 50.00, @expires::date, @valid_from::date, 'available');
+"""
+                    , {| expires = expiresIso; valid_from = tomorrowIso |}
+                )
+                :> Task
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithAnyText calls 260L [| "нет доступных"; "Сейчас нет" |],
+                "Expected future valid_from coupon to be filtered out from /list")
+        }
+
+    [<Fact>]
+    let ``/list shows coupons with valid_from = today`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 261L, username = "valid_from_today")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            let todayIso = fixture.FixedToday.ToString("yyyy-MM-dd")
+            let expiresIso = fixture.FixedToday.AddDays(10).ToString("yyyy-MM-dd")
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (261, 'valid_from_today', 'Today', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, valid_from, status)
+VALUES (261, 'seed-today-vf', 10.00, 50.00, @expires::date, @valid_from::date, 'available');
+"""
+                    , {| expires = expiresIso; valid_from = todayIso |}
+                )
+                :> Task
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 261L "Доступные купоны:",
+                "Expected coupon with valid_from = today to appear in /list")
+        }
+
+    [<Fact>]
+    let ``/list shows coupons with NULL valid_from (backward compat)`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 262L, username = "valid_from_null")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            let expiresIso = fixture.FixedToday.AddDays(10).ToString("yyyy-MM-dd")
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (262, 'valid_from_null', 'Null', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, status)
+VALUES (262, 'seed-null-vf', 10.00, 50.00, @expires::date, 'available');
+"""
+                    , {| expires = expiresIso |}
+                )
+                :> Task
+
+            let! _ = fixture.SendUpdate(Tg.dmMessage("/list", user))
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls 262L "Доступные купоны:",
+                "Expected coupon with NULL valid_from to appear in /list")
+        }
+
+    [<Fact>]
+    let ``Cannot take coupon with future valid_from`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let owner = Tg.user(id = 263L, username = "vf_take_owner", firstName = "Owner")
+            let taker = Tg.user(id = 264L, username = "vf_take_taker", firstName = "Taker")
+            do! fixture.SetChatMemberStatus(owner.Id, "member")
+            do! fixture.SetChatMemberStatus(taker.Id, "member")
+
+            use conn = new NpgsqlConnection(fixture.DbConnectionString)
+            let tomorrowIso = fixture.FixedToday.AddDays(1).ToString("yyyy-MM-dd")
+            let expiresIso = fixture.FixedToday.AddDays(10).ToString("yyyy-MM-dd")
+            do!
+                conn.ExecuteAsync(
+                    """
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (263, 'vf_take_owner', 'Owner', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO "user"(id, username, first_name, created_at, updated_at)
+VALUES (264, 'vf_take_taker', 'Taker', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO coupon(owner_id, photo_file_id, value, min_check, expires_at, valid_from, status)
+VALUES (263, 'seed-future-take', 10.00, 50.00, @expires::date, @valid_from::date, 'available');
+"""
+                    , {| expires = expiresIso; valid_from = tomorrowIso |}
+                )
+                :> Task
+
+            let! couponId = getLatestCouponId ()
+            do! fixture.ClearFakeCalls()
+
+            let! resp = fixture.SendUpdate(Tg.dmCallback($"take:{couponId}", taker))
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithAnyText calls taker.Id [| "уже взят"; "не существует" |],
+                "Expected take to fail for coupon with future valid_from")
+
+            // Coupon should still be available
+            let! status = fixture.QuerySingle<string>("SELECT status FROM coupon WHERE id = @id", {| id = couponId |})
+            Assert.Equal("available", status)
+        }
+

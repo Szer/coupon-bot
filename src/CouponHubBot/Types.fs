@@ -44,7 +44,8 @@ type Coupon =
       status: string
       taken_by: Nullable<int64>
       taken_at: Nullable<DateTime>
-      created_at: DateTime }
+      created_at: DateTime
+      valid_from: Nullable<DateOnly> }
 
 /// OCR result for coupon photo.
 /// Each field is optional: when present it's trusted enough to pre-fill /add wizard,

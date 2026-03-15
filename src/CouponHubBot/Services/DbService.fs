@@ -35,6 +35,7 @@ type PendingAddFlow =
       min_check: Nullable<decimal>
       expires_at: Nullable<DateOnly>
       barcode_text: string | null
+      valid_from: Nullable<DateOnly>
       updated_at: DateTime }
 
 [<CLIMutable>]
@@ -102,7 +103,7 @@ RETURNING *;
             return inserted
         }
 
-    member _.TryAddCoupon(ownerId, photoFileId, value, minCheck: decimal, expiresAt: DateOnly, barcodeText: string | null) =
+    member _.TryAddCoupon(ownerId, photoFileId, value, minCheck: decimal, expiresAt: DateOnly, barcodeText: string | null, ?validFrom: DateOnly) =
         task {
             let todayUtc = todayUtc ()
             if expiresAt < todayUtc then
@@ -166,10 +167,14 @@ LIMIT 1;
                         //language=postgresql
                         let insertSql =
                             """
-INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, barcode_text, status)
-VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, 'available')
+INSERT INTO coupon (owner_id, photo_file_id, value, min_check, expires_at, barcode_text, valid_from, status)
+VALUES (@owner_id, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, @valid_from, 'available')
 RETURNING *;
 """
+                        let validFromValue =
+                            match validFrom with
+                            | Some vf -> Nullable(vf)
+                            | None -> Nullable()
 
                         try
                             let! coupon =
@@ -180,7 +185,8 @@ RETURNING *;
                                        value = value
                                        min_check = minCheck
                                        expires_at = expiresAt
-                                       barcode_text = barcodeText |},
+                                       barcode_text = barcodeText
+                                       valid_from = validFromValue |},
                                     tx
                                 )
                             do! insertEvent conn tx coupon.id ownerId "added"
@@ -248,6 +254,7 @@ SELECT *
 FROM coupon
 WHERE status = 'available'
   AND expires_at >= @today
+  AND (valid_from IS NULL OR valid_from <= @today)
 ORDER BY expires_at, id;
 """
             let! coupons = conn.QueryAsync<Coupon>(sql, {| today = today |})
@@ -382,6 +389,7 @@ SET status = 'taken',
 WHERE id = @coupon_id
   AND status = 'available'
   AND expires_at >= @today
+  AND (valid_from IS NULL OR valid_from <= @today)
 RETURNING *;
 """
             let! updated =
@@ -595,8 +603,8 @@ WHERE user_id = @user_id;
             //language=postgresql
             let sql =
                 """
-INSERT INTO pending_add (user_id, stage, photo_file_id, value, min_check, expires_at, barcode_text, updated_at)
-VALUES (@user_id, @stage, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, @updated_at)
+INSERT INTO pending_add (user_id, stage, photo_file_id, value, min_check, expires_at, barcode_text, valid_from, updated_at)
+VALUES (@user_id, @stage, @photo_file_id, @value, @min_check, @expires_at, @barcode_text, @valid_from, @updated_at)
 ON CONFLICT (user_id) DO UPDATE
 SET stage = EXCLUDED.stage,
     photo_file_id = EXCLUDED.photo_file_id,
@@ -604,6 +612,7 @@ SET stage = EXCLUDED.stage,
     min_check = EXCLUDED.min_check,
     expires_at = EXCLUDED.expires_at,
     barcode_text = EXCLUDED.barcode_text,
+    valid_from = EXCLUDED.valid_from,
     updated_at = EXCLUDED.updated_at;
 """
             let! _ = conn.ExecuteAsync(sql, flow)
