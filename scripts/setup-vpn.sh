@@ -23,8 +23,7 @@ sudo wg-quick up wg0
 # DNS server is primary.  Not needed for full-tunnel mode where
 # all traffic already routes through the VPN gateway.
 if [ "$SPLIT_TUNNEL" = "true" ]; then
-  echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
-  echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf > /dev/null
+  printf "nameserver 8.8.8.8\nnameserver 8.8.4.4\n" | sudo resolvconf -a wg0.fallback -m 1
   echo "Added public DNS fallback (8.8.8.8, 8.8.4.4)"
 fi
 
