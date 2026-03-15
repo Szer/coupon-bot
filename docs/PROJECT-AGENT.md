@@ -66,8 +66,7 @@ Additionally, **Copilot PR Manager** (`copilot-pr-manager.yml`) provides a hard 
 |-------|------|-------------|
 | `project` | Project manager — analyze codebase, manage technical backlog | Daily workflow (`project.yml`) |
 | `product` | Product manager — triage feedback, analyze usage, create refined tickets | Daily workflow (`product.yml`) + feedback trigger (`feedback-triage.yml`) |
-| `sre` | SRE — debug production incidents, rollback, escalate code fixes | Deploy failure (`deploy.yml` notify-failure job) |
-| Default coding agent | Write code, fix bugs, create PRs | Auto-fix workflow, manual assignment, SRE escalation |
+| `sre` | SRE — debug production incidents, rollback, implement one-liner fixes, escalate complex bugs | Deploy failure (`deploy.yml` notify-failure job) |
 
 ### Assignment via REST API
 
@@ -82,13 +81,6 @@ gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
     "custom_agent": "project"
   }
 }'
-
-# Auto-fix workflow — uses default coding agent (can write code)
-gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
-  --input - <<< '{
-  "assignees": ["copilot-swe-agent[bot]"],
-  "agent_assignment": {}
-}'
 ```
 
 ## Components
@@ -96,7 +88,6 @@ gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
 | Component | Path | Purpose |
 |-----------|------|---------|
 | Project workflow | `.github/workflows/project.yml` | Daily trigger, VPN, metrics, issue creation |
-| Auto-fix workflow | `.github/workflows/auto-fix.yml` | Hourly pickup, mutex check, Copilot assignment |
 | Metrics script | `scripts/gather-metrics.sh` | Queries Prometheus, Loki, ArgoCD; outputs markdown |
 | Custom agent | `.github/agents/project.agent.md` | Agent profile with tools and analysis instructions |
 
@@ -126,7 +117,7 @@ gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
 | Label | Color | Purpose |
 |-------|-------|---------|
 | `project` | Purple (#7057ff) | Applied to all backlog issues created by project agent |
-| `infra` | Light purple (#d4c5f9) | Infrastructure issue — cannot be fixed in this repo, skipped by auto-fix |
+| `infra` | Light purple (#d4c5f9) | Infrastructure issue — cannot be fixed in this repo |
 | `priority-high` | Red (#b60205) | Reserved for user-reported feedback (not used by project agent) |
 | `priority-medium` | Yellow (#fbca04) | Bugs, security, performance, significant tech debt |
 | `priority-low` | Green (#0e8a16) | Nice-to-have improvements |
@@ -136,7 +127,7 @@ gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
 - **Create**: New issue for a newly discovered problem (labeled `project` + `priority-medium` or `priority-low` + optional `infra`)
 - **Bump**: Comment on existing issue if the same problem persists; reassess priority (up to `priority-medium` max)
 - **Close**: Close issue if the underlying problem is resolved
-- **Never assign**: Backlog issues are left unassigned — the auto-fix workflow picks them up
+- **Never assign**: Backlog issues are left unassigned for human triage
 
 ## Issue Lifecycle
 
@@ -172,77 +163,9 @@ gh api --method POST /repos/OWNER/REPO/issues/NUMBER/assignees \
 
 All secrets are configured in the `copilot` environment.
 
-## Auto-Fix Workflow
+## Issue Lifecycle (Post-Creation)
 
-The auto-fix workflow (`auto-fix.yml`) is the companion to the project agent. It picks up backlog issues and assigns Copilot to implement fixes automatically.
-
-### How It Works
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  auto-fix.yml (hourly at :17)                                   │
-│                                                                 │
-│  1. Mutex check: any draft PRs by Copilot?                      │
-│     (excl. non-coding agent PRs: project/product/self-assess)   │
-│     → If yes: skip (Copilot is busy)                            │
-│     → If no: proceed                                            │
-│                                                                 │
-│  2. Pick highest priority issue:                                │
-│     - Has label: project                                        │
-│     - NOT orchestration issue (project/product/self-assess)     │
-│     - NOT labeled: infra                                        │
-│     - Sort: priority-high > medium > low > bumps > oldest       │
-│                                                                 │
-│  3. Assign Copilot (default coding agent) via REST API          │
-│     → Copilot creates branch + PR with the fix                  │
-│     → PR goes through normal review                             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Mutex: One Session at a Time
-
-The workflow ensures only one Copilot coding session runs at a time by checking for open **draft PRs** by `app/copilot-swe-agent`. Draft = Copilot is actively working. Ready-for-review = done (doesn't block).
-
-### Priority Sorting
-
-Auto-fix only considers issues labeled `project`. Issues are picked in this order (equivalent to `ORDER BY priority DESC, comments DESC, created_at ASC`):
-1. `priority-high` labels first (if a user manually adds both `project` and `priority-high`)
-2. `priority-medium` next (most project issues)
-3. `priority-low` / unlabeled last
-4. Within same priority: most comments first (total GitHub comment count is used as a proxy for bump frequency)
-5. Within same comment count: oldest issue first
-
-### Skipped Issues
-
-- **`infra` label**: Infrastructure issues that belong to a different repo (e.g., `my-infra`). These remain in the backlog for human attention.
-- **Orchestration issues**: Title matching "project assessment YYYY-MM-DD" — these are workflow artifacts, not fixable issues.
-
-### Schedule
-
-- **Cron**: `17 * * * *` (every hour at :17)
-- **Manual trigger**: Available via `workflow_dispatch`
-
-## Full Feedback Loop
-
-```
-project (daily 04:37)            auto-fix (hourly :17)
-      │                                │
-      ▼                                ▼
- Scan codebase ──── creates ────► Backlog issues
- + infra metrics                       │
-                                       ▼
-                              Pick highest priority
-                                       │
-                                       ▼
-                              Assign Copilot ──► PR with fix
-                                                    │
-                                                    ▼
-                                              Human review
-                                                    │
-                                                    ▼
-                                              Merge ──► Next project run
-                                                        detects fix, closes issue
-```
+Backlog issues created by the project agent are left unassigned for human triage. The SRE agent may also create `priority-high` issues when it encounters complex bugs during incident response.
 
 ## Copilot PR Manager
 
