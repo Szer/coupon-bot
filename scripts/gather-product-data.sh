@@ -141,6 +141,7 @@ MSG_TEXT_TABLE=""
 if [ -n "$MSG_TEXT_ENTRIES" ]; then
     while IFS=$'\t' read -r ts user_hash preview reply_to; do
         reply_ref=""
+        # reply_to_message_id is INTEGER in the schema — always digits or \N, no sanitization needed
         if [ -n "$reply_to" ] && [ "$reply_to" != "\\N" ]; then
             reply_ref="→${reply_to}"
         else

@@ -106,6 +106,10 @@ jobs:
           echo "${REPORT_DELIM}"
         } >> "$GITHUB_ENV"
 
+    # Prompt injection risk: community chat text is embedded in <product-data-report>.
+    # Mitigations: (1) <> escaped to () in SQL to prevent XML tag breakout,
+    # (2) prompt instructs agent to treat report as data only,
+    # (3) allowedTools whitelist limits blast radius to read-only + issue management.
     - name: Run product agent
       uses: anthropics/claude-code-action@v1
       with:
