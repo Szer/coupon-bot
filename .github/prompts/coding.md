@@ -61,6 +61,16 @@ You are the **coding agent** for Coupon Hub Bot — an F# / .NET 10 Telegram bot
 - No new warnings (they are errors)
 - Follow existing code patterns and conventions
 
+## Efficient Turn Usage
+
+You have a limited turn budget. Optimize your turns:
+
+1. **Trust the plan**: If the issue comments contain a detailed implementation plan with specific files and code changes, follow it directly. Don't re-explore the entire codebase — only read files you need to edit.
+2. **Batch tool calls**: Make multiple Read/Edit/Write calls in parallel within a single turn when they are independent.
+3. **Reserve turns for finalization**: Always reserve at least 8 turns for: `dotnet build` → fix errors → `dotnet test` → fix failures → `git add/commit/push` → `gh pr create`. Start coding early.
+4. **Don't read all migrations**: Only read the latest migration to determine the next version number. The schema is documented in the issue plan.
+5. **Minimize re-reads**: Read each file once. If a file is too large, use offset/limit on the first try.
+
 ## What NOT to Do
 
 - Don't change unrelated code
