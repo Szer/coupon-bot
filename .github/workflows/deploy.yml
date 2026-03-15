@@ -134,9 +134,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
     - name: Create deploy-failure issue
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
