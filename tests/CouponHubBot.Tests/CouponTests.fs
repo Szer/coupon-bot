@@ -2183,7 +2183,7 @@ VALUES (263, 'seed-future-take', 10.00, 50.00, @expires::date, @valid_from::date
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode)
 
             let! calls = fixture.GetFakeCalls("sendMessage")
-            Assert.True(findCallWithAnyText calls taker.Id [| "Не получилось"; "не найден"; "недоступен" |],
+            Assert.True(findCallWithAnyText calls taker.Id [| "уже взят"; "не существует" |],
                 "Expected take to fail for coupon with future valid_from")
 
             // Coupon should still be available
