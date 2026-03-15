@@ -97,7 +97,7 @@ jobs:
 
           Fix issue #${{ steps.pick.outputs.issue }}.
           Read the issue, implement the fix, run tests with `dotnet test -c Release`, and create a PR.
-        claude_args: "--allowedTools \"Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr edit:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet restore:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(find:*),Bash(mkdir:*)\" --max-turns 30"
+        claude_args: "--allowedTools \"Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr edit:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet restore:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(find:*),Bash(mkdir:*)\" --max-turns 50"
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
         ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
