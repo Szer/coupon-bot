@@ -122,6 +122,38 @@ MSG_TOTAL_7D=$(db_query "SELECT COUNT(*) FROM chat_message WHERE created_at >= N
 CHATTERS_7D=$(db_query "SELECT COUNT(DISTINCT user_id) FROM chat_message WHERE created_at >= NOW() - INTERVAL '7 days';")
 [ -z "$CHATTERS_7D" ] && CHATTERS_7D="0"
 
+# Recent chat messages with text (last 7 days, for product signal analysis)
+MSG_TEXT_ENTRIES=$(db_query "
+    SELECT to_char(created_at, 'YYYY-MM-DD HH24:MI') AS ts,
+           user_id,
+           CASE WHEN text IS NOT NULL
+                THEN REPLACE(REPLACE(REPLACE(LEFT(text, 200), E'\n', ' '), E'\t', ' '), '|', '/')
+                ELSE '(media only)'
+           END AS preview,
+           reply_to_message_id
+    FROM chat_message
+    WHERE created_at >= NOW() - INTERVAL '7 days'
+    ORDER BY created_at DESC
+    LIMIT 50;
+")
+
+MSG_TEXT_TABLE=""
+if [ -n "$MSG_TEXT_ENTRIES" ]; then
+    while IFS=$'\t' read -r ts uid preview reply_to; do
+        reply_ref=""
+        if [ -n "$reply_to" ] && [ "$reply_to" != "\\N" ]; then
+            reply_ref="→${reply_to}"
+        else
+            reply_ref="—"
+        fi
+        MSG_TEXT_TABLE="${MSG_TEXT_TABLE}| ${ts} | ${uid} | ${preview} | ${reply_ref} |
+"
+    done <<< "$MSG_TEXT_ENTRIES"
+else
+    MSG_TEXT_TABLE="| (no messages) | - | - | - |
+"
+fi
+
 # ─── User feedback (PostgreSQL) ──────────────────────────────────────────────
 
 log "Querying user feedback..."
@@ -233,6 +265,12 @@ ${CB_7D}
 | Date | Total | With Text | Unique Users |
 |------|-------|-----------|--------------|
 ${MSG_DAILY_TABLE}
+
+### Recent Messages (text preview)
+
+| Date | User ID | Text Preview | Reply To |
+|------|---------|-------------|----------|
+${MSG_TEXT_TABLE}
 
 ## User Feedback (last 30 days)
 

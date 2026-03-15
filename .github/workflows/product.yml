@@ -2,14 +2,12 @@ name: Product Analysis
 
 on:
   schedule:
-    - cron: '15 10 * * *'
+    - cron: '15 10 * * 2,5'
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
-  pull-requests: write
-  id-token: write
 
 jobs:
 
@@ -93,12 +91,18 @@ jobs:
         echo "Created issue #${ISSUE_NUMBER}"
         echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
 
-    - name: Read product agent prompt
+    - name: Load agent prompt and product data
       run: |
         {
           echo "AGENT_PROMPT<<PROMPT_EOF"
           cat .github/prompts/product.md
           echo "PROMPT_EOF"
+        } >> "$GITHUB_ENV"
+        {
+          REPORT_DELIM="REPORT_EOF_$(openssl rand -hex 16)"
+          echo "PRODUCT_REPORT<<${REPORT_DELIM}"
+          cat /tmp/product-report.md
+          echo "${REPORT_DELIM}"
         } >> "$GITHUB_ENV"
 
     - name: Run product agent
@@ -111,12 +115,16 @@ jobs:
           ${{ env.AGENT_PROMPT }}
           </instructions>
 
-          You have been triggered for the scheduled daily product analysis.
+          <product-data-report>
+          ${{ env.PRODUCT_REPORT }}
+          </product-data-report>
+
+          You have been triggered for the scheduled product analysis (runs Tuesday and Friday).
           The orchestration issue is #${{ steps.create-issue.outputs.issue_number }}.
         claude_args: |
           --model claude-haiku-4-5-20251001
           --allowedTools "Read,Grep,Glob,Bash(gh issue:*),Bash(gh api:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
-          --max-turns 20
+          --max-turns 15
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
 
