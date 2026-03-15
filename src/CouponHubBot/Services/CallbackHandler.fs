@@ -79,7 +79,8 @@ type CallbackHandler(
                                                     min_check = Nullable(mc)
                                                     updated_at = time.GetUtcNow().UtcDateTime }
                                             do! db.UpsertPendingAddFlow next
-                                            do! couponFlow.HandleAddWizardSendConfirm cq.Message.Chat.Id v mc flow.expires_at.Value flow.barcode_text
+                                            let vf = if flow.valid_from.HasValue then Some flow.valid_from.Value else None
+                                            do! couponFlow.HandleAddWizardSendConfirm cq.Message.Chat.Id v mc flow.expires_at.Value flow.barcode_text vf
                                         else
                                             let next =
                                                 { flow with
@@ -102,7 +103,8 @@ type CallbackHandler(
                                             expires_at = Nullable(expiresAt)
                                             updated_at = time.GetUtcNow().UtcDateTime }
                                     do! db.UpsertPendingAddFlow next
-                                    do! couponFlow.HandleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
+                                    let vf = if flow.valid_from.HasValue then Some flow.valid_from.Value else None
+                                    do! couponFlow.HandleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text vf
                                 else
                                     do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                             | "addflow:date:tomorrow" ->
@@ -114,7 +116,8 @@ type CallbackHandler(
                                             expires_at = Nullable(expiresAt)
                                             updated_at = time.GetUtcNow().UtcDateTime }
                                     do! db.UpsertPendingAddFlow next
-                                    do! couponFlow.HandleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
+                                    let vf = if flow.valid_from.HasValue then Some flow.valid_from.Value else None
+                                    do! couponFlow.HandleAddWizardSendConfirm cq.Message.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text vf
                                 else
                                     do! sendText cq.Message.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                             | "addflow:ocr:yes" ->
@@ -126,6 +129,7 @@ type CallbackHandler(
                                     && flow.min_check.HasValue
                                     && flow.expires_at.HasValue
                                 then
+                                    let vf = if flow.valid_from.HasValue then Some flow.valid_from.Value else None
                                     match!
                                         db.TryAddCoupon(
                                             user.id,
@@ -133,7 +137,8 @@ type CallbackHandler(
                                             flow.value.Value,
                                             flow.min_check.Value,
                                             flow.expires_at.Value,
-                                            flow.barcode_text
+                                            flow.barcode_text,
+                                            ?validFrom = vf
                                         )
                                     with
                                     | AddCouponResult.Added coupon ->
@@ -172,6 +177,7 @@ type CallbackHandler(
                                     |> taskIgnore
                             | "addflow:confirm" ->
                                 if flow.photo_file_id <> null && flow.value.HasValue && flow.min_check.HasValue && flow.expires_at.HasValue then
+                                    let vf = if flow.valid_from.HasValue then Some flow.valid_from.Value else None
                                     match!
                                         db.TryAddCoupon(
                                             user.id,
@@ -179,7 +185,8 @@ type CallbackHandler(
                                             flow.value.Value,
                                             flow.min_check.Value,
                                             flow.expires_at.Value,
-                                            flow.barcode_text
+                                            flow.barcode_text,
+                                            ?validFrom = vf
                                         )
                                     with
                                     | AddCouponResult.Added coupon ->

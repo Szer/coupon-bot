@@ -18,15 +18,19 @@ type CouponFlowHandler(
 ) =
     let sendText = BotHelpers.sendText botClient
 
-    let buildConfirmTextAndKeyboard (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) =
+    let buildConfirmTextAndKeyboard (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) (validFrom: DateOnly option) =
         let v = value.ToString("0.##")
         let mc = minCheck.ToString("0.##")
         let d = BotHelpers.formatUiDate expiresAt
         let barcodeStr =
             if String.IsNullOrWhiteSpace barcodeText then ""
             else $", штрихкод: {barcodeText}"
+        let validFromStr =
+            match validFrom with
+            | Some vf -> $", с {BotHelpers.formatUiDate vf}"
+            | None -> ""
         let kb = BotHelpers.addWizardConfirmKeyboard ()
-        let text = $"Подтвердить добавление купона: {v}€ из {mc}€, до {d}{barcodeStr}?"
+        let text = $"Подтвердить добавление купона: {v}€ из {mc}€{validFromStr}, до {d}{barcodeStr}?"
         text, kb
 
     member _.HandleAddWizardStart (user: DbUser) (chatId: int64) =
@@ -39,6 +43,7 @@ type CouponFlowHandler(
                       min_check = Nullable()
                       expires_at = Nullable()
                       barcode_text = null
+                      valid_from = Nullable()
                       updated_at = time.GetUtcNow().UtcDateTime }
                 )
             do! sendText chatId "Пришли фото купона (просто картинку)."
@@ -97,6 +102,7 @@ type CouponFlowHandler(
                       min_check = Nullable()
                       expires_at = Nullable()
                       barcode_text = null
+                      valid_from = Nullable()
                       updated_at = time.GetUtcNow().UtcDateTime }
                 )
 
@@ -147,6 +153,14 @@ type CouponFlowHandler(
                             if ocr.validTo.HasValue then
                                 Some (DateOnly.FromDateTime(ocr.validTo.Value))
                             else None
+                        let validFromOpt =
+                            if ocr.validFrom.HasValue then
+                                Some (DateOnly.FromDateTime(ocr.validFrom.Value))
+                            else None
+                        let validFromNullable =
+                            match validFromOpt with
+                            | Some vf -> Nullable(vf)
+                            | None -> Nullable()
                         let barcodeText =
                             if String.IsNullOrWhiteSpace ocr.barcode then null else ocr.barcode
 
@@ -160,6 +174,7 @@ type CouponFlowHandler(
                                       min_check = Nullable()
                                       expires_at = Nullable()
                                       barcode_text = null
+                                      valid_from = Nullable()
                                       updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             do! sendText chatId "Не удалось распознать штрихкод на фото. Пожалуйста, пришли фото в лучшем качестве или скадрируй картинку ближе к штрихкоду, дате и сумме."
@@ -176,6 +191,7 @@ type CouponFlowHandler(
                                       min_check = Nullable(minCheck)
                                       expires_at = Nullable(expiresAt)
                                       barcode_text = barcodeText
+                                      valid_from = validFromNullable
                                       updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let v = value.ToString("0.##")
@@ -197,6 +213,7 @@ type CouponFlowHandler(
                                       min_check = Nullable(minCheck)
                                       expires_at = Nullable()
                                       barcode_text = barcodeText
+                                      valid_from = validFromNullable
                                       updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let v = value.ToString("0.##")
@@ -220,6 +237,7 @@ type CouponFlowHandler(
                                         | Some d -> Nullable(d)
                                         | None -> Nullable()
                                       barcode_text = barcodeText
+                                      valid_from = validFromNullable
                                       updated_at = time.GetUtcNow().UtcDateTime }
                                 )
                             let text =
@@ -241,12 +259,12 @@ type CouponFlowHandler(
         botClient.SendMessage(ChatId chatId, "Выбери дату истечения (или напиши \"25\", \"25.01.2026\", \"2026-01-25\"):", replyMarkup = BotHelpers.addWizardDateKeyboard())
         |> taskIgnore
 
-    member _.HandleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) =
-        let text, kb = buildConfirmTextAndKeyboard value minCheck expiresAt barcodeText
+    member _.HandleAddWizardSendConfirm (chatId: int64) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) (validFrom: DateOnly option) =
+        let text, kb = buildConfirmTextAndKeyboard value minCheck expiresAt barcodeText validFrom
         botClient.SendMessage(ChatId chatId, text, replyMarkup = kb) |> taskIgnore
 
-    member _.HandleAddWizardEditConfirm (chatId: int64) (messageId: int) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) =
-        let text, kb = buildConfirmTextAndKeyboard value minCheck expiresAt barcodeText
+    member _.HandleAddWizardEditConfirm (chatId: int64) (messageId: int) (value: decimal) (minCheck: decimal) (expiresAt: DateOnly) (barcodeText: string | null) (validFrom: DateOnly option) =
+        let text, kb = buildConfirmTextAndKeyboard value minCheck expiresAt barcodeText validFrom
         task {
             try
                 do! botClient.EditMessageText(ChatId chatId, messageId, text, replyMarkup = kb) |> taskIgnore
@@ -285,7 +303,8 @@ type CouponFlowHandler(
                                     min_check = Nullable(mc)
                                     updated_at = time.GetUtcNow().UtcDateTime }
                             )
-                        do! this.HandleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value flow.barcode_text
+                        let vf = if flow.valid_from.HasValue then Some flow.valid_from.Value else None
+                        do! this.HandleAddWizardSendConfirm msg.Chat.Id v mc flow.expires_at.Value flow.barcode_text vf
                     else
                         do! db.UpsertPendingAddFlow(
                                 { flow with
@@ -309,7 +328,8 @@ type CouponFlowHandler(
                             do! sendText msg.Chat.Id "Эта дата уже в прошлом. Нельзя добавить истёкший купон. Пришли дату заново."
                         else
                             do! db.UpsertPendingAddFlow({ flow with stage = "awaiting_confirm"; expires_at = Nullable(expiresAt); updated_at = time.GetUtcNow().UtcDateTime })
-                            do! this.HandleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text
+                            let vf = if flow.valid_from.HasValue then Some flow.valid_from.Value else None
+                            do! this.HandleAddWizardSendConfirm msg.Chat.Id flow.value.Value flow.min_check.Value expiresAt flow.barcode_text vf
                     else
                         do! sendText msg.Chat.Id "Сначала выбери скидку. Начни заново: /add"
                     return true
