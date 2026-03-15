@@ -54,6 +54,7 @@ jobs:
         ./scripts/setup-vpn.sh
       env:
         WIREGUARD_CONFIG: ${{ secrets.WIREGUARD_CONFIG }}
+        SPLIT_TUNNEL: "false"  # Full tunnel needed: DB has public endpoint with AKS IP firewall
 
     # if tests are ok, deploy to production
     - name: Apply migrations to production DB
