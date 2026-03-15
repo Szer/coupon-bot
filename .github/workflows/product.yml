@@ -47,6 +47,7 @@ jobs:
         ./scripts/setup-vpn.sh
       env:
         WIREGUARD_CONFIG: ${{ secrets.WIREGUARD_CONFIG }}
+        VPN_EXTRA_CIDRS: ${{ vars.DB_PUBLIC_IP_CIDR }}
 
     - name: Install PostgreSQL client
       run: sudo apt-get install -y postgresql-client
