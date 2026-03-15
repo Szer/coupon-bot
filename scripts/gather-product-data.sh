@@ -127,7 +127,7 @@ MSG_TEXT_ENTRIES=$(db_query "
     SELECT to_char(created_at, 'YYYY-MM-DD HH24:MI') AS ts,
            user_id,
            CASE WHEN text IS NOT NULL
-                THEN REPLACE(REPLACE(REPLACE(LEFT(text, 200), E'\n', ' '), E'\t', ' '), '|', '/')
+                THEN REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LEFT(text, 200), E'\n', ' '), E'\t', ' '), '|', '/'), '<', '('), '>', ')')
                 ELSE '(media only)'
            END AS preview,
            reply_to_message_id
@@ -162,7 +162,7 @@ log "Querying user feedback..."
 FEEDBACK_ENTRIES=$(db_query "
     SELECT uf.id,
            CASE WHEN uf.feedback_text IS NOT NULL
-                THEN REPLACE(REPLACE(REPLACE(LEFT(uf.feedback_text, 200), E'\n', ' '), E'\t', ' '), '|', '/')
+                THEN REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LEFT(uf.feedback_text, 200), E'\n', ' '), E'\t', ' '), '|', '/'), '<', '('), '>', ')')
                 ELSE '(media only)'
            END AS preview,
            uf.has_media,
