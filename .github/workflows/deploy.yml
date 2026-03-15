@@ -137,21 +137,13 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Setup WireGuard VPN
-      run: |
-        chmod +x scripts/setup-vpn.sh
-        ./scripts/setup-vpn.sh
-      env:
-        WIREGUARD_CONFIG: ${{ secrets.WIREGUARD_CONFIG }}
-
-    - name: Create debugging issue
-      id: create-issue
+    - name: Create deploy-failure issue
       env:
         GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
       run: |
         set -euo pipefail
 
-        ISSUE_URL=$(gh issue create \
+        gh issue create \
           --repo "${{ github.repository }}" \
           --title "Deploy pipeline failed for ${GITHUB_SHA:0:7}" \
           --label "deploy-failure" \
@@ -166,45 +158,4 @@ jobs:
         2. If production is down, rollback first
         3. Read the workflow logs to identify which phase failed
         4. Query ArgoCD, Loki, and Prometheus for diagnostics
-        5. If a code fix is needed, create a priority-high issue with project label")
-
-        ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -Eo '[0-9]+$')
-        if [ -z "$ISSUE_NUMBER" ]; then
-          echo "ERROR: Failed to parse issue number from: $ISSUE_URL"
-          exit 1
-        fi
-        echo "Created issue #${ISSUE_NUMBER}"
-        echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
-
-    - name: Read SRE agent prompt
-      run: |
-        {
-          echo "AGENT_PROMPT<<PROMPT_EOF"
-          cat .github/prompts/sre.md
-          echo "PROMPT_EOF"
-        } >> "$GITHUB_ENV"
-
-    - name: Run SRE agent
-      uses: anthropics/claude-code-action@v1
-      with:
-        anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-        show_full_output: "true"
-        prompt: |
-          <instructions>
-          ${{ env.AGENT_PROMPT }}
-          </instructions>
-
-          A deploy pipeline has failed.
-          The deploy-failure issue is #${{ steps.create-issue.outputs.issue_number }}.
-          Investigate the incident following the runbook.
-        claude_args: |
-          --model claude-haiku-4-5-20251001
-          --allowedTools "Read,Grep,Glob,Bash(gh issue:*),Bash(gh api:*),Bash(curl:*),Bash(jq:*),Bash(cat:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(find:*),Bash(ls:*),Bash(date:*),Bash(echo:*),Bash(sleep:*),Bash(git status:*),Bash(git branch),Bash(git log:*),Bash(git --no-pager show:*)"
-          --max-turns 25
-      env:
-        GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
-        ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
-
-    - name: Disconnect VPN
-      if: always()
-      run: sudo wg-quick down wg0 || true
+        5. If a code fix is needed, create a priority-high issue with project label"
