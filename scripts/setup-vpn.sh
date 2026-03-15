@@ -13,7 +13,11 @@ sudo chmod 600 /etc/wireguard/wg0.conf
 # via public endpoint + AKS firewall rule).
 SPLIT_TUNNEL="${SPLIT_TUNNEL:-true}"
 if [ "$SPLIT_TUNNEL" = "true" ]; then
-  sudo sed -i 's|AllowedIPs\s*=\s*0\.0\.0\.0/0.*|AllowedIPs = 10.0.0.0/8|' /etc/wireguard/wg0.conf
+  ALLOWED="10.0.0.0/8"
+  if [ -n "${VPN_EXTRA_CIDRS:-}" ]; then
+    ALLOWED="${ALLOWED}, ${VPN_EXTRA_CIDRS}"
+  fi
+  sudo sed -i "s|AllowedIPs\s*=\s*0\.0\.0\.0/0.*|AllowedIPs = ${ALLOWED}|" /etc/wireguard/wg0.conf
 fi
 
 sudo wg-quick up wg0
