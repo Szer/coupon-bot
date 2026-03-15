@@ -17,5 +17,16 @@ if [ "$SPLIT_TUNNEL" = "true" ]; then
 fi
 
 sudo wg-quick up wg0
+
+# When split-tunneling, add public DNS fallback so public hosts
+# (api.github.com, etc.) resolve even though the VPN's internal
+# DNS server is primary.  Not needed for full-tunnel mode where
+# all traffic already routes through the VPN gateway.
+if [ "$SPLIT_TUNNEL" = "true" ]; then
+  echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
+  echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf > /dev/null
+  echo "Added public DNS fallback (8.8.8.8, 8.8.4.4)"
+fi
+
 sudo wg show
 echo "VPN connected (SPLIT_TUNNEL=${SPLIT_TUNNEL})"
