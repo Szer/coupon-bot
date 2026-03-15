@@ -102,9 +102,10 @@ jobs:
           echo "PROMPT_EOF"
         } >> "$GITHUB_ENV"
         {
-          echo "METRICS_REPORT<<METRICS_EOF"
+          METRICS_DELIM="METRICS_EOF_$(openssl rand -hex 16)"
+          echo "METRICS_REPORT<<${METRICS_DELIM}"
           cat /tmp/metrics-report.md
-          echo "METRICS_EOF"
+          echo "${METRICS_DELIM}"
         } >> "$GITHUB_ENV"
 
     - name: Run project agent
