@@ -7,12 +7,11 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: write
   id-token: write
 
 jobs:
   investigate:
-    if: github.event.label.name == 'deploy-failure'
+    if: github.event.label.name == 'deploy-failure' && github.event.issue.user.login == 'Szer'
     runs-on: ubuntu-latest
 
     steps:
