@@ -56,6 +56,14 @@ type EventTypeCountRow =
       count: int64 }
 
 [<CLIMutable>]
+type CouponOutcomes =
+    { used_count: int64
+      expired_count: int64
+      active_count: int64
+      voided_count: int64
+      total_count: int64 }
+
+[<CLIMutable>]
 type ChatMessageRow =
     { user_id: int64
       message_id: int
@@ -333,6 +341,43 @@ GROUP BY event_type;
                 |> Option.defaultValue 0L
 
             return get "added", get "taken", get "returned", get "used", get "voided"
+        }
+
+    member _.GetPersonalCouponOutcomes(userId: int64) =
+        task {
+            use! conn = openConn()
+            let today = todayUtc ()
+            //language=postgresql
+            let sql =
+                """
+SELECT
+    COUNT(*) FILTER (WHERE status = 'used')::bigint                                          AS used_count,
+    COUNT(*) FILTER (WHERE status IN ('available','taken') AND expires_at < @today)::bigint  AS expired_count,
+    COUNT(*) FILTER (WHERE status IN ('available','taken') AND expires_at >= @today)::bigint AS active_count,
+    COUNT(*) FILTER (WHERE status = 'voided')::bigint                                        AS voided_count,
+    COUNT(*)::bigint                                                                         AS total_count
+FROM coupon
+WHERE owner_id = @user_id;
+"""
+            return! conn.QuerySingleAsync<CouponOutcomes>(sql, {| user_id = userId; today = today |})
+        }
+
+    member _.GetGlobalCouponStats() =
+        task {
+            use! conn = openConn()
+            let today = todayUtc ()
+            //language=postgresql
+            let sql =
+                """
+SELECT
+    COUNT(*) FILTER (WHERE status = 'used')::bigint                                          AS used_count,
+    COUNT(*) FILTER (WHERE status IN ('available','taken') AND expires_at < @today)::bigint  AS expired_count,
+    COUNT(*) FILTER (WHERE status IN ('available','taken') AND expires_at >= @today)::bigint AS active_count,
+    COUNT(*) FILTER (WHERE status = 'voided')::bigint                                        AS voided_count,
+    COUNT(*)::bigint                                                                         AS total_count
+FROM coupon;
+"""
+            return! conn.QuerySingleAsync<CouponOutcomes>(sql, {| today = today |})
         }
 
     member _.TryTakeCoupon(couponId, takerId) =
