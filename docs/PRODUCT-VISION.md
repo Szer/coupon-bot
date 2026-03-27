@@ -16,6 +16,7 @@ Members of a single private Telegram group (~10–30 people) who trust each othe
 
 1. **Zero-friction coupon exchange** — add a coupon in seconds, take one in a tap
 2. **Accountability** — every coupon has a clear owner and status history
+   > Note: Accountability covers *internal* state changes only (share, take, void, return). The bot cannot detect or track external redemptions at third-party checkouts (e.g., Dunnes app/website). Owners are responsible for voiding coupons they have redeemed externally; if they don't, that is a community trust issue, not a bot bug.
 3. **Expiration awareness** — automated reminders prevent coupons from expiring unused
 
 ## In-Scope Features
@@ -36,6 +37,7 @@ Members of a single private Telegram group (~10–30 people) who trust each othe
 - Gamification (points, leaderboards, badges)
 - AI-powered coupon recommendations
 - Support for other stores (e.g., SuperValu) — Dunnes only
+- Tracking external coupon redemption (e.g., Dunnes app/website checkout) — the bot has no integration with external systems and cannot detect third-party usage; voiding after external redemption is the owner's responsibility
 
 ## Quality Attributes
 
