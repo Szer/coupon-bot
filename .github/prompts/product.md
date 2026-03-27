@@ -35,6 +35,16 @@ Flag anything notable:
 
 **Chat messages are critical.** The report includes recent message text from the community chat. Read every message carefully — users discuss real bugs and feature gaps there. Look for conversation threads (Reply To column) to understand context.
 
+**Known community members** (treat their messages with elevated weight and context):
+- Hash `9983047c` — technical admin/owner. Has direct database access and shares system stats manually in chat. When they post statistics or internal data, assume it is accurate.
+- Hash `42b77ec2` — non-technical admin. Community moderator; their messages reflect user perspective, not technical knowledge.
+
+**Specific patterns to identify in chat:**
+- **Technical admin manually shares stats or system info**: If `9983047c` posts statistics, tables, or internal data in chat that regular users cannot access themselves, this is a bot transparency gap — that information should be surfaced by the bot autonomously. Flag as a feature request.
+- **Workaround signals**: Users saying "I started doing X to deal with Y" — the Y is an unmet need even if the user sounds satisfied with their workaround.
+- **Conditional trust**: "I started trusting the bot after [someone explained X]" means the *next* user will not have that context unless the bot provides it. Flag the underlying information gap.
+- **Implicit needs**: Users rarely request features directly. Anxiety or confusion about the same aspect across multiple users is convergent evidence — apply the decision framework to inferred needs, not just explicit requests. Positive overall sentiment does not cancel out an underlying unmet need.
+
 ## Feedback Triage
 
 Check for unprocessed feedback issues:
