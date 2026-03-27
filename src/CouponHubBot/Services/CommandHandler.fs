@@ -111,9 +111,32 @@ type CommandHandler(
     let handleStats (user: DbUser) (chatId: int64) =
         task {
             let! added, taken, returned, used, voided = db.GetUserStats(user.id)
+            let! personal = db.GetPersonalCouponOutcomes(user.id)
+            let! globalStats = db.GetGlobalCouponStats()
+
+            let fmtRate (usedN: int64) (expiredN: int64) =
+                let denom = usedN + expiredN
+                if denom = 0L then "—"
+                else $"{int (round (float usedN / float denom * 100.0))}%%"
+
+            let personalRate = fmtRate personal.used_count personal.expired_count
+            let globalRate   = fmtRate globalStats.used_count globalStats.expired_count
+
             do!
                 sendText chatId
-                    $"Статистика:\nДобавлено: {added}\nВзято: {taken}\nВозвращено: {returned}\nИспользовано: {used}\nАннулировано: {voided}"
+                    ($"Статистика:\nДобавлено: {added} · Взято: {taken} · Возвращено: {returned} · Использовано: {used} · Аннулировано: {voided}\n\n"
+                    + $"Судьба моих купонов:\n"
+                    + $"Использовано: {personal.used_count}\n"
+                    + $"Истекло неиспользованными: {personal.expired_count}\n"
+                    + $"Сейчас активны: {personal.active_count}\n"
+                    + $"Аннулировано: {personal.voided_count}\n"
+                    + $"Утилизация: {personalRate}\n\n"
+                    + $"Сообщество (всего):\n"
+                    + $"Добавлено: {globalStats.total_count}\n"
+                    + $"Использовано: {globalStats.used_count}\n"
+                    + $"Истекло: {globalStats.expired_count}\n"
+                    + $"Активных сейчас: {globalStats.active_count}\n"
+                    + $"Утилизация: {globalRate}")
         }
 
     let handleMy (user: DbUser) (chatId: int64) =

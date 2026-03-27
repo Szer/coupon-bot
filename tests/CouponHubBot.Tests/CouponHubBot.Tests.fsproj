@@ -21,6 +21,7 @@
     <Compile Include="FeedbackFlowTests.fs" />
     <Compile Include="AdminDebugTests.fs" />
     <Compile Include="VoidFlowTests.fs" />
+    <Compile Include="StatsTests.fs" />
     <Compile Include="HealthCheckTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
