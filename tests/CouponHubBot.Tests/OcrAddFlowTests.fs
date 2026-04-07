@@ -20,6 +20,44 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
     let readAzureCacheJson (fileName: string) =
         File.ReadAllText(Path.Combine(solutionDirPath, "tests", "CouponHubBot.Ocr.Tests", "AzureCache", fileName + ".azure.json"))
 
+    /// Returns Azure OCR JSON with any 13-digit barcode text line removed,
+    /// so the OCR text fallback won't find a barcode either.
+    let stripBarcodeFromAzureJson (azureJson: string) =
+        let doc = JsonDocument.Parse(azureJson)
+        use ms = new MemoryStream()
+        let opts = JsonWriterOptions(Indented = false)
+        use writer = new Utf8JsonWriter(ms, opts)
+        let rec writeElement (el: JsonElement) =
+            match el.ValueKind with
+            | JsonValueKind.Object ->
+                writer.WriteStartObject()
+                for prop in el.EnumerateObject() do
+                    writer.WritePropertyName(prop.Name)
+                    writeElement prop.Value
+                writer.WriteEndObject()
+            | JsonValueKind.Array ->
+                writer.WriteStartArray()
+                let mutable items = el.EnumerateArray() |> Seq.toArray
+                // Filter out line objects whose "text" is exactly 13 digits (barcode).
+                if items.Length > 0
+                   && items |> Array.exists (fun it ->
+                       it.ValueKind = JsonValueKind.Object
+                       && (match it.TryGetProperty("text") with
+                           | true, t -> System.Text.RegularExpressions.Regex.IsMatch(t.GetString(), @"^\d{13}$")
+                           | _ -> false)) then
+                    items <- items |> Array.filter (fun it ->
+                        not (it.ValueKind = JsonValueKind.Object
+                             && (match it.TryGetProperty("text") with
+                                 | true, t -> System.Text.RegularExpressions.Regex.IsMatch(t.GetString(), @"^\d{13}$")
+                                 | _ -> false)))
+                for item in items do
+                    writeElement item
+                writer.WriteEndArray()
+            | _ -> el.WriteTo(writer)
+        writeElement doc.RootElement
+        writer.Flush()
+        System.Text.Encoding.UTF8.GetString(ms.ToArray())
+
     let getLatestExpiresIso () =
         fixture.QuerySingle<string>("SELECT expires_at::text FROM coupon ORDER BY id DESC LIMIT 1", null)
 
@@ -113,10 +151,10 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             do! fixture.SetChatMemberStatus(user.Id, "member")
 
             let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
-            let azure = readAzureCacheJson fileName
+            let azure = readAzureCacheJson fileName |> stripBarcodeFromAzureJson
 
             // Provide invalid bytes so ZXing/ImageSharp fails -> barcode = null,
-            // while FakeAzureOcrApi still returns a deterministic OCR response.
+            // and Azure OCR response has barcode text stripped so text fallback won't find it either.
             let bytes = [| byte 0x00; byte 0x01; byte 0x02; byte 0x03 |]
 
             let fileId1 = "ocr-no-barcode-1"
@@ -131,6 +169,42 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             // No coupon should be created.
             let! count = getCouponCount ()
             Assert.Equal(0L, count)
+        }
+
+    [<Fact>]
+    let ``OCR add: ZXing fails but Azure OCR text contains barcode — fallback succeeds`` () =
+        task {
+            do! fixture.ClearFakeCalls()
+            do! fixture.TruncateCoupons()
+
+            let user = Tg.user(id = 652L, username = "ocr_barcode_fallback", firstName = "OCR")
+            do! fixture.SetChatMemberStatus(user.Id, "member")
+
+            let fileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
+            let azure = readAzureCacheJson fileName
+
+            // Provide invalid bytes so ZXing/ImageSharp fails,
+            // but Azure OCR response still contains the 13-digit barcode text — fallback should find it.
+            let bytes = [| byte 0x00; byte 0x01; byte 0x02; byte 0x03 |]
+
+            let fileId = "ocr-barcode-fallback"
+            do! fixture.SetTelegramFile(fileId, bytes)
+            do! fixture.SetAzureOcrResponse(200, azure)
+            let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = fileId))
+
+            let! calls = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls user.Id "Я распознал:", "Expected OCR recognition message")
+            Assert.True(findCallWithText calls user.Id "2706688198845", "Expected barcode from OCR text fallback")
+
+            // Confirm to create the coupon.
+            do! fixture.ClearFakeCalls()
+            let! _ = fixture.SendUpdate(Tg.dmCallback("addflow:ocr:yes", user))
+
+            let! calls2 = fixture.GetFakeCalls("sendMessage")
+            Assert.True(findCallWithText calls2 user.Id "Добавил купон", "Expected coupon created")
+
+            let! count = getCouponCount ()
+            Assert.Equal(1L, count)
         }
 
     [<Fact>]
@@ -349,12 +423,14 @@ type OcrAddFlowTests(fixture: OcrCouponHubTestContainers) =
             let goodFileName = "10_50_2026-01-17_2026-01-26_2706688198845.jpg"
             let goodAzure = readAzureCacheJson goodFileName
             let goodBytes = readImageBytes goodFileName
+            let badAzure = stripBarcodeFromAzureJson goodAzure
 
             // Step 1: Upload bad photo (invalid bytes → barcode not recognized).
+            // Azure OCR response has barcode text stripped so text fallback won't find it either.
             let badFileId = "bad-barcode-photo"
             let badBytes = [| byte 0x00; byte 0x01; byte 0x02; byte 0x03 |]
             do! fixture.SetTelegramFile(badFileId, badBytes)
-            do! fixture.SetAzureOcrResponse(200, goodAzure)
+            do! fixture.SetAzureOcrResponse(200, badAzure)
 
             let! _ = fixture.SendUpdate(Tg.dmPhotoWithCaption("", user, fileId = badFileId))
 
