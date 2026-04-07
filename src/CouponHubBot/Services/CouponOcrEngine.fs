@@ -386,6 +386,19 @@ type CouponOcrEngine(azureTextOcr: IAzureTextOcr, logger: ILogger<CouponOcrEngin
                 else
                     parseFromText nowUtc ocrText
 
+            let barcode =
+                if not (String.IsNullOrWhiteSpace barcode) then
+                    barcode
+                elif not (String.IsNullOrWhiteSpace ocrText) then
+                    let m = Regex.Match(ocrText, @"\b(\d{13})\b")
+                    if m.Success then
+                        logger.LogDebug("Barcode found via OCR text fallback: {text}", m.Groups.[1].Value)
+                        m.Groups.[1].Value
+                    else
+                        noneBarcode
+                else
+                    noneBarcode
+
             return
                 { couponValue = couponValue
                   minCheck = minCheck
